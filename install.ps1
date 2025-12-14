@@ -1,11 +1,13 @@
-﻿# install.ps1
+# install.ps1
 $ErrorActionPreference = "Stop"
 
-# Konsol ciktilari UTF-8 olsun (PowerShell 5/7 icin)
+# Konsol çıktıları UTF-8 olsun (PowerShell 5/7 için)
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-function Has-Command($name) {
+$MinPythonVersion = [Version]"3.10"
+
+function Has-Command([string]$name) {
   return [bool](Get-Command $name -ErrorAction SilentlyContinue)
 }
 
@@ -23,7 +25,6 @@ function Ensure-Winget {
 }
 
 function Ensure-WingetPackage([string]$Id) {
-  # Kurulu mu kontrol et
   $installed = $false
   try {
     $out = winget list -e --id $Id 2>$null | Out-String
@@ -37,48 +38,127 @@ function Ensure-WingetPackage([string]$Id) {
 
   Write-Host "Kuruluyor: $Id"
   winget install -e --id $Id --source winget --accept-package-agreements --accept-source-agreements
+  if ($LASTEXITCODE -ne 0) {
+    throw "winget install başarısız: $Id (exit $LASTEXITCODE)"
+  }
 }
 
-# --- 0) Klasor kontrol ---
+function Get-PythonInfo {
+  param(
+    [Parameter(Mandatory=$true)][string]$Command,
+    [Parameter(Mandatory=$false)][string[]]$PrefixArgs = @()
+  )
+
+  if (-not (Has-Command $Command)) { return $null }
+
+  $json = $null
+  try {
+    $json = & $Command @PrefixArgs -c "import sys, json; print(json.dumps({'version': '.'.join(map(str, sys.version_info[:3])), 'executable': sys.executable}))" 2>$null
+  } catch {
+    return $null
+  }
+
+  if (-not $json) { return $null }
+
+  try {
+    $obj = $json | ConvertFrom-Json
+    return [pscustomobject]@{
+      Command = $Command
+      PrefixArgs = $PrefixArgs
+      Version = [Version]$obj.version
+      Executable = [string]$obj.executable
+    }
+  } catch {
+    return $null
+  }
+}
+
+function Ensure-Python {
+  Refresh-Path
+
+  $candidates = @(
+    (Get-PythonInfo -Command "py" -PrefixArgs @("-3")),
+    (Get-PythonInfo -Command "python" -PrefixArgs @())
+  ) | Where-Object { $_ -ne $null }
+
+  $ok = $candidates | Where-Object { $_.Version -ge $MinPythonVersion } | Select-Object -First 1
+  if ($ok) {
+    Write-Host ("Python bulundu: {0} ({1})" -f $ok.Version, $ok.Executable)
+    return $ok
+  }
+
+  if ($candidates.Count -gt 0) {
+    $found = ($candidates | Sort-Object Version -Descending | Select-Object -First 1)
+    Write-Host ("Python bulundu ama sürüm düşük: {0} ({1}). En az {2} gerekli." -f $found.Version, $found.Executable, $MinPythonVersion) -ForegroundColor Yellow
+  } else {
+    Write-Host "Python bulunamadı. Python kurulumu deneniyor..." -ForegroundColor Yellow
+  }
+
+  Ensure-Winget
+
+  $pythonWingetIds = @(
+    "Python.Python.3",
+    "Python.Python.3.13",
+    "Python.Python.3.12",
+    "Python.Python.3.11"
+  )
+
+  $installed = $false
+  foreach ($id in $pythonWingetIds) {
+    try {
+      Ensure-WingetPackage $id
+      $installed = $true
+      break
+    } catch {
+      continue
+    }
+  }
+
+  if (-not $installed) {
+    throw ("Python kurulumu winget ile başarısız oldu. Lütfen Python {0}+ kurup tekrar deneyin." -f $MinPythonVersion)
+  }
+
+  Refresh-Path
+  $candidates = @(
+    (Get-PythonInfo -Command "py" -PrefixArgs @("-3")),
+    (Get-PythonInfo -Command "python" -PrefixArgs @())
+  ) | Where-Object { $_ -ne $null }
+
+  $ok = $candidates | Where-Object { $_.Version -ge $MinPythonVersion } | Select-Object -First 1
+  if (-not $ok) {
+    $hint = if (Has-Command "py") { "py -3" } else { "python" }
+    throw "Python hala uygun değil. Yeni bir terminal açıp tekrar deneyin ve `"$hint --version`" ile sürümü kontrol edin."
+  }
+
+  Write-Host ("Python kuruldu: {0} ({1})" -f $ok.Version, $ok.Executable)
+  return $ok
+}
+
+# --- 0) Klasör kontrol ---
 if (-not (Test-Path ".\downloader.py")) {
-  throw "downloader.py bulunamadı. install.ps1 ile aynı klasorde olmalı."
+  throw "downloader.py bulunamadı. install.ps1 ile aynı klasörde olmalı."
 }
 
-# --- 1) winget ile sistem bagimliliklari ---
+# --- 1) winget ile sistem bağımlılıkları ---
 Ensure-Winget
 Ensure-WingetPackage "Gyan.FFmpeg"
 Ensure-WingetPackage "DenoLand.Deno"
 
-# Python yoksa kurmayi dene
-Refresh-Path
-if (-not (Has-Command "python")) {
-  Write-Host "Python bulunamadı. Python kurulumu deneniyor..." -ForegroundColor Yellow
-  # Winget'te bazi sistemlerde 3.13/3.12 id'leri degisebiliyor; once 3.13 dene, olmazsa 3.12
-  try {
-    Ensure-WingetPackage "Python.Python.3.13"
-  } catch {
-    Ensure-WingetPackage "Python.Python.3.12"
-  }
-  Refresh-Path
-}
+$python = Ensure-Python
 
-if (-not (Has-Command "python")) {
-  throw "Python hala bulunamadı. Kurulumdan sonra yeni PowerShell açıp tekrar deneyin."
-}
-
-# --- 2) venv olustur ---
+# --- 2) venv oluştur ---
 if (-not (Test-Path ".\.venv")) {
   Write-Host "Virtualenv oluşturuluyor (.venv)..."
-  python -m venv .\.venv
+  & $python.Command @($python.PrefixArgs) -m venv .\.venv
 }
 
-# --- 3) venv aktif et ---
+# --- 3) venv python ---
 $venvPython = ".\.venv\Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
   throw "venv python bulunamadı: $venvPython"
 }
 
-Write-Host "pip guncelleniyor..."
+Write-Host "pip güncelleniyor..."
 & $venvPython -m pip install --upgrade pip
 
 # --- 4) Python paketleri (yt-dlp) ---
@@ -87,14 +167,14 @@ Write-Host "yt-dlp kuruluyor..."
 
 Refresh-Path
 
-# --- 5) Surum kontrolleri ---
+# --- 5) Sürüm kontrolleri ---
 Write-Host "`n--- Kontroller ---"
-try { yt-dlp --version } catch { Write-Host "yt-dlp PATH'te gorunmuyor (venv icinden calisacagiz)." -ForegroundColor Yellow }
-try { ffmpeg -version | Select-Object -First 1 } catch { Write-Host "ffmpeg calismadi. Yeni terminal acmak gerekebilir." -ForegroundColor Yellow }
-try { deno --version } catch { Write-Host "deno calismadi. Yeni terminal acmak gerekebilir." -ForegroundColor Yellow }
+try { & $venvPython -m yt_dlp --version } catch { Write-Host "yt-dlp çalışmadı (venv içinde kurulu olmalı)." -ForegroundColor Yellow }
+try { ffmpeg -version | Select-Object -First 1 } catch { Write-Host "ffmpeg çalışmadı. Yeni terminal açmak gerekebilir." -ForegroundColor Yellow }
+try { deno --version } catch { Write-Host "deno çalışmadı. Yeni terminal açmak gerekebilir." -ForegroundColor Yellow }
 
-# --- 6) Calistirmak ister misin? (tek tus) ---
-Write-Host "`nKurulum tamamlandı. ✓"
+# --- 6) Çalıştırmak ister misin? (tek tuş) ---
+Write-Host "`nKurulum tamamlandı."
 $runNow = Read-Host "Şimdi downloader.py çalıştırılsın mı? (E/H)"
 if ($runNow -match '^(E|e)$') {
   & $venvPython .\downloader.py
