@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+
+from .ui import UI
+
+
+def normalize_user_path(s: str) -> Path:
+    expanded = os.path.expandvars(s)
+    return Path(expanded).expanduser()
+
+
+def default_dirs() -> tuple[Path, Path]:
+    return Path.home() / "Videos", Path.home() / "Music"
+
+
+def load_config(config_file: Path) -> dict:
+    if not config_file.exists():
+        return {}
+    try:
+        return json.loads(config_file.read_text(encoding="utf-8"))
+    except Exception:
+        print("WARNING: config.json could not be read; it will be recreated.")
+        return {}
+
+
+def save_config(config_file: Path, cfg: dict) -> None:
+    config_file.write_text(
+        json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def delete_config(config_file: Path) -> None:
+    if config_file.exists():
+        config_file.unlink()
+
+
+def ensure_dirs_interactive(
+    ui: UI, existing_cfg: dict, *, config_file: Path, app_name: str
+) -> tuple[Path, Path, dict]:
+    """
+    Ask for download folders on first run. On later runs, reuse config.json and
+    remind the user it can be edited manually to change locations.
+    """
+    def_videos, def_music = default_dirs()
+
+    v_raw = (existing_cfg.get("videos_dir") or "").strip()
+    m_raw = (existing_cfg.get("music_dir") or "").strip()
+
+    videos_dir = normalize_user_path(v_raw) if v_raw else None
+    music_dir = normalize_user_path(m_raw) if m_raw else None
+
+    def announce_paths(v_dir: Path, m_dir: Path) -> None:
+        ui.print(f"Using download folders (Videos: {v_dir} | Music: {m_dir}).")
+        ui.print(f"To change these later, edit config.json at: {config_file}\n")
+
+    # If config already has both values, use them without asking again.
+    if videos_dir and music_dir:
+        videos_dir.mkdir(parents=True, exist_ok=True)
+        music_dir.mkdir(parents=True, exist_ok=True)
+        announce_paths(videos_dir, music_dir)
+        return videos_dir, music_dir, existing_cfg
+
+    ui.print(
+        "Download folders not set yet. Configure them now (this is only asked once)."
+    )
+
+    def ask_path(label: str, default: Path) -> Path:
+        ui.print(f"\nEnter folder path for {label} (blank = default):")
+        ui.print(f"Default: {default}")
+        s = ui.ask_text("Path: ")
+        if not s:
+            return default
+        return normalize_user_path(s)
+
+    videos_dir = ask_path("VIDEOS", videos_dir or def_videos)
+    music_dir = ask_path("MUSIC", music_dir or def_music)
+
+    videos_dir.mkdir(parents=True, exist_ok=True)
+    music_dir.mkdir(parents=True, exist_ok=True)
+
+    new_cfg = {
+        "app": app_name,
+        "videos_dir": str(videos_dir),
+        "music_dir": str(music_dir),
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    save_config(config_file, new_cfg)
+
+    ui.print("\nSettings saved:")
+    ui.print(f"  Videos: {videos_dir}")
+    ui.print(f"  Music : {music_dir}")
+    ui.print(f"  Config: {config_file}\n")
+    announce_paths(videos_dir, music_dir)
+
+    return videos_dir, music_dir, new_cfg

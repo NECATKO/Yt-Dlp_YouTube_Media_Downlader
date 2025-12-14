@@ -1,4 +1,4 @@
-# install.ps1
+﻿# install.ps1
 $ErrorActionPreference = "Stop"
 
 # Konsol çıktıları UTF-8 olsun (PowerShell 5/7 için)

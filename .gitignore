@@ -4,5 +4,6 @@
 # --- Uygulama çalışma çıktıları ---
 logs/
 archives/
+degerlendirme-raporları/
 config.json
-degerlendirme-raporu.md
+__pycache__/
