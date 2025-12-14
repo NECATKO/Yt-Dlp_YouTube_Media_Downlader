@@ -1,130 +1,72 @@
-========================================
- YouTube Downloader - Tek Tik Kullanim
-========================================
+# YouTube Downloader - Tek Tik Kullanim
 
-BU PROGRAM NE YAPIYOR?
-----------------------
+Basit bir arayuzle YouTube videolarini veya playlistlerini indirip MP4 ya da MP3 olarak kaydeden portable arac.
+
+## Bu Program Ne Yapiyor?
 - YouTube video veya playlist indirir
 - MP4 (video) veya MP3 (ses) olarak kaydeder
-- Ilk kullanimda kayit klasorlerini sorar
+- Ilk kullanimda kayit klasorlerini sorar ve kaydeder
 - Sonraki calistirmalarda ayarlari hatirlar
 - Indirilemeyen videolar icin detayli neden raporu verir
-- Tamamen PORTABLE calisir (tek klasor)
+- Tamamen portable calisir (tek klasor yeterlidir)
 
+## Kurulum ve Calistirma
+1. Klasor icindeki `Run.bat` dosyasina cift tikla.
+2. Ilk calistirmada gerekli programlar otomatik kurulur (Python, yt-dlp, ffmpeg, deno). Bu adim 2-3 dakika surebilir.
+3. Program acilinca kayit klasorlerini sorar (yalnizca ilk kez), video URL ister, MP4/MP3 secmeni ve diger ayarlari ister.
 
-NASIL CALISTIRILIR?
--------------------
-1) Bu klasorun icindeki:
-   -> Run.bat
-   dosyasina CIFT TIKLA
-
-2) Ilk calistirmada:
-   - Gerekli programlar otomatik kurulur
-     (Python, yt-dlp, ffmpeg, deno)
-   - Bu islem 2-3 dakika surebilir
-
-3) Sonra program acilir ve:
-   - Kayit klasorlerini sorar (sadece ilk kez)
-   - Video URL ister
-   - MP4 / MP3 secmeni ister
-   - Gerekli ayarlari sorar
-
-
-GEREKENLER
-----------
-- Windows 10 / Windows 11
+## Gerekenler
+- Windows 10 veya Windows 11
 - Internet baglantisi
 - Ilk kurulum icin yonetici izni gerekebilir
 
+## Klasor Yapisi (Portable)
+Program calistikca asagidaki klasorler otomatik olusur ve ayni klasorde tasinabilir.
 
-KLASOR YAPISI (PORTABLE)
-------------------------
-Program calistikca su klasorler otomatik olusur:
+```
+YouTubeDownloader/
+|
+|-- Run.bat            -> Cift tikla, her seyi baslatir
+|-- downloader.py      -> Asil program
+|-- install.ps1        -> Ilk kurulumlari yapar
+|-- README.md          -> Bu dosya
+|-- config.json        -> Kayit klasor ayarlari (otomatik)
+|
+|-- logs/              -> Tum calistirma loglari
+|   `-- yt-dlp_*.log
+|
+`-- archives/          -> Indirilen videolarin kaydi
+    `-- *.txt
+```
 
-YouTubeDownloader\
-│
-├─ Run.bat            -> Cift tikla, her seyi baslatir
-├─ downloader.py      -> Asil program
-├─ install.ps1        -> Ilk kurulumlari yapar
-├─ README.txt         -> Bu dosya
-├─ config.json        -> Kayit klasor ayarlari (otomatik)
-│
-├─ logs\              -> Tum calistirma loglari
-│   └─ yt-dlp_*.log
-│
-└─ archives\          -> Indirilen videolarin kaydi
-    └─ *.txt
+## Log Dosyalari
+- Tum calistirma kayitlari `logs/` klasorune yazilir.
+- Bir sorun olursa son `.log` dosyasini inceleyebilir veya gelistiriciyle paylasabilirsin.
 
+## Archive (Indirme Kaydi)
+- Daha once indirilen videolar tekrar indirilmez.
+- Playlist indirmeleri kaldigi yerden devam eder.
+- Tum kayitlar `archives/` klasoru icindedir.
 
-LOG DOSYALARI
--------------
-- Tum calistirma kayitlari:
-  logs\ klasoru icine yazilir
+## Ayarlar (`config.json`)
+- Ilk calistirmada olusur ve video/muzik klasorlerini hatirlar.
+- Sonraki calistirmalarda bu bilgiler dogrudan kullanilir.
+- Program icinden "Klasorleri degistir" veya "Ayarlari sifirla" secenekleriyle ayarlari yenileyebilirsin.
+- Manuel sifirlama icin `config.json` dosyasini silmek yeterlidir.
 
-- Bir sorun olursa:
-  -> logs\ klasorundeki SON .log dosyasini incele
-  -> veya bu dosyayi gelistiriciye gonder
+## Programi Tasimak
+- Tum program tek klasorde calistigi icin klasoru ZIP yapip baska bilgisayara tasiyabilirsin.
+- Yeni bilgisayarda sadece `Run.bat` dosyasina cift tiklamak yeterlidir; ayarlar, loglar ve arsiv bilgileri ayni klasorde korunur.
 
+## Sorun Giderme
+- `Run.bat` calismazsa dosyaya sag tiklayip **Yonetici olarak calistir** sec.
+- Indirme baslamazsa internet baglantisini kontrol et ve `logs/` icindeki log dosyasina bak.
+- Program aniden kapanirsa log dosyasi nedeni gosterir.
 
-ARCHIVE (INDIRME KAYDI)
------------------------
-- Daha once indirilen videolar tekrar indirilmez
-- Playlist devam ettirilebilir
-- Tum kayitlar:
-  archives\ klasoru icindedir
+## Notlar
+- MP4 modunda uyumluluk veya kalite profili secilebilir.
+- MP3 modunda en yuksek kalite MP3 olusturulur.
+- Playlist indirirken atlanan videolarin nedenleri ayrintili olarak listelenir.
 
-
-AYARLAR (config.json)
----------------------
-- Ilk calistirmada olusur
-- Video ve Muzik klasorlerini hatirlar
-- Sonraki calistirmalarda tekrar sormaz
-
-Ayar secenekleri:
-- Program icinden:
-  -> "Klasorleri degistir"
-  -> "Ayarlari sifirla"
-
-- Manuel sifirlama:
-  -> config.json dosyasini sil
-
-
-PROGRAMI TASIMAK
-----------------
-- Tum program TEK klasorde calisir
-- Baska bilgisayara tasimak icin:
-  -> Klasoru ZIP yap
-  -> Diger bilgisayara kopyala
-  -> Run.bat'e cift tikla
-
-Ayarlar, loglar ve archive bilgileri
-AYNI klasorde korunur.
-
-
-SORUN GIDERME
--------------
-- Run.bat calismazsa:
-  -> Sag tik > Yonetici olarak calistir
-
-- Indirme baslamazsa:
-  -> Internet baglantisini kontrol et
-  -> logs\ klasorundeki log dosyasini incele
-
-- Program kapanirsa:
-  -> Log dosyasi nedeni gosterir
-
-
-NOTLAR
-------
-- MP4 modunda:
-  -> Uyumluluk veya Kalite profili secilebilir
-- MP3 modunda:
-  -> En yuksek kalite MP3 uretilir
-- Playlist indirirken:
-  -> Atlanan videolarin nedeni listelenir
-
-
-KEYIFLI KULLANIMLAR 🚀
-----------------------------------------
-Bu arac egitim ve kisisel kullanim amaciyla
-hazirlanmistir.
+## Keyifli Kullanimlar
+Bu arac egitim ve kisisel kullanim amaciyla hazirlanmistir.
