@@ -1,72 +1,81 @@
-# YouTube Downloader - Tek Tık Kullanim
+# yt-dlp Downloader (portable)
 
-Basit bir arayuzle YouTube videolarini veya playlistlerini indirip MP4 ya da MP3 olarak kaydeden portable arac.
+Small Windows console helper around yt-dlp/ffmpeg. Prompts for folders on first run, lets you pick MP4/MP3, handles playlists, keeps archives, and writes logs.
 
-## Bu Program Ne Yapiyor?
-- YouTube video veya playlist indirir
-- MP4 (video) veya MP3 (ses) olarak kaydeder
-- Ilk kullanimda kayit klasorlerini sorar ve kaydeder
-- Sonraki calistirmalarda ayarlari hatirlar
-- Indirilemeyen videolar icin detayli neden raporu verir
-- Tamamen portable calisir (tek klasor yeterlidir)
+## How it works
+- Launch `Run.bat`. First run installs Python 3.10+, yt-dlp inside `.venv`, ffmpeg, and Deno through winget.
+- You are asked once for base download folders (defaults: `Videos` and `Music`). Choices are saved to `config.json`.
+- Each session: enter a URL, choose MP4 or MP3, decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
+- yt-dlp runs with resume/retry flags; archive files prevent duplicates; a log captures the full command output.
+- When a playlist is used, skipped items are probed and reasons are printed (private, region blocked, missing formats, etc.).
+- After finishing, you can immediately start another download from the same session.
 
-## Kurulum ve Calistirma
-1. Klasor icindeki `Run.bat` dosyasina cift tikla.
-2. Ilk calistirmada gerekli programlar otomatik kurulur (Python, yt-dlp, ffmpeg, deno). Bu adim 2-3 dakika surebilir.
-3. Program acilinca kayit klasorlerini sorar (yalnizca ilk kez), video URL ister, MP4/MP3 secmeni ve diger ayarlari ister.
+## Output layout
+- MP4 playlist: `<Videos>/yt-dlp/<playlist_title>/<index> - <title>.mp4`, archive `archives/playlist_<playlist_id>_mp4.txt`
+- MP4 single: `<Videos>/Downloaded Videos/<title>.mp4`, archive `archives/single_videos_mp4.txt`
+- MP3 playlist: `<Music>/yt-dlp/<playlist_title>/<index> - <title>.mp3`, archive `archives/playlist_<playlist_id>_mp3.txt`
+- MP3 single: `<Music>/Downloaded Music/<title>.mp3`, archive `archives/single_audios_mp3.txt`
+- Logs: `logs/yt-dlp_<mode>_<playlist|single>_<timestamp>.log`
 
-## Gerekenler
-- Windows 10 veya Windows 11
-- Internet baglantisi
-- Ilk kurulum icin yonetici izni gerekebilir
+## MP4 profiles
+- Compatibility: try avc1/mp4a lossless merges first, then recode remaining items to MP4.
+- Quality: no recode; keep best streams and mux. Container choice: safe MKV, or MP4 remux (may fail if codecs are incompatible).
+- MP3 mode always downloads bestaudio, converts to MP3, and embeds metadata/thumbnail.
 
-## Klasor Yapisi (Portable)
-Program calistikca asagidaki klasorler otomatik olusur ve ayni klasorde tasinabilir.
+## Config and state
+- `config.json` stores `videos_dir`, `music_dir`, `app`, `saved_at`. Delete it to be prompted again.
+- Archive text files in `archives/` drive `--download-archive`; removing one forces re-download for that scope.
+- Logs in `logs/` mirror the console output for troubleshooting.
 
-```
-YouTubeDownloader/
-|
-|-- Run.bat            -> Cift tikla, her seyi baslatir
-|-- downloader.py      -> Asil program
-|-- install.ps1        -> Ilk kurulumlari yapar
-|-- README.md          -> Bu dosya
-|-- config.json        -> Kayit klasor ayarlari (otomatik)
-|
-|-- logs/              -> Tum calistirma loglari
-|   `-- yt-dlp_*.log
-|
-`-- archives/          -> Indirilen videolarin kaydi
-    `-- *.txt
-```
+## Files in this folder
+- `Run.bat`: one-click start plus silent `update.ps1` check (preserves `.venv`, `config.json`, `logs`, `archives`).
+- `install.ps1`: installs dependencies and creates `.venv` with yt-dlp.
+- `downloader.py`: entry point that calls the app in `ytdlp_app/`.
+- `ytdlp_app/`: Python modules for prompts, yt-dlp command builders, playlist probing, and logging utilities.
 
-## Log Dosyalari
-- Tum calistirma kayitlari `logs/` klasorune yazilir.
-- Bir sorun olursa son `.log` dosyasini inceleyebilir veya gelistiriciyle paylasabilirsin.
+## Troubleshooting
+- If install fails, run `Run.bat` as Administrator and ensure winget/internet access.
+- If yt-dlp or ffmpeg is not found, rerun `install.ps1` or open a new terminal after installation.
+- Delete `config.json` to change the download folders on next launch.
 
-## Archive (Indirme Kaydi)
-- Daha once indirilen videolar tekrar indirilmez.
-- Playlist indirmeleri kaldigi yerden devam eder.
-- Tum kayitlar `archives/` klasoru icindedir.
+---
 
-## Ayarlar (`config.json`)
-- Ilk calistirmada olusur ve video/muzik klasorlerini hatirlar.
-- Sonraki calistirmalarda bu bilgiler dogrudan kullanilir.
-- Program icinden "Klasorleri degistir" veya "Ayarlari sifirla" secenekleriyle ayarlari yenileyebilirsin.
-- Manuel sifirlama icin `config.json` dosyasini silmek yeterlidir.
+## yt-dlp Downloader (taşınabilir) — Türkçe
 
-## Programi Tasimak
-- Tum program tek klasorde calistigi icin klasoru ZIP yapip baska bilgisayara tasiyabilirsin.
-- Yeni bilgisayarda sadece `Run.bat` dosyasina cift tiklamak yeterlidir; ayarlar, loglar ve arsiv bilgileri ayni klasorde korunur.
+Küçük Windows konsol yardımcısı: yt-dlp/ffmpeg üzerinde çalışır. İlk açılışta klasör sorar, MP4/MP3 seçtirir, playlist veya tek video indirir, arşiv ve log tutar.
 
-## Sorun Giderme
-- `Run.bat` calismazsa dosyaya sag tiklayip **Yonetici olarak calistir** sec.
-- Indirme baslamazsa internet baglantisini kontrol et ve `logs/` icindeki log dosyasina bak.
-- Program aniden kapanirsa log dosyasi nedeni gosterir.
+### Nasıl çalışır
+- `Run.bat` ile başlat. İlk çalıştırmada winget ile Python 3.10+, `.venv` içinde yt-dlp, ffmpeg ve Deno kurulur.
+- İlk seferde video/müzik klasörlerini sorar (varsayılan: `Videolar`, `Müzik`). Tercihler `config.json` içine kaydedilir.
+- Her oturumda: URL gir, MP4/MP3 seç, playlist URL’si için tüm liste mi tek video mu karar ver, MP4 ise profil seç.
+- yt-dlp devam/tekrar dene bayraklarıyla çalışır; arşiv dosyaları tekrar indirmeyi engeller; konsol çıktısı log’a yazılır.
+- Playlist indirirken atlananlar için sebep yoklama (özel, bölge kısıtı, format eksik vb.) yapılır ve ekrana yazılır.
+- İndirme bitince aynı oturumda hemen yeni URL indirebilirsin.
 
-## Notlar
-- MP4 modunda uyumluluk veya kalite profili secilebilir.
-- MP3 modunda en yuksek kalite MP3 olusturulur.
-- Playlist indirirken atlanan videolarin nedenleri ayrintili olarak listelenir.
+### Çıktı düzeni
+- MP4 playlist: `<Videos>/yt-dlp/<playlist_title>/<index> - <title>.mp4`, arşiv `archives/playlist_<playlist_id>_mp4.txt`
+- MP4 tek video: `<Videos>/Downloaded Videos/<title>.mp4`, arşiv `archives/single_videos_mp4.txt`
+- MP3 playlist: `<Music>/yt-dlp/<playlist_title>/<index> - <title>.mp3`, arşiv `archives/playlist_<playlist_id>_mp3.txt`
+- MP3 tek parça: `<Music>/Downloaded Music/<title>.mp3`, arşiv `archives/single_audios_mp3.txt`
+- Loglar: `logs/yt-dlp_<mode>_<playlist|single>_<timestamp>.log`
 
-## Keyifli Kullanimlar
-Bu arac egitim ve kisisel kullanim amaciyla hazirlanmistir.
+### MP4 profilleri
+- Uyumluluk: önce avc1/mp4a kayıpsız birleştirme dener, kalanları MP4’e yeniden kodlar.
+- Kalite: yeniden kodlama yok; en iyi akışları korur ve mux eder. Kapsayıcı seçimi: güvenli MKV veya MP4 remux (codec uyumsuzsa hata verebilir).
+- MP3 modu en iyi sesi indirir, MP3’e çevirir, metadata/thumbnail gömer.
+
+### Ayarlar ve durum
+- `config.json` içinde `videos_dir`, `music_dir`, `app`, `saved_at` saklanır. Silersen klasör sorusu yeniden çıkar.
+- `archives/` içindeki metin dosyaları `--download-archive` için kullanılır; silersen ilgili kapsam yeniden indirilir.
+- `logs/` konsol çıktısını sorun gidermek için saklar.
+
+### Bu klasörde neler var
+- `Run.bat`: tek tık başlatma, sessiz `update.ps1` kontrolü (`.venv`, `config.json`, `logs`, `archives` korunur).
+- `install.ps1`: bağımlılıkları kurar, yt-dlp içeren `.venv` oluşturur.
+- `downloader.py`: `ytdlp_app/` içindeki uygulamayı çağıran giriş noktası.
+- `ytdlp_app/`: prompt’lar, yt-dlp komut inşası, playlist yoklama ve log yardımcıları.
+
+### Sorun giderme
+- Kurulum hata verirse `Run.bat`’i Yönetici olarak çalıştır; winget ve internet erişimini doğrula.
+- yt-dlp veya ffmpeg bulunamazsa `install.ps1`’i tekrar çalıştır veya yeni bir terminal aç.
+- İndirme klasörlerini değiştirmek için `config.json` dosyasını sil ve programı yeniden başlat.
