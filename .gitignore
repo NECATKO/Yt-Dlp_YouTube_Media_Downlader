@@ -1,0 +1,7 @@
+# --- Python sanal ortam ---
+.venv/
+
+# --- Uygulama çalışma çıktıları ---
+logs/
+archives/
+config.json
