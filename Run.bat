@@ -1,11 +1,16 @@
-chcp 65001 > nul
-set PYTHONUTF8=1
 @echo off
+REM Konsol ve Python ciktilarinin UTF-8 olmasi icin kod sayfasini degistir
+chcp 65001 > nul
 setlocal
+set PYTHONUTF8=1
+set PYTHONIOENCODING=utf-8
 title YouTube Downloader - Tek Tik Calistirici
 
 REM --- Bulundugu klasore gec ---
 cd /d "%~dp0"
+
+REM --- Otomatik update kontrol (sessiz) ---
+powershell -ExecutionPolicy Bypass -File "%~dp0update.ps1" -Quiet
 
 echo ==========================================
 echo   YouTube Downloader - Tek Tik Baslatma

@@ -1,5 +1,9 @@
-# install.ps1
+﻿# install.ps1
 $ErrorActionPreference = "Stop"
+
+# Konsol ciktilari UTF-8 olsun (PowerShell 5/7 icin)
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 function Has-Command($name) {
   return [bool](Get-Command $name -ErrorAction SilentlyContinue)
@@ -35,21 +39,21 @@ function Ensure-WingetPackage([string]$Id) {
   winget install -e --id $Id --source winget --accept-package-agreements --accept-source-agreements
 }
 
-# --- 0) Klasör kontrol ---
+# --- 0) Klasor kontrol ---
 if (-not (Test-Path ".\downloader.py")) {
-  throw "downloader.py bulunamadı. install.ps1 ile aynı klasörde olmalı."
+  throw "downloader.py bulunamadı. install.ps1 ile aynı klasorde olmalı."
 }
 
-# --- 1) winget ile sistem bağımlılıkları ---
+# --- 1) winget ile sistem bagimliliklari ---
 Ensure-Winget
 Ensure-WingetPackage "Gyan.FFmpeg"
 Ensure-WingetPackage "DenoLand.Deno"
 
-# Python yoksa kurmayı dene
+# Python yoksa kurmayi dene
 Refresh-Path
 if (-not (Has-Command "python")) {
   Write-Host "Python bulunamadı. Python kurulumu deneniyor..." -ForegroundColor Yellow
-  # Winget'te bazı sistemlerde 3.13/3.12 id'leri değişebiliyor; önce 3.13 dene, olmazsa 3.12
+  # Winget'te bazi sistemlerde 3.13/3.12 id'leri degisebiliyor; once 3.13 dene, olmazsa 3.12
   try {
     Ensure-WingetPackage "Python.Python.3.13"
   } catch {
@@ -62,7 +66,7 @@ if (-not (Has-Command "python")) {
   throw "Python hala bulunamadı. Kurulumdan sonra yeni PowerShell açıp tekrar deneyin."
 }
 
-# --- 2) venv oluştur ---
+# --- 2) venv olustur ---
 if (-not (Test-Path ".\.venv")) {
   Write-Host "Virtualenv oluşturuluyor (.venv)..."
   python -m venv .\.venv
@@ -74,7 +78,7 @@ if (-not (Test-Path $venvPython)) {
   throw "venv python bulunamadı: $venvPython"
 }
 
-Write-Host "pip güncelleniyor..."
+Write-Host "pip guncelleniyor..."
 & $venvPython -m pip install --upgrade pip
 
 # --- 4) Python paketleri (yt-dlp) ---
@@ -83,14 +87,14 @@ Write-Host "yt-dlp kuruluyor..."
 
 Refresh-Path
 
-# --- 5) Sürüm kontrolleri ---
+# --- 5) Surum kontrolleri ---
 Write-Host "`n--- Kontroller ---"
-try { yt-dlp --version } catch { Write-Host "yt-dlp PATH'te görünmüyor (venv içinden çalışacağız)." -ForegroundColor Yellow }
-try { ffmpeg -version | Select-Object -First 1 } catch { Write-Host "ffmpeg çalışmadı. Yeni terminal açmak gerekebilir." -ForegroundColor Yellow }
-try { deno --version } catch { Write-Host "deno çalışmadı. Yeni terminal açmak gerekebilir." -ForegroundColor Yellow }
+try { yt-dlp --version } catch { Write-Host "yt-dlp PATH'te gorunmuyor (venv icinden calisacagiz)." -ForegroundColor Yellow }
+try { ffmpeg -version | Select-Object -First 1 } catch { Write-Host "ffmpeg calismadi. Yeni terminal acmak gerekebilir." -ForegroundColor Yellow }
+try { deno --version } catch { Write-Host "deno calismadi. Yeni terminal acmak gerekebilir." -ForegroundColor Yellow }
 
-# --- 6) Çalıştırmak ister misin? (tek tuş) ---
-Write-Host "`nKurulum tamamlandı. ✅"
+# --- 6) Calistirmak ister misin? (tek tus) ---
+Write-Host "`nKurulum tamamlandı. ✓"
 $runNow = Read-Host "Şimdi downloader.py çalıştırılsın mı? (E/H)"
 if ($runNow -match '^(E|e)$') {
   & $venvPython .\downloader.py

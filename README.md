@@ -1,4 +1,4 @@
-# YouTube Downloader - Tek Tik Kullanim
+# YouTube Downloader - Tek Tık Kullanim
 
 Basit bir arayuzle YouTube videolarini veya playlistlerini indirip MP4 ya da MP3 olarak kaydeden portable arac.
 
