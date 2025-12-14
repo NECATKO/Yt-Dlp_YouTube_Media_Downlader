@@ -39,7 +39,9 @@ def fetch_playlist_entries(
     cmd = ["yt-dlp", "--flat-playlist", "-J", "--yes-playlist", url] + js_args
     rc, out, err = runner(cmd)
     if rc != 0 or not out.strip():
-        raise RuntimeError(f"Playlist JSON alnamad.\nreturncode={rc}\nstderr:\n{err}")
+        raise RuntimeError(
+            f"Could not fetch playlist JSON.\nreturncode={rc}\nstderr:\n{err}"
+        )
 
     data = json.loads(out)
     entries = data.get("entries") or []

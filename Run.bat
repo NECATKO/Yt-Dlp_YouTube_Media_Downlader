@@ -1,46 +1,46 @@
 @echo off
-REM Konsol ve Python ciktilarinin UTF-8 olmasi icin kod sayfasini degistir
+REM Ensure console and Python output uses UTF-8
 chcp 65001 > nul
 setlocal
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
-title YouTube Downloader - Tek Tik Calistirici
+title YouTube Downloader - One Click Launcher
 
-REM --- Bulundugu klasore gec ---
+REM --- Move to this directory ---
 cd /d "%~dp0"
 
-REM --- Otomatik update kontrol (sessiz) ---
+REM --- Silent update check ---
 powershell -ExecutionPolicy Bypass -File "%~dp0update.ps1" -Quiet
 
 echo ==========================================
-echo   YouTube Downloader - Tek Tik Baslatma
+echo   YouTube Downloader - One Click Launch
 echo ==========================================
 echo.
 
-REM --- Kurulum kontrolu ---
+REM --- Install check ---
 if not exist ".venv\Scripts\python.exe" (
-    echo [1/2] Ilk kurulum yapiliyor...
+    echo [1/2] Running first-time setup...
     echo.
     powershell -ExecutionPolicy Bypass -File "%~dp0install.ps1"
     if errorlevel 1 (
         echo.
-        echo HATA: Kurulum basarisiz oldu.
-        echo Lutfen install.ps1 ciktisini kontrol edin.
+        echo ERROR: Setup failed.
+        echo Please review install.ps1 output.
         pause
         exit /b 1
     )
 ) else (
-    echo [1/2] Kurulum zaten mevcut, atlandi.
+    echo [1/2] Setup already present, skipping.
 )
 
 echo.
-echo [2/2] Program baslatiliyor...
+echo [2/2] Starting app...
 echo.
 
-REM --- Programi calistir ---
+REM --- Run program ---
 ".venv\Scripts\python.exe" "%~dp0downloader.py"
 
 echo.
-echo Program kapandi.
+echo Application closed.
 pause
 endlocal

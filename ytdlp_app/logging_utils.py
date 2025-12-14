@@ -37,6 +37,8 @@ def log_error(
     stamp = datetime.now().isoformat(timespec="seconds")
     header = f"\n[ERROR {stamp}] {title}\n"
     print(header.strip())
+    if log_path:
+        print(f"(details written to {log_path})")
 
     details = header
     if ex is not None:
@@ -46,3 +48,11 @@ def log_error(
     details += "\n"
 
     append_log(log_path, details)
+
+
+def log_info(log_path: Path | None, message: str) -> None:
+    """
+    Lightweight info-level log entry with timestamp.
+    """
+    stamp = datetime.now().isoformat(timespec="seconds")
+    append_log(log_path, f"[INFO {stamp}] {message}\n")

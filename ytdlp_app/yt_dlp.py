@@ -5,8 +5,15 @@ from pathlib import Path
 from .models import Mode
 
 
-def build_js_args() -> list[str]:
-    return ["--js-runtime", "deno", "--remote-components", "ejs:github"]
+def build_js_args(use_deno: bool = True) -> list[str]:
+    """
+    Build JS/runtime related arguments. When Deno is missing, fall back to no
+    explicit runtime to avoid hard failures.
+    """
+    base = ["--remote-components", "ejs:github"]
+    if not use_deno:
+        return base
+    return ["--js-runtime", "deno"] + base
 
 
 def build_stability_args() -> list[str]:

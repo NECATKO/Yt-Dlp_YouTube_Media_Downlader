@@ -15,7 +15,7 @@ from .playlist import (
     read_archive_ids,
 )
 from .skip_probe import probe_skip_reason
-from .system import ffmpeg_available, yt_dlp_available
+from .system import deno_available, ffmpeg_available, yt_dlp_available
 from .ui import ConsoleUI
 from .yt_dlp import (
     build_common_args,
@@ -83,6 +83,8 @@ def run() -> int:
             mode = "mp4" if mode_choice == 1 else "mp3"
 
             # 3) Pre-flight checks (install.ps1 should handle, but check anyway)
+            deno_ok = deno_available()
+
             if not yt_dlp_available():
                 ui.print("ERROR: 'yt-dlp' not found. Run install.ps1 first.")
                 return 0
@@ -93,6 +95,13 @@ def run() -> int:
                     "- MP3 mode may fail to convert audio.\n"
                     "- MP4 mode may fail to merge/recode and attach thumbnails.\n"
                     "Fix: run install.ps1 or install ffmpeg and add it to PATH.\n"
+                )
+
+            if not deno_ok:
+                ui.print(
+                    "\nWARNING: Deno runtime not found.\n"
+                    "- Some videos may fail if yt-dlp cannot solve JS challenges.\n"
+                    "- Install Deno (https://deno.com) or rerun install.ps1.\n"
                 )
 
             # 4) Playlist vs single video
@@ -180,6 +189,7 @@ def run() -> int:
             ui.print(f"Output template: {output_template}")
             ui.print(f"Archive file: {archive_path}")
             ui.print(f"Log file: {log_path}")
+            ui.print(f"Deno available: {deno_ok}")
             if mode == "mp4":
                 ui.print(
                     f"MP4 profile: {'Compatibility' if mp4_profile == 1 else 'Quality'}"
@@ -195,7 +205,7 @@ def run() -> int:
                     f"base_dir={base_dir}\n"
                     f"output_template={output_template}\n"
                     f"archive_path={archive_path}\n"
-                    f"ffmpeg_available={ffmpeg_available()} yt_dlp_available={yt_dlp_available()}\n"
+                    f"ffmpeg_available={ffmpeg_available()} yt_dlp_available={yt_dlp_available()} deno_available={deno_ok}\n"
                     + "=" * 80
                     + "\n"
                 ),
@@ -203,7 +213,7 @@ def run() -> int:
 
             # 7) yt-dlp arguments
             playlist_flag = "--yes-playlist" if is_playlist else "--no-playlist"
-            js_args = build_js_args()
+            js_args = build_js_args(use_deno=deno_ok)
             stability_args = build_stability_args()
             common_args = build_common_args(
                 output_template=output_template,

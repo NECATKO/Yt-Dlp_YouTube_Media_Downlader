@@ -9,3 +9,10 @@ def ffmpeg_available() -> bool:
 
 def yt_dlp_available() -> bool:
     return shutil.which("yt-dlp") is not None
+
+
+def deno_available() -> bool:
+    """
+    Detect whether the Deno runtime is on PATH.
+    """
+    return shutil.which("deno") is not None
