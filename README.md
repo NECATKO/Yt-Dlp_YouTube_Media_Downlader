@@ -1,81 +1,185 @@
 # yt-dlp Downloader (portable)
 
-Small Windows console helper around yt-dlp/ffmpeg. Prompts for folders on first run, lets you pick MP4/MP3, handles playlists, keeps archives, and writes logs.
+A portable Windows console application that wraps yt-dlp and ffmpeg. Features interactive folder setup, MP4/MP3 mode selection, playlist handling, download archives to prevent duplicates, colorized console output, and detailed logging.
+
+## Features
+- **One-click setup**: Automatically installs Python 3.10+, yt-dlp, ffmpeg, and Deno via winget
+- **Auto-update**: Silent update checks from GitHub releases on each launch
+- **Interactive prompts**: Choose MP4/MP3 mode, playlist vs single video, and quality profiles
+- **Colorized output**: Syntax-highlighted console output (downloads in green, errors in red, warnings in yellow, etc.)
+- **Skip reporting**: Explains why playlist items were skipped (private, region-blocked, age-restricted, members-only, etc.)
+- **Session continuity**: Download multiple URLs in a single session without restarting
 
 ## How it works
-- Launch `Run.bat`. First run installs Python 3.10+, yt-dlp inside `.venv`, ffmpeg, and Deno through winget.
-- You are asked once for base download folders (defaults: `Videos` and `Music`). Choices are saved to `config.json`.
-- Each session: enter a URL, choose MP4 or MP3, decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
-- yt-dlp runs with resume/retry flags; archive files prevent duplicates; a log captures the full command output.
-- When a playlist is used, skipped items are probed and reasons are printed (private, region blocked, missing formats, etc.).
-- After finishing, you can immediately start another download from the same session.
+1. Launch `Run.bat`. First run installs Python 3.10+, yt-dlp inside `.venv`, ffmpeg, and Deno through winget.
+2. You are asked once for base download folders (defaults: `Videos` and `Music`). Choices are saved to `config.json`.
+3. Each session: enter a URL, choose Video (MP4) or Audio (MP3), decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
+4. yt-dlp runs with resume/retry flags (`--continue`, `--retries infinite`, `--fragment-retries infinite`); archive files prevent duplicates; a log captures the full command output.
+5. When a playlist is used, skipped items are probed and reasons are printed (private, region blocked, age-restricted, members-only, copyright, etc.).
+6. After finishing, you can immediately start another download from the same session.
 
 ## Output layout
-- MP4 playlist: `<Videos>/yt-dlp/<playlist_title>/<index> - <title>.mp4`, archive `archives/playlist_<playlist_id>_mp4.txt`
-- MP4 single: `<Videos>/Downloaded Videos/<title>.mp4`, archive `archives/single_videos_mp4.txt`
-- MP3 playlist: `<Music>/yt-dlp/<playlist_title>/<index> - <title>.mp3`, archive `archives/playlist_<playlist_id>_mp3.txt`
-- MP3 single: `<Music>/Downloaded Music/<title>.mp3`, archive `archives/single_audios_mp3.txt`
+| Mode | Type | Output Path | Archive File |
+|------|------|-------------|--------------|
+| MP4 | Playlist | `<Videos>/yt-dlp/<playlist_title>/<index> - <title>.mp4` | `archives/playlist_<playlist_id>_mp4.txt` |
+| MP4 | Single | `<Videos>/Downloaded Videos/<title>.mp4` | `archives/single_videos_mp4.txt` |
+| MP3 | Playlist | `<Music>/yt-dlp/<playlist_title>/<index> - <title>.mp3` | `archives/playlist_<playlist_id>_mp3.txt` |
+| MP3 | Single | `<Music>/Downloaded Music/<title>.mp3` | `archives/single_audios_mp3.txt` |
+
 - Logs: `logs/yt-dlp_<mode>_<playlist|single>_<timestamp>.log`
 
 ## MP4 profiles
-- Compatibility: try avc1/mp4a lossless merges first, then recode remaining items to MP4.
-- Quality: no recode; keep best streams and mux. Container choice: safe MKV, or MP4 remux (may fail if codecs are incompatible).
-- MP3 mode always downloads bestaudio, converts to MP3, and embeds metadata/thumbnail.
+1. **Compatibility** (two-stage download):
+   - Stage 1: Tries lossless MP4 merge when avc1 video + mp4a audio are available
+   - Stage 2: Downloads remaining items and recodes to MP4
+2. **Quality** (no recode):
+   - Downloads best video + best audio without transcoding
+   - Container choice:
+     - **Safe (MKV)**: Recommended, always works
+     - **MP4 remux**: May fail if codecs are incompatible
+
+## MP3 mode
+- Downloads best available audio (`bestaudio/best`)
+- Converts to MP3 with highest quality (`--audio-quality 0`)
+- Embeds metadata, thumbnail (converted to JPG)
 
 ## Config and state
-- `config.json` stores `videos_dir`, `music_dir`, `app`, `saved_at`. Delete it to be prompted again.
-- Archive text files in `archives/` drive `--download-archive`; removing one forces re-download for that scope.
-- Logs in `logs/` mirror the console output for troubleshooting.
+| File | Description |
+|------|-------------|
+| `config.json` | Stores `app`, `videos_dir`, `music_dir`, `saved_at`. Delete to reconfigure. |
+| `archives/*.txt` | Download archives for `--download-archive`. Delete to force re-download. |
+| `logs/*.log` | Full command output with timestamps. Useful for troubleshooting. |
+| `app_version.txt` | Tracks current version for auto-update. |
 
 ## Files in this folder
-- `Run.bat`: one-click start plus silent `update.ps1` check (preserves `.venv`, `config.json`, `logs`, `archives`).
-- `install.ps1`: installs dependencies and creates `.venv` with yt-dlp.
-- `downloader.py`: entry point that calls the app in `ytdlp_app/`.
-- `ytdlp_app/`: Python modules for prompts, yt-dlp command builders, playlist probing, and logging utilities.
+| File | Description |
+|------|-------------|
+| `Run.bat` | One-click start. Runs silent update check, installs deps if needed, launches app. |
+| `install.ps1` | Installs Python, ffmpeg, Deno via winget. Creates `.venv` with yt-dlp. |
+| `update.ps1` | Auto-updater. Downloads new releases from GitHub, preserves user data. |
+| `downloader.py` | Entry point that calls `ytdlp_app.app.run()`. |
+| `ytdlp_app/` | Python package with modular components (see below). |
+
+### ytdlp_app/ modules
+| Module | Description |
+|--------|-------------|
+| `app.py` | Main application loop, coordinates all components |
+| `config.py` | Config loading/saving, interactive folder setup |
+| `ui.py` | Console UI with prompts and menus (Protocol-based for testability) |
+| `yt_dlp.py` | Builds yt-dlp command arguments for different modes |
+| `exec.py` | Command execution with output streaming and logging |
+| `playlist.py` | Playlist detection, entry fetching, archive reading |
+| `skip_probe.py` | Probes skipped items to determine skip reason |
+| `logging_utils.py` | Logging utilities with colorized output |
+| `system.py` | Checks for ffmpeg, yt-dlp, deno availability |
+| `models.py` | Data classes for paths, config, entries, and download plans |
+
+## Requirements
+- Windows 10/11 with winget (Windows App Installer)
+- Internet connection for installation and downloads
 
 ## Troubleshooting
-- If install fails, run `Run.bat` as Administrator and ensure winget/internet access.
-- If yt-dlp or ffmpeg is not found, rerun `install.ps1` or open a new terminal after installation.
-- Delete `config.json` to change the download folders on next launch.
+| Problem | Solution |
+|---------|----------|
+| Install fails | Run `Run.bat` as Administrator. Ensure winget and internet access. |
+| yt-dlp/ffmpeg not found | Rerun `install.ps1` or open a new terminal after installation. |
+| Change download folders | Delete `config.json` and relaunch. |
+| Force re-download | Delete the relevant archive file in `archives/`. |
+| Deno warning appears | Install Deno: `winget install DenoLand.Deno` or rerun `install.ps1`. |
+
+## License
+See [LICENSE](LICENSE) for details.
 
 ---
 
 ## yt-dlp Downloader (taşınabilir) — Türkçe
 
-Küçük Windows konsol yardımcısı: yt-dlp/ffmpeg üzerinde çalışır. İlk açılışta klasör sorar, MP4/MP3 seçtirir, playlist veya tek video indirir, arşiv ve log tutar.
+yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir Windows konsol uygulaması. İnteraktif klasör kurulumu, MP4/MP3 mod seçimi, playlist yönetimi, tekrarları engelleyen arşiv sistemi, renkli konsol çıktısı ve detaylı loglama özellikleri sunar.
+
+## Özellikler
+- **Tek tıkla kurulum**: Python 3.10+, yt-dlp, ffmpeg ve Deno winget ile otomatik kurulur
+- **Otomatik güncelleme**: Her açılışta GitHub'dan sessiz güncelleme kontrolü
+- **İnteraktif menüler**: MP4/MP3 modu, playlist/tek video seçimi ve kalite profilleri
+- **Renkli çıktı**: Söz dizimi vurgulu konsol çıktısı (indirmeler yeşil, hatalar kırmızı, uyarılar sarı, vb.)
+- **Atlama raporu**: Playlist öğelerinin neden atlandığını açıklar (özel, bölge kısıtı, yaş kısıtı, üyelik gerekli, vb.)
+- **Oturum sürekliliği**: Tek oturumda yeniden başlatmadan birden fazla URL indir
 
 ### Nasıl çalışır
-- `Run.bat` ile başlat. İlk çalıştırmada winget ile Python 3.10+, `.venv` içinde yt-dlp, ffmpeg ve Deno kurulur.
-- İlk seferde video/müzik klasörlerini sorar (varsayılan: `Videolar`, `Müzik`). Tercihler `config.json` içine kaydedilir.
-- Her oturumda: URL gir, MP4/MP3 seç, playlist URL’si için tüm liste mi tek video mu karar ver, MP4 ise profil seç.
-- yt-dlp devam/tekrar dene bayraklarıyla çalışır; arşiv dosyaları tekrar indirmeyi engeller; konsol çıktısı log’a yazılır.
-- Playlist indirirken atlananlar için sebep yoklama (özel, bölge kısıtı, format eksik vb.) yapılır ve ekrana yazılır.
-- İndirme bitince aynı oturumda hemen yeni URL indirebilirsin.
+1. `Run.bat` ile başlat. İlk çalıştırmada winget ile Python 3.10+, `.venv` içinde yt-dlp, ffmpeg ve Deno kurulur.
+2. İlk seferde video/müzik klasörlerini sorar (varsayılan: `Videos`, `Music`). Tercihler `config.json` içine kaydedilir.
+3. Her oturumda: URL gir, Video (MP4) veya Ses (MP3) seç, playlist URL'si için tüm liste mi tek video mu karar ver, MP4 ise profil seç.
+4. yt-dlp devam/tekrar dene bayraklarıyla (`--continue`, `--retries infinite`, `--fragment-retries infinite`) çalışır; arşiv dosyaları tekrar indirmeyi engeller; konsol çıktısı log'a yazılır.
+5. Playlist indirirken atlananlar için sebep yoklama (özel, bölge kısıtı, yaş kısıtı, üyelik gerekli, telif hakkı, vb.) yapılır ve ekrana yazılır.
+6. İndirme bitince aynı oturumda hemen yeni URL indirebilirsin.
 
 ### Çıktı düzeni
-- MP4 playlist: `<Videos>/yt-dlp/<playlist_title>/<index> - <title>.mp4`, arşiv `archives/playlist_<playlist_id>_mp4.txt`
-- MP4 tek video: `<Videos>/Downloaded Videos/<title>.mp4`, arşiv `archives/single_videos_mp4.txt`
-- MP3 playlist: `<Music>/yt-dlp/<playlist_title>/<index> - <title>.mp3`, arşiv `archives/playlist_<playlist_id>_mp3.txt`
-- MP3 tek parça: `<Music>/Downloaded Music/<title>.mp3`, arşiv `archives/single_audios_mp3.txt`
+| Mod | Tür | Çıktı Yolu | Arşiv Dosyası |
+|-----|-----|------------|---------------|
+| MP4 | Playlist | `<Videos>/yt-dlp/<playlist_title>/<index> - <title>.mp4` | `archives/playlist_<playlist_id>_mp4.txt` |
+| MP4 | Tek video | `<Videos>/Downloaded Videos/<title>.mp4` | `archives/single_videos_mp4.txt` |
+| MP3 | Playlist | `<Music>/yt-dlp/<playlist_title>/<index> - <title>.mp3` | `archives/playlist_<playlist_id>_mp3.txt` |
+| MP3 | Tek parça | `<Music>/Downloaded Music/<title>.mp3` | `archives/single_audios_mp3.txt` |
+
 - Loglar: `logs/yt-dlp_<mode>_<playlist|single>_<timestamp>.log`
 
 ### MP4 profilleri
-- Uyumluluk: önce avc1/mp4a kayıpsız birleştirme dener, kalanları MP4’e yeniden kodlar.
-- Kalite: yeniden kodlama yok; en iyi akışları korur ve mux eder. Kapsayıcı seçimi: güvenli MKV veya MP4 remux (codec uyumsuzsa hata verebilir).
-- MP3 modu en iyi sesi indirir, MP3’e çevirir, metadata/thumbnail gömer.
+1. **Uyumluluk** (iki aşamalı indirme):
+   - Aşama 1: avc1 video + mp4a ses mevcutsa kayıpsız MP4 birleştirme dener
+   - Aşama 2: Kalan öğeleri indirip MP4'e yeniden kodlar
+2. **Kalite** (yeniden kodlama yok):
+   - En iyi video + en iyi sesi transkod yapmadan indirir
+   - Kapsayıcı seçimi:
+     - **Güvenli (MKV)**: Önerilen, her zaman çalışır
+     - **MP4 remux**: Codec uyumsuzsa hata verebilir
+
+### MP3 modu
+- Mevcut en iyi sesi indirir (`bestaudio/best`)
+- En yüksek kalitede MP3'e dönüştürür (`--audio-quality 0`)
+- Metadata ve thumbnail (JPG'ye dönüştürülmüş) gömer
 
 ### Ayarlar ve durum
-- `config.json` içinde `videos_dir`, `music_dir`, `app`, `saved_at` saklanır. Silersen klasör sorusu yeniden çıkar.
-- `archives/` içindeki metin dosyaları `--download-archive` için kullanılır; silersen ilgili kapsam yeniden indirilir.
-- `logs/` konsol çıktısını sorun gidermek için saklar.
+| Dosya | Açıklama |
+|-------|----------|
+| `config.json` | `app`, `videos_dir`, `music_dir`, `saved_at` değerlerini saklar. Yeniden yapılandırmak için sil. |
+| `archives/*.txt` | `--download-archive` için indirme arşivleri. Yeniden indirmeyi zorlamak için sil. |
+| `logs/*.log` | Zaman damgalı tam komut çıktısı. Sorun giderme için kullanışlı. |
+| `app_version.txt` | Otomatik güncelleme için mevcut sürümü takip eder. |
 
-### Bu klasörde neler var
-- `Run.bat`: tek tık başlatma, sessiz `update.ps1` kontrolü (`.venv`, `config.json`, `logs`, `archives` korunur).
-- `install.ps1`: bağımlılıkları kurar, yt-dlp içeren `.venv` oluşturur.
-- `downloader.py`: `ytdlp_app/` içindeki uygulamayı çağıran giriş noktası.
-- `ytdlp_app/`: prompt’lar, yt-dlp komut inşası, playlist yoklama ve log yardımcıları.
+### Bu klasördeki dosyalar
+| Dosya | Açıklama |
+|-------|----------|
+| `Run.bat` | Tek tıkla başlatma. Sessiz güncelleme kontrolü, gerekirse bağımlılık kurulumu, uygulamayı başlatır. |
+| `install.ps1` | Python, ffmpeg, Deno'yu winget ile kurar. yt-dlp ile `.venv` oluşturur. |
+| `update.ps1` | Otomatik güncelleyici. GitHub'dan yeni sürümleri indirir, kullanıcı verilerini korur. |
+| `downloader.py` | `ytdlp_app.app.run()` fonksiyonunu çağıran giriş noktası. |
+| `ytdlp_app/` | Modüler bileşenli Python paketi (aşağıya bakın). |
+
+### ytdlp_app/ modülleri
+| Modül | Açıklama |
+|-------|----------|
+| `app.py` | Ana uygulama döngüsü, tüm bileşenleri koordine eder |
+| `config.py` | Yapılandırma yükleme/kaydetme, interaktif klasör kurulumu |
+| `ui.py` | Komut istemi ve menülerle konsol arayüzü (test edilebilirlik için Protocol tabanlı) |
+| `yt_dlp.py` | Farklı modlar için yt-dlp komut argümanları oluşturur |
+| `exec.py` | Çıktı akışı ve loglama ile komut yürütme |
+| `playlist.py` | Playlist algılama, öğe çekme, arşiv okuma |
+| `skip_probe.py` | Atlanan öğeleri atlama nedenini belirlemek için sorgular |
+| `logging_utils.py` | Renkli çıktı ile loglama yardımcıları |
+| `system.py` | ffmpeg, yt-dlp, deno kullanılabilirliğini kontrol eder |
+| `models.py` | Yollar, yapılandırma, girdiler ve indirme planları için veri sınıfları |
+
+### Gereksinimler
+- Winget (Windows Uygulama Yükleyicisi) ile Windows 10/11
+- Kurulum ve indirmeler için internet bağlantısı
 
 ### Sorun giderme
-- Kurulum hata verirse `Run.bat`’i Yönetici olarak çalıştır; winget ve internet erişimini doğrula.
-- yt-dlp veya ffmpeg bulunamazsa `install.ps1`’i tekrar çalıştır veya yeni bir terminal aç.
-- İndirme klasörlerini değiştirmek için `config.json` dosyasını sil ve programı yeniden başlat.
+| Sorun | Çözüm |
+|-------|-------|
+| Kurulum başarısız | `Run.bat`'i Yönetici olarak çalıştır. Winget ve internet erişimini doğrula. |
+| yt-dlp/ffmpeg bulunamıyor | `install.ps1`'i tekrar çalıştır veya kurulumdan sonra yeni bir terminal aç. |
+| İndirme klasörlerini değiştir | `config.json` dosyasını sil ve yeniden başlat. |
+| Yeniden indirmeyi zorla | `archives/` içindeki ilgili arşiv dosyasını sil. |
+| Deno uyarısı görünüyor | Deno kur: `winget install DenoLand.Deno` veya `install.ps1`'i yeniden çalıştır. |
+
+### Lisans
+Detaylar için [LICENSE](LICENSE) dosyasına bakın.
