@@ -4,8 +4,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .config import ensure_dirs_interactive, load_config
+from .config import ensure_dirs_interactive, load_config, save_config
+from .exceptions import InvalidURLError, PlaylistFetchError
 from .exec import run_capture, run_cmd_tee
+from .locales import get_language, set_language, t
 from .logging_utils import append_log, log_error, now_stamp
 from .models import AppPaths, DownloadPlan, UserConfig
 from .playlist import (
@@ -17,6 +19,7 @@ from .playlist import (
 from .skip_probe import probe_skip_reason
 from .system import deno_available, ffmpeg_available, yt_dlp_available
 from .ui import ConsoleUI
+from .validators import validate_url
 from .yt_dlp import (
     build_common_args,
     build_js_args,
@@ -57,6 +60,22 @@ def run() -> int:
     try:
         # 0) config: load or create paths (once)
         cfg = load_config(paths.config_file)
+        
+        # Language setup
+        saved_lang = cfg.get("language", "")
+        if saved_lang in ("en", "tr"):
+            set_language(saved_lang)
+        else:
+            # First run: ask for language
+            lang_choice = ui.pick(
+                t("prompt_language"),
+                [t("opt_english"), t("opt_turkish")],
+            )
+            selected_lang = "en" if lang_choice == 1 else "tr"
+            set_language(selected_lang)
+            cfg["language"] = selected_lang
+            save_config(paths.config_file, cfg)
+        
         videos_base, music_base, _cfg = ensure_dirs_interactive(
             ui, cfg, config_file=paths.config_file, app_name=app_name
         )
@@ -70,15 +89,24 @@ def run() -> int:
         while True:
             log_path: Path | None = None
 
-            # 1) URL
-            url = ui.ask_text("\nEnter video or playlist URL (blank = exit): ")
+            # 1) URL with validation
+            url = ui.ask_text("\n" + t("prompt_url"))
             if not url:
-                ui.print("No URL provided. Exiting.")
+                ui.print(t("no_url_provided"))
                 return 0
+
+            # Validate URL
+            try:
+                url = validate_url(url)
+            except InvalidURLError as e:
+                ui.print(f"\n{t('error_invalid_url')}")
+                ui.print(f"  {e.reason}\n")
+                continue
 
             # 2) Mode selection
             mode_choice = ui.pick(
-                "What do you want to download?", ["Video (MP4)", "Audio (MP3)"]
+                t("prompt_download_type"), 
+                [t("opt_video_mp4"), t("opt_audio_mp3")]
             )
             mode = "mp4" if mode_choice == 1 else "mp3"
 
@@ -86,33 +114,24 @@ def run() -> int:
             deno_ok = deno_available()
 
             if not yt_dlp_available():
-                ui.print("ERROR: 'yt-dlp' not found. Run install.ps1 first.")
+                ui.print(t("error_yt_dlp_not_found"))
                 return 0
 
             if not ffmpeg_available():
-                ui.print(
-                    "\nWARNING: ffmpeg not found.\n"
-                    "- MP3 mode may fail to convert audio.\n"
-                    "- MP4 mode may fail to merge/recode and attach thumbnails.\n"
-                    "Fix: run install.ps1 or install ffmpeg and add it to PATH.\n"
-                )
+                ui.print("\n" + t("warn_ffmpeg_not_found") + "\n")
 
             if not deno_ok:
-                ui.print(
-                    "\nWARNING: Deno runtime not found.\n"
-                    "- Some videos may fail if yt-dlp cannot solve JS challenges.\n"
-                    "- Install Deno (https://deno.com) or rerun install.ps1.\n"
-                )
+                ui.print("\n" + t("warn_deno_not_found") + "\n")
 
             # 4) Playlist vs single video
             playlist_like = is_playlist_url(url)
             force_single = False
             if playlist_like:
                 what = ui.pick(
-                    "URL looks like a playlist. What do you want?",
+                    t("prompt_playlist_action"),
                     [
-                        "Download the entire playlist",
-                        "Download only this video (ignore playlist)",
+                        t("opt_download_playlist"),
+                        t("opt_download_single"),
                     ],
                 )
                 if what == 2:
@@ -126,18 +145,18 @@ def run() -> int:
             remux_container = None
             if mode == "mp4":
                 mp4_profile = ui.pick(
-                    "Choose MP4 behavior (profile):",
+                    t("prompt_mp4_profile"),
                     [
-                        "Compatibility: force MP4 (lossless when possible, otherwise recode)",
-                        "Quality: no recode; remux if possible, otherwise keep container",
+                        t("opt_mp4_compatibility"),
+                        t("opt_mp4_quality"),
                     ],
                 )
                 if mp4_profile == 2:
                     remux_container = ui.pick(
-                        "Container preference for Quality profile:",
+                        t("prompt_container"),
                         [
-                            "Safe (recommended): MKV",
-                            "Try MP4 (remux only; may fail if codecs incompatible)",
+                            t("opt_container_mkv"),
+                            t("opt_container_mp4"),
                         ],
                     )
 
@@ -182,18 +201,18 @@ def run() -> int:
                 / f"yt-dlp_{mode}_{'playlist' if is_playlist else 'single'}_{now_stamp()}.log"
             )
 
+            yes_no = lambda b: t("info_yes") if b else t("info_no")
             ui.print("\n------------------------------")
-            ui.print(f"Mode: {mode}")
-            ui.print(f"Is playlist?: {is_playlist}")
-            ui.print(f"Output folder: {base_dir}")
-            ui.print(f"Output template: {output_template}")
-            ui.print(f"Archive file: {archive_path}")
-            ui.print(f"Log file: {log_path}")
-            ui.print(f"Deno available: {deno_ok}")
+            ui.print(f"{t('info_mode')}: {mode}")
+            ui.print(f"{t('info_is_playlist')}: {yes_no(is_playlist)}")
+            ui.print(f"{t('info_output_folder')}: {base_dir}")
+            ui.print(f"{t('info_output_template')}: {output_template}")
+            ui.print(f"{t('info_archive_file')}: {archive_path}")
+            ui.print(f"{t('info_log_file')}: {log_path}")
+            ui.print(f"{t('info_deno_available')}: {yes_no(deno_ok)}")
             if mode == "mp4":
-                ui.print(
-                    f"MP4 profile: {'Compatibility' if mp4_profile == 1 else 'Quality'}"
-                )
+                profile_name = t('info_compatibility') if mp4_profile == 1 else t('info_quality')
+                ui.print(f"{t('info_mp4_profile')}: {profile_name}")
             ui.print("------------------------------\n")
 
             append_log(
@@ -248,15 +267,23 @@ def run() -> int:
                     entries = fetch_playlist_entries(
                         plan.url, plan.js_args, run_capture
                     )
+                except PlaylistFetchError as ex:
+                    log_error(
+                        log_path,
+                        f"Failed to fetch playlist entries (returncode={ex.returncode})",
+                        ex,
+                    )
+                    ui.print(f"\n{t('error_playlist_fetch')}")
+                    ui.print(f"  returncode={ex.returncode}\n")
+                    if ui.prompt_exit_on_failure():
+                        return 0
                 except Exception as ex:
                     log_error(
                         log_path,
                         "Failed to fetch playlist entries (skip report may be partial)",
                         ex,
                     )
-                    ui.print(
-                        f"Could not fetch playlist entries; skip report may be incomplete.\n{ex}\n"
-                    )
+                    ui.print(f"\n{t('error_playlist_fetch')}\n  {ex}\n")
                     if ui.prompt_exit_on_failure():
                         return 0
 
@@ -271,9 +298,7 @@ def run() -> int:
                         post_args=plan.post_args,
                         common_args=plan.common_args,
                     )
-                    ui.print(
-                        "### STAGE 1 (Compatibility): lossless MP4 when avc1+mp4a is available..."
-                    )
+                    ui.print(t("stage_compat_1"))
                     rc1 = run_cmd_tee(cmd_stage1, log_path)
                     final_rc = rc1
                     if rc1 == 130:
@@ -287,9 +312,7 @@ def run() -> int:
                         post_args=plan.post_args,
                         common_args=plan.common_args,
                     )
-                    ui.print(
-                        "### STAGE 2 (Compatibility): download remaining items and recode to MP4..."
-                    )
+                    ui.print(t("stage_compat_2"))
                     rc2 = run_cmd_tee(cmd_stage2, log_path)
                     final_rc = rc2
                     if rc2 == 130:
@@ -305,7 +328,7 @@ def run() -> int:
                             post_args=plan.post_args,
                             common_args=plan.common_args,
                         )
-                        ui.print("### QUALITY: No recode. Output container: MKV")
+                        ui.print(t("stage_quality_mkv"))
                         rc = run_cmd_tee(cmd_quality, log_path)
                         final_rc = rc
                         if rc == 130:
@@ -319,7 +342,7 @@ def run() -> int:
                             post_args=plan.post_args,
                             common_args=plan.common_args,
                         )
-                        ui.print("### QUALITY: No recode. Will try MP4 remux.")
+                        ui.print(t("stage_quality_mp4"))
                         rc = run_cmd_tee(cmd_quality_mp4, log_path)
                         final_rc = rc
                         if rc == 130:
@@ -333,7 +356,7 @@ def run() -> int:
                     post_args=plan.post_args,
                     common_args=plan.common_args,
                 )
-                ui.print("### MP3: Downloading best audio and converting to MP3...")
+                ui.print(t("stage_mp3"))
                 rc = run_cmd_tee(cmd_audio, log_path)
                 final_rc = rc
                 if rc == 130:
@@ -353,7 +376,7 @@ def run() -> int:
 
                 if skipped:
                     ui.print("\n==============================")
-                    ui.print("SKIPPED ITEMS (not downloaded)")
+                    ui.print(t("skip_report_header"))
                     ui.print("==============================")
 
                     for e in skipped:
@@ -364,31 +387,31 @@ def run() -> int:
                         reason = probe_skip_reason(vurl, plan.js_args, run_capture)
 
                         ui.print(f"- #{idx:03d}  ({vid})")
-                        ui.print(f"  Title : {title}")
-                        ui.print(f"  Reason: {reason}\n")
+                        ui.print(f"  {t('skip_report_title')} : {title}")
+                        ui.print(f"  {t('skip_report_reason')}: {reason}\n")
                 else:
-                    ui.print("\nAll playlist items appear archived (no skips).")
+                    ui.print("\n" + t("skip_report_none"))
 
-            ui.print("\nAll tasks completed.")
-            ui.print(f"Log: {log_path}")
-            ui.print(f"Config: {paths.config_file}")
+            ui.print("\n" + t("all_tasks_completed"))
+            ui.print(f"{t('info_log')}: {log_path}")
+            ui.print(f"{t('info_config')}: {paths.config_file}")
 
             next_action = ui.pick(
-                "What next?",
+                t("prompt_what_next"),
                 [
-                    "Download another URL",
-                    "Exit",
+                    t("opt_download_another"),
+                    t("opt_exit"),
                 ],
             )
             if next_action != 1:
                 return 0
 
     except KeyboardInterrupt:
-        ui.print("\n>>> Operation cancelled by user (Ctrl+C).")
+        ui.print("\n>>> " + t("operation_cancelled"))
         return 0
     except Exception as ex:
         log_error(None, "Unexpected error (top-level)", ex)
-        ui.print("Unexpected error. Check logs if available.")
+        ui.print(t("error_unexpected"))
         if ui.prompt_exit_on_failure():
             return 0
         return 0

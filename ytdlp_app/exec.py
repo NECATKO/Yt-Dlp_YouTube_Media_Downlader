@@ -4,7 +4,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from .logging_utils import append_log, log_error
+from .logging_utils import append_log, colorize_line, log_error
 
 
 def run_capture(cmd: list[str]) -> tuple[int, str, str]:
@@ -56,11 +56,13 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
                 bufsize=1,
                 encoding="utf-8",
                 errors="replace",
+                newline="",  # Preserve \r for single-line progress updates
             )
 
             assert p.stdout is not None
             for line in p.stdout:
-                print(line, end="")
+                # Apply syntax highlighting for console, keep raw for log
+                print(colorize_line(line), end="", flush=True)
                 f.write(line)
 
             rc = p.wait()

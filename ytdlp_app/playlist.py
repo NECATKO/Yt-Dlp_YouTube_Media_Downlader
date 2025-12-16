@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from .exceptions import PlaylistFetchError
 from .models import CaptureRunner, PlaylistEntry
 
 
@@ -39,8 +40,10 @@ def fetch_playlist_entries(
     cmd = ["yt-dlp", "--flat-playlist", "-J", "--yes-playlist", url] + js_args
     rc, out, err = runner(cmd)
     if rc != 0 or not out.strip():
-        raise RuntimeError(
-            f"Could not fetch playlist JSON.\nreturncode={rc}\nstderr:\n{err}"
+        raise PlaylistFetchError(
+            f"Could not fetch playlist JSON.",
+            returncode=rc,
+            stderr=err,
         )
 
     data = json.loads(out)

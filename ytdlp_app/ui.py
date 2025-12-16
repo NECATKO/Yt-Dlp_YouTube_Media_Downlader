@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from .locales import get_language, t
+
 
 class UI(Protocol):
     def print(self, text: str = "") -> None: ...
@@ -22,16 +24,19 @@ class ConsoleUI:
             self.print("\n" + prompt)
             for i, opt in enumerate(options, start=1):
                 self.print(f"  {i}) {opt}")
-            ans = input("Select (numbers only): ").strip()
+            ans = input(t("prompt_select")).strip()
             if ans.isdigit():
                 n = int(ans)
                 if 1 <= n <= len(options):
                     return n
-            self.print("Invalid choice. Please enter one of the listed numbers.")
+            self.print(t("error_invalid_choice"))
 
     def ask_text(self, prompt: str) -> str:
         return input(prompt).strip()
 
     def prompt_exit_on_failure(self) -> bool:
-        ans = input("\nAn error occurred. Do you want to exit? (Y/N): ").strip().lower()
+        ans = input("\n" + t("prompt_exit_on_failure")).strip().lower()
+        lang = get_language()
+        if lang == "tr":
+            return ans in ("e", "evet")
         return ans in ("y", "yes")
