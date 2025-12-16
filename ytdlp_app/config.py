@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from .logging_utils import Colors
 from .ui import UI
 
 
@@ -54,8 +55,8 @@ def ensure_dirs_interactive(
     music_dir = normalize_user_path(m_raw) if m_raw else None
 
     def announce_paths(v_dir: Path, m_dir: Path) -> None:
-        ui.print(f"Using download folders (Videos: {v_dir} | Music: {m_dir}).")
-        ui.print(f"To change these later, edit config.json at: {config_file}\n")
+        ui.print(f"{Colors.CYAN}Using download folders ({Colors.YELLOW}Videos:{Colors.RESET} {Colors.WHITE}{v_dir}{Colors.RESET} {Colors.CYAN}|{Colors.RESET} {Colors.YELLOW}Music:{Colors.RESET} {Colors.WHITE}{m_dir}{Colors.RESET}{Colors.CYAN}).{Colors.RESET}")
+        ui.print(f"{Colors.YELLOW}To change these later, edit config.json at:{Colors.RESET} {Colors.WHITE}{config_file}{Colors.RESET}\n")
 
     # If config already has both values, use them without asking again.
     if videos_dir and music_dir:
@@ -65,13 +66,13 @@ def ensure_dirs_interactive(
         return videos_dir, music_dir, existing_cfg
 
     ui.print(
-        "Download folders not set yet. Configure them now (this is only asked once)."
+        f"{Colors.YELLOW}{Colors.BOLD}Download folders not set yet. Configure them now (this is only asked once).{Colors.RESET}"
     )
 
     def ask_path(label: str, default: Path) -> Path:
-        ui.print(f"\nEnter folder path for {label} (blank = default):")
-        ui.print(f"Default: {default}")
-        s = ui.ask_text("Path: ")
+        ui.print(f"\n{Colors.CYAN}Enter folder path for {Colors.BOLD}{label}{Colors.RESET}{Colors.CYAN} (blank = default):{Colors.RESET}")
+        ui.print(f"{Colors.YELLOW}Default:{Colors.RESET} {Colors.WHITE}{default}{Colors.RESET}")
+        s = ui.ask_text(f"{Colors.GREEN}Path: {Colors.RESET}")
         if not s:
             return default
         return normalize_user_path(s)
@@ -90,10 +91,10 @@ def ensure_dirs_interactive(
     }
     save_config(config_file, new_cfg)
 
-    ui.print("\nSettings saved:")
-    ui.print(f"  Videos: {videos_dir}")
-    ui.print(f"  Music : {music_dir}")
-    ui.print(f"  Config: {config_file}\n")
+    ui.print(f"\n{Colors.GREEN}{Colors.BOLD}Settings saved:{Colors.RESET}")
+    ui.print(f"  {Colors.YELLOW}Videos:{Colors.RESET} {Colors.WHITE}{videos_dir}{Colors.RESET}")
+    ui.print(f"  {Colors.YELLOW}Music :{Colors.RESET} {Colors.WHITE}{music_dir}{Colors.RESET}")
+    ui.print(f"  {Colors.YELLOW}Config:{Colors.RESET} {Colors.WHITE}{config_file}{Colors.RESET}\n")
     announce_paths(videos_dir, music_dir)
 
     return videos_dir, music_dir, new_cfg

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import traceback
 from datetime import datetime
@@ -34,38 +35,143 @@ def _enable_windows_ansi() -> None:
 _enable_windows_ansi()
 
 
+def colorize_command(cmd: list[str]) -> str:
+    """
+    Apply syntax highlighting to command arguments.
+    Highlights command name, flags, and values differently.
+    """
+    if not cmd:
+        return ""
+    
+    result = []
+    for i, arg in enumerate(cmd):
+        if i == 0:
+            # Command name - bold cyan
+            result.append(f"{Colors.CYAN}{Colors.BOLD}{arg}{Colors.RESET}")
+        elif arg.startswith('-'):
+            # Flags/options - yellow
+            result.append(f"{Colors.YELLOW}{arg}{Colors.RESET}")
+        elif arg.startswith('http'):
+            # URLs - bold magenta
+            result.append(f"{Colors.MAGENTA}{Colors.BOLD}{arg}{Colors.RESET}")
+        elif '\\' in arg or '/' in arg:
+            # File paths - white
+            result.append(f"{Colors.WHITE}{arg}{Colors.RESET}")
+        else:
+            # Values - green
+            result.append(f"{Colors.GREEN}{arg}{Colors.RESET}")
+    
+    return " ".join(result)
+
+
 def colorize_line(line: str) -> str:
     """
-    Apply syntax highlighting to yt-dlp output lines based on their prefix.
-    Returns the colorized line for console display.
+    Apply granular syntax highlighting to yt-dlp output.
+    Highlights specific keywords, values, and patterns within lines.
     """
-    stripped = line.lstrip()
+    # Don't process empty lines
+    if not line.strip():
+        return line
     
-    # Download progress - green
-    if stripped.startswith("[download]"):
-        return f"{Colors.GREEN}{line}{Colors.RESET}"
+    result = line
     
-    # Errors - red
-    if stripped.startswith(("[error]", "ERROR:", "[ERROR")):
-        return f"{Colors.RED}{Colors.BOLD}{line}{Colors.RESET}"
+    # Highlight prefixes/tags first
+    result = re.sub(
+        r'(\[download\])',
+        rf'{Colors.GREEN}\1{Colors.RESET}',
+        result
+    )
+    result = re.sub(
+        r'(\[error\]|\[ERROR\]|ERROR:)',
+        rf'{Colors.RED}{Colors.BOLD}\1{Colors.RESET}',
+        result,
+        flags=re.IGNORECASE
+    )
+    result = re.sub(
+        r'(\[warning\]|\[WARNING\]|WARNING:)',
+        rf'{Colors.YELLOW}\1{Colors.RESET}',
+        result,
+        flags=re.IGNORECASE
+    )
+    result = re.sub(
+        r'(\[info\]|\[INFO\])',
+        rf'{Colors.CYAN}\1{Colors.RESET}',
+        result,
+        flags=re.IGNORECASE
+    )
+    result = re.sub(
+        r'(\[youtube\]|\[generic\]|\[ExtractAudio\]|\[Merger\]|\[ffmpeg\])',
+        rf'{Colors.BLUE}\1{Colors.RESET}',
+        result
+    )
+    result = re.sub(
+        r'(\[Metadata\]|\[ThumbnailsConvertor\]|\[EmbedThumbnail\])',
+        rf'{Colors.MAGENTA}\1{Colors.RESET}',
+        result
+    )
     
-    # Warnings - yellow
-    if stripped.startswith(("[warning]", "WARNING:", "[WARNING")):
-        return f"{Colors.YELLOW}{line}{Colors.RESET}"
+    # Highlight percentages (download progress)
+    result = re.sub(
+        r'\b(\d+\.?\d*%)\b',
+        rf'{Colors.GREEN}{Colors.BOLD}\1{Colors.RESET}',
+        result
+    )
     
-    # Info messages - cyan
-    if stripped.startswith(("[info]", "[INFO")):
-        return f"{Colors.CYAN}{line}{Colors.RESET}"
+    # Highlight file sizes (e.g., 1.5MiB, 500KiB, 1.2GiB)
+    result = re.sub(
+        r'\b(\d+\.?\d*\s?(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))\b',
+        rf'{Colors.CYAN}\1{Colors.RESET}',
+        result
+    )
     
-    # Extraction/processing - blue
-    if stripped.startswith(("[youtube]", "[generic]", "[ExtractAudio]", "[Merger]", "[ffmpeg]")):
-        return f"{Colors.BLUE}{line}{Colors.RESET}"
+    # Highlight speeds (e.g., 1.5MiB/s)
+    result = re.sub(
+        r'\b(\d+\.?\d*\s?(?:B|KiB|MiB|GiB)/s)\b',
+        rf'{Colors.MAGENTA}\1{Colors.RESET}',
+        result
+    )
     
-    # Metadata - magenta
-    if stripped.startswith(("[Metadata]", "[ThumbnailsConvertor]", "[EmbedThumbnail]")):
-        return f"{Colors.MAGENTA}{line}{Colors.RESET}"
+    # Highlight time values (e.g., 00:05:30, ETA 00:30)
+    result = re.sub(
+        r'\b(\d{1,2}:\d{2}(?::\d{2})?)\b',
+        rf'{Colors.BLUE}\1{Colors.RESET}',
+        result
+    )
+    result = re.sub(
+        r'\b(ETA)\s+',
+        rf'{Colors.YELLOW}\1{Colors.RESET} ',
+        result
+    )
     
-    return line
+    # Highlight video IDs and URLs
+    result = re.sub(
+        r'(https?://[^\s]+)',
+        rf'{Colors.CYAN}{Colors.BOLD}\1{Colors.RESET}',
+        result
+    )
+    
+    # Highlight common status words
+    result = re.sub(
+        r'\b(Downloading|Extracting|Converting|Merging|Processing|Finished|Complete)\b',
+        rf'{Colors.GREEN}\1{Colors.RESET}',
+        result,
+        flags=re.IGNORECASE
+    )
+    result = re.sub(
+        r'\b(Failed|Error|Skipping)\b',
+        rf'{Colors.RED}\1{Colors.RESET}',
+        result,
+        flags=re.IGNORECASE
+    )
+    
+    # Highlight file paths (basic detection)
+    result = re.sub(
+        r'([A-Z]:\\[^\s:]+|/[^\s:]+)',
+        rf'{Colors.WHITE}\1{Colors.RESET}',
+        result
+    )
+    
+    return result
 
 
 def now_stamp() -> str:

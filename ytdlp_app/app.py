@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .config import ensure_dirs_interactive, load_config
 from .exec import run_capture, run_cmd_tee
-from .logging_utils import append_log, log_error, now_stamp
+from .logging_utils import Colors, append_log, log_error, now_stamp
 from .models import AppPaths, DownloadPlan, UserConfig
 from .playlist import (
     fetch_playlist_entries,
@@ -86,22 +86,22 @@ def run() -> int:
             deno_ok = deno_available()
 
             if not yt_dlp_available():
-                ui.print("ERROR: 'yt-dlp' not found. Run install.ps1 first.")
+                ui.print(f"{Colors.RED}{Colors.BOLD}ERROR:{Colors.RESET} {Colors.RED}'yt-dlp' not found. Run install.ps1 first.{Colors.RESET}")
                 return 0
 
             if not ffmpeg_available():
                 ui.print(
-                    "\nWARNING: ffmpeg not found.\n"
-                    "- MP3 mode may fail to convert audio.\n"
-                    "- MP4 mode may fail to merge/recode and attach thumbnails.\n"
-                    "Fix: run install.ps1 or install ffmpeg and add it to PATH.\n"
+                    f"\n{Colors.YELLOW}{Colors.BOLD}WARNING:{Colors.RESET} {Colors.YELLOW}ffmpeg not found.{Colors.RESET}\n"
+                    f"{Colors.WHITE}- MP3 mode may fail to convert audio.{Colors.RESET}\n"
+                    f"{Colors.WHITE}- MP4 mode may fail to merge/recode and attach thumbnails.{Colors.RESET}\n"
+                    f"{Colors.CYAN}Fix: run install.ps1 or install ffmpeg and add it to PATH.{Colors.RESET}\n"
                 )
 
             if not deno_ok:
                 ui.print(
-                    "\nWARNING: Deno runtime not found.\n"
-                    "- Some videos may fail if yt-dlp cannot solve JS challenges.\n"
-                    "- Install Deno (https://deno.com) or rerun install.ps1.\n"
+                    f"\n{Colors.YELLOW}{Colors.BOLD}WARNING:{Colors.RESET} {Colors.YELLOW}Deno runtime not found.{Colors.RESET}\n"
+                    f"{Colors.WHITE}- Some videos may fail if yt-dlp cannot solve JS challenges.{Colors.RESET}\n"
+                    f"{Colors.CYAN}- Install Deno (https://deno.com) or rerun install.ps1.{Colors.RESET}\n"
                 )
 
             # 4) Playlist vs single video
@@ -182,19 +182,20 @@ def run() -> int:
                 / f"yt-dlp_{mode}_{'playlist' if is_playlist else 'single'}_{now_stamp()}.log"
             )
 
-            ui.print("\n------------------------------")
-            ui.print(f"Mode: {mode}")
-            ui.print(f"Is playlist?: {is_playlist}")
-            ui.print(f"Output folder: {base_dir}")
-            ui.print(f"Output template: {output_template}")
-            ui.print(f"Archive file: {archive_path}")
-            ui.print(f"Log file: {log_path}")
-            ui.print(f"Deno available: {deno_ok}")
+            ui.print(f"\n{Colors.BOLD}------------------------------{Colors.RESET}")
+            ui.print(f"{Colors.YELLOW}Mode:{Colors.RESET} {Colors.GREEN}{mode}{Colors.RESET}")
+            ui.print(f"{Colors.YELLOW}Is playlist?:{Colors.RESET} {Colors.CYAN}{is_playlist}{Colors.RESET}")
+            ui.print(f"{Colors.YELLOW}Output folder:{Colors.RESET} {Colors.WHITE}{base_dir}{Colors.RESET}")
+            ui.print(f"{Colors.YELLOW}Output template:{Colors.RESET} {Colors.WHITE}{output_template}{Colors.RESET}")
+            ui.print(f"{Colors.YELLOW}Archive file:{Colors.RESET} {Colors.WHITE}{archive_path}{Colors.RESET}")
+            ui.print(f"{Colors.YELLOW}Log file:{Colors.RESET} {Colors.WHITE}{log_path}{Colors.RESET}")
+            ui.print(f"{Colors.YELLOW}Deno available:{Colors.RESET} {Colors.GREEN if deno_ok else Colors.RED}{deno_ok}{Colors.RESET}")
             if mode == "mp4":
+                profile_name = 'Compatibility' if mp4_profile == 1 else 'Quality'
                 ui.print(
-                    f"MP4 profile: {'Compatibility' if mp4_profile == 1 else 'Quality'}"
+                    f"{Colors.YELLOW}MP4 profile:{Colors.RESET} {Colors.MAGENTA}{profile_name}{Colors.RESET}"
                 )
-            ui.print("------------------------------\n")
+            ui.print(f"{Colors.BOLD}------------------------------{Colors.RESET}\n")
 
             append_log(
                 log_path,
@@ -272,7 +273,7 @@ def run() -> int:
                         common_args=plan.common_args,
                     )
                     ui.print(
-                        "### STAGE 1 (Compatibility): lossless MP4 when avc1+mp4a is available..."
+                        f"{Colors.BLUE}{Colors.BOLD}### STAGE 1 (Compatibility):{Colors.RESET} {Colors.CYAN}lossless MP4 when avc1+mp4a is available...{Colors.RESET}"
                     )
                     rc1 = run_cmd_tee(cmd_stage1, log_path)
                     final_rc = rc1
@@ -288,7 +289,7 @@ def run() -> int:
                         common_args=plan.common_args,
                     )
                     ui.print(
-                        "### STAGE 2 (Compatibility): download remaining items and recode to MP4..."
+                        f"{Colors.BLUE}{Colors.BOLD}### STAGE 2 (Compatibility):{Colors.RESET} {Colors.CYAN}download remaining items and recode to MP4...{Colors.RESET}"
                     )
                     rc2 = run_cmd_tee(cmd_stage2, log_path)
                     final_rc = rc2
@@ -305,7 +306,7 @@ def run() -> int:
                             post_args=plan.post_args,
                             common_args=plan.common_args,
                         )
-                        ui.print("### QUALITY: No recode. Output container: MKV")
+                        ui.print(f"{Colors.MAGENTA}{Colors.BOLD}### QUALITY:{Colors.RESET} {Colors.GREEN}No recode. Output container: MKV{Colors.RESET}")
                         rc = run_cmd_tee(cmd_quality, log_path)
                         final_rc = rc
                         if rc == 130:
@@ -319,7 +320,7 @@ def run() -> int:
                             post_args=plan.post_args,
                             common_args=plan.common_args,
                         )
-                        ui.print("### QUALITY: No recode. Will try MP4 remux.")
+                        ui.print(f"{Colors.MAGENTA}{Colors.BOLD}### QUALITY:{Colors.RESET} {Colors.GREEN}No recode. Will try MP4 remux.{Colors.RESET}")
                         rc = run_cmd_tee(cmd_quality_mp4, log_path)
                         final_rc = rc
                         if rc == 130:
@@ -333,7 +334,7 @@ def run() -> int:
                     post_args=plan.post_args,
                     common_args=plan.common_args,
                 )
-                ui.print("### MP3: Downloading best audio and converting to MP3...")
+                ui.print(f"{Colors.GREEN}{Colors.BOLD}### MP3:{Colors.RESET} {Colors.CYAN}Downloading best audio and converting to MP3...{Colors.RESET}")
                 rc = run_cmd_tee(cmd_audio, log_path)
                 final_rc = rc
                 if rc == 130:
@@ -352,9 +353,9 @@ def run() -> int:
                 skipped = [e for e in entries if e.id and e.id not in downloaded_ids]
 
                 if skipped:
-                    ui.print("\n==============================")
-                    ui.print("SKIPPED ITEMS (not downloaded)")
-                    ui.print("==============================")
+                    ui.print(f"\n{Colors.YELLOW}{Colors.BOLD}=============================={Colors.RESET}")
+                    ui.print(f"{Colors.YELLOW}{Colors.BOLD}SKIPPED ITEMS (not downloaded){Colors.RESET}")
+                    ui.print(f"{Colors.YELLOW}{Colors.BOLD}=============================={Colors.RESET}")
 
                     for e in skipped:
                         idx = e.playlist_index

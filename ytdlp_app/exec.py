@@ -4,7 +4,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from .logging_utils import append_log, colorize_line, log_error
+from .logging_utils import Colors, append_log, colorize_command, colorize_line, log_error
 
 
 def run_capture(cmd: list[str]) -> tuple[int, str, str]:
@@ -33,9 +33,9 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
     Stream a command to stdout while also teeing to a log file. Returns the
     process return code or 130 when interrupted by the user.
     """
-    print("\n=== RUNNING COMMAND ===")
-    print(" ".join(cmd))
-    print("======================\n")
+    print(f"\n{Colors.BOLD}=== RUNNING COMMAND ==={Colors.RESET}")
+    print(colorize_command(cmd))
+    print(f"{Colors.BOLD}======================={Colors.RESET}\n")
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -56,7 +56,6 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
                 bufsize=1,
                 encoding="utf-8",
                 errors="replace",
-                newline="",  # Preserve \r for single-line progress updates
             )
 
             assert p.stdout is not None
@@ -66,7 +65,10 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
                 f.write(line)
 
             rc = p.wait()
-            print(f"\n>>> Command finished. returncode = {rc}\n")
+            if rc == 0:
+                print(f"\n{Colors.GREEN}{Colors.BOLD}>>> Command finished successfully. returncode = {rc}{Colors.RESET}\n")
+            else:
+                print(f"\n{Colors.RED}{Colors.BOLD}>>> Command finished with errors. returncode = {rc}{Colors.RESET}\n")
             f.write(f"\n>>> returncode = {rc}\n")
             return rc
 
