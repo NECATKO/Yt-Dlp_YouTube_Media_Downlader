@@ -7,11 +7,55 @@ including configuration containers, playlist entries, and download plans.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import IntEnum, StrEnum
 from pathlib import Path
 from typing import Literal, Protocol
 
+
+class DownloadMode(StrEnum):
+    """Download mode (video or audio)."""
+
+    VIDEO = "mp4"
+    AUDIO = "mp3"
+
+
+class ModeChoice(IntEnum):
+    """User selection for download mode."""
+
+    VIDEO = 1
+    AUDIO = 2
+
+
+class PlaylistChoice(IntEnum):
+    """User selection for playlist handling."""
+
+    ALL = 1
+    SINGLE = 2
+
+
+class ProfileChoice(IntEnum):
+    """User selection for MP4 profile."""
+
+    COMPATIBILITY = 1
+    QUALITY = 2
+
+
+class ContainerChoice(IntEnum):
+    """User selection for container format."""
+
+    MKV = 1
+    MP4 = 2
+
+
+class ActionChoice(IntEnum):
+    """User selection for next action."""
+
+    DOWNLOAD_ANOTHER = 1
+    EXIT = 2
+
+
 #: Type alias for download mode - either video (mp4) or audio (mp3).
-Mode = Literal["mp4", "mp3"]
+Mode = DownloadMode
 
 
 class CaptureRunner(Protocol):

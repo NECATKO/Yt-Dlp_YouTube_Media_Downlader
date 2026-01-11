@@ -63,11 +63,13 @@ A portable Windows console application that wraps yt-dlp and ffmpeg. Features in
 ### ytdlp_app/ modules
 | Module | Description |
 |--------|-------------|
-| `app.py` | Main application loop, coordinates all components |
+| `app.py` | Application entry point and configuration loading |
+| `session.py` | Interactive session manager handling the main loop |
 | `config.py` | Config loading/saving, interactive folder setup |
-| `ui.py` | Console UI with prompts and menus (Protocol-based for testability) |
-| `yt_dlp.py` | Builds yt-dlp command arguments for different modes |
+| `ui.py` | Console UI with styled panels and menus (Protocol-based) |
+| `yt_dlp.py` | CommandBuilder class for constructing yt-dlp arguments |
 | `exec.py` | Command execution with output streaming and logging |
+
 | `playlist.py` | Playlist detection, entry fetching, archive reading |
 | `skip_probe.py` | Probes skipped items to determine skip reason |
 | `logging_utils.py` | Logging utilities with colorized output |
@@ -157,11 +159,13 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir Windows konsol uygulaması. �
 ### ytdlp_app/ modülleri
 | Modül | Açıklama |
 |-------|----------|
-| `app.py` | Ana uygulama döngüsü, tüm bileşenleri koordine eder |
+| `app.py` | Uygulama giriş noktası ve yapılandırma yükleme |
+| `session.py` | Ana döngüyü yöneten interaktif oturum yöneticisi |
 | `config.py` | Yapılandırma yükleme/kaydetme, interaktif klasör kurulumu |
-| `ui.py` | Komut istemi ve menülerle konsol arayüzü (test edilebilirlik için Protocol tabanlı) |
-| `yt_dlp.py` | Farklı modlar için yt-dlp komut argümanları oluşturur |
+| `ui.py` | Stilize paneller ve menüler sunan konsol arayüzü |
+| `yt_dlp.py` | yt-dlp argümanlarını oluşturan CommandBuilder sınıfı |
 | `exec.py` | Çıktı akışı ve loglama ile komut yürütme |
+
 | `playlist.py` | Playlist algılama, öğe çekme, arşiv okuma |
 | `skip_probe.py` | Atlanan öğeleri atlama nedenini belirlemek için sorgular |
 | `logging_utils.py` | Renkli çıktı ile loglama yardımcıları |

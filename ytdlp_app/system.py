@@ -7,8 +7,10 @@ like ffmpeg, yt-dlp, and Deno.
 from __future__ import annotations
 
 import shutil
+from functools import lru_cache
 
 
+@lru_cache(maxsize=1)
 def ffmpeg_available() -> bool:
     """Check if ffmpeg is available on the system PATH.
 
@@ -20,6 +22,7 @@ def ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
 
+@lru_cache(maxsize=1)
 def yt_dlp_available() -> bool:
     """Check if yt-dlp is available on the system PATH.
 
@@ -31,6 +34,7 @@ def yt_dlp_available() -> bool:
     return shutil.which("yt-dlp") is not None
 
 
+@lru_cache(maxsize=1)
 def deno_available() -> bool:
     """Check if the Deno runtime is available on the system PATH.
 

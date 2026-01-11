@@ -6,6 +6,7 @@ with output capture and logging capabilities.
 
 from __future__ import annotations
 
+import io
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -75,14 +76,16 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                encoding="utf-8",
-                errors="replace",
+                # Use binary mode to manually handle carriage returns
+                text=False,
             )
 
             assert p.stdout is not None
-            for line in p.stdout:
+            # Wrap stdout to handle \r without translating to \n
+            # newline="" ensures \r is preserved as-is
+            reader = io.TextIOWrapper(p.stdout, encoding="utf-8", newline="", errors="replace")
+
+            for line in reader:
                 # Apply syntax highlighting for console, keep raw for log
                 print(colorize_line(line), end="", flush=True)
                 f.write(line)
@@ -90,12 +93,12 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
             rc = p.wait()
             if rc == 0:
                 print(
-                    f"\n{Colors.GREEN}{Colors.BOLD}>>> Command finished successfully. returncode = {rc}{Colors.RESET}\n"
+                    f"\n{Colors.GREEN}{Colors.BOLD}>>> Command finished successfully.{Colors.RESET}\n"
                 )
-            else:
-                print(
-                    f"\n{Colors.RED}{Colors.BOLD}>>> Command finished with errors. returncode = {rc}{Colors.RESET}\n"
-                )
+            # else:
+            #     # Let the caller handle error reporting based on context
+            #     pass
+
             f.write(f"\n>>> returncode = {rc}\n")
             return rc
 

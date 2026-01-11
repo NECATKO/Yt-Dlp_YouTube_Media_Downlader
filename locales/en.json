@@ -43,6 +43,39 @@
   "error_age_restricted": "This video is age-restricted. Sign in required.",
   "error_members_only": "This video is for channel members only.",
   "error_copyright": "This video has been removed due to copyright.",
+  "error_no_url": "No URL provided. Exiting.",
+  "error_unexpected": "Unexpected error (top-level)",
+  "error_check_logs": "Unexpected error. Check logs if available.",
+
+  "info_mode": "Mode:",
+  "info_is_playlist": "Is playlist?:",
+  "info_output_folder": "Output folder:",
+  "info_output_template": "Output template:",
+  "info_archive_file": "Archive file:",
+  "info_log_file": "Log file:",
+  "info_deno": "Deno available:",
+  "info_profile": "MP4 profile:",
+  "info_log": "Log:",
+  "info_config": "Config:",
+
+  "stage1_title": "STAGE 1 (Compatibility):",
+  "stage1_desc": "lossless MP4 when avc1+mp4a is available...",
+  "stage2_title": "STAGE 2 (Compatibility):",
+  "stage2_desc": "download remaining items and recode to MP4...",
+  
+  "quality_title": "QUALITY:",
+  "quality_mkv_desc": "No recode. Output container: MKV",
+  "quality_mp4_desc": "No recode. Will try MP4 remux.",
+  
+  "mp3_title": "MP3:",
+  "mp3_desc": "Downloading best audio and converting to MP3...",
+  
+  "playlist_all_archived": "All playlist items appear archived (no skips).",
+  "tasks_completed": "All tasks completed.",
+  
+  "prompt_next": "What next?",
+  "action_download": "Download another URL",
+  "action_exit": "Exit",
 
   "config_setup_title": "Initial Setup",
   "config_videos_prompt": "Enter folder path for VIDEOS (blank = default):",

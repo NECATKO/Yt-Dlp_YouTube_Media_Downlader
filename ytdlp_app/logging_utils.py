@@ -101,6 +101,23 @@ def colorize_line(line: str) -> str:
 
     result = line
 
+    # Add vertical spacing (newline) before specific major sections
+    # avoiding newlines before progress bars (which also use [download])
+    if any(
+        header in line
+        for header in [
+            "[ExtractAudio]",
+            "[Metadata]",
+            "[EmbedThumbnail]",
+            "[ThumbnailsConvertor]",
+            "[Merger]",
+            "[FixupM3u8]",
+            "[VideoConvertor]",
+            "[exec]",
+        ]
+    ) or ("[download] Destination:" in line):
+        result = "\n" + result
+
     # Highlight prefixes/tags first
     result = re.sub(r"(\[download\])", rf"{Colors.GREEN}\1{Colors.RESET}", result)
     result = re.sub(
