@@ -1,3 +1,9 @@
+"""Command execution utilities for ytdlp_app.
+
+This module provides functions for running external commands (primarily yt-dlp)
+with output capture and logging capabilities.
+"""
+
 from __future__ import annotations
 
 import subprocess
@@ -8,9 +14,18 @@ from .logging_utils import Colors, append_log, colorize_command, colorize_line, 
 
 
 def run_capture(cmd: list[str]) -> tuple[int, str, str]:
-    """
-    Run a command and capture stdout/stderr. Always returns a tuple to keep
-    callers predictable, even on errors.
+    """Run a command and capture its output.
+
+    Executes a command synchronously and captures both stdout and stderr.
+    Always returns a tuple to keep callers predictable, even on errors.
+
+    Args:
+        cmd: The command and arguments to execute.
+
+    Returns:
+        A tuple of (return_code, stdout, stderr).
+        On keyboard interrupt, returns (130, "", "Interrupted by user").
+        On other exceptions, returns (1, "", error_message).
     """
     try:
         p = subprocess.run(
@@ -29,9 +44,19 @@ def run_capture(cmd: list[str]) -> tuple[int, str, str]:
 
 
 def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
-    """
-    Stream a command to stdout while also teeing to a log file. Returns the
-    process return code or 130 when interrupted by the user.
+    """Run a command with live output streaming and logging.
+
+    Streams command output to stdout in real-time with syntax highlighting,
+    while also logging the raw output to a file.
+
+    Args:
+        cmd: The command and arguments to execute.
+        log_path: Path to the log file for capturing output.
+
+    Returns:
+        The process return code.
+        Returns 130 on keyboard interrupt.
+        Returns 1 on unexpected errors.
     """
     print(f"\n{Colors.BOLD}=== RUNNING COMMAND ==={Colors.RESET}")
     print(colorize_command(cmd))
@@ -42,9 +67,7 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
     try:
         with log_path.open("a", encoding="utf-8", errors="ignore") as f:
             f.write("\n" + "=" * 80 + "\n")
-            f.write(
-                f"[{datetime.now().isoformat(timespec='seconds')}] CMD: {' '.join(cmd)}\n"
-            )
+            f.write(f"[{datetime.now().isoformat(timespec='seconds')}] CMD: {' '.join(cmd)}\n")
             f.write("=" * 80 + "\n")
 
             p = subprocess.Popen(
@@ -66,9 +89,13 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
 
             rc = p.wait()
             if rc == 0:
-                print(f"\n{Colors.GREEN}{Colors.BOLD}>>> Command finished successfully. returncode = {rc}{Colors.RESET}\n")
+                print(
+                    f"\n{Colors.GREEN}{Colors.BOLD}>>> Command finished successfully. returncode = {rc}{Colors.RESET}\n"
+                )
             else:
-                print(f"\n{Colors.RED}{Colors.BOLD}>>> Command finished with errors. returncode = {rc}{Colors.RESET}\n")
+                print(
+                    f"\n{Colors.RED}{Colors.BOLD}>>> Command finished with errors. returncode = {rc}{Colors.RESET}\n"
+                )
             f.write(f"\n>>> returncode = {rc}\n")
             return rc
 

@@ -1,38 +1,142 @@
-# --- Python sanal ortam ---
+# ==============================================================================
+# Python
+# ==============================================================================
+
+# Sanal ortamlar
 .venv/
 venv/
 env/
 ENV/
+.env/
 
-# --- Python önbellek dosyaları ---
+# Byte-compiled / optimized / DLL dosyalari
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyd
 
-# --- Test ve kapsam raporları ---
+# C uzantilari
+*.c
+*.o
+
+# ==============================================================================
+# Test ve Kapsam
+# ==============================================================================
+
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
+.nox/
 .hypothesis/
+coverage.xml
+*.cover
+*.py,cover
 
-# --- Dağıtım/paketleme ---
+# ==============================================================================
+# Dagitim / Paketleme
+# ==============================================================================
+
 dist/
 build/
 *.egg-info/
 *.egg
+*.whl
+.eggs/
+MANIFEST
 
-# --- IDE ve editör dosyaları ---
+# ==============================================================================
+# IDE ve Editorler
+# ==============================================================================
+
+# VS Code
 .vscode/
+
+# JetBrains (PyCharm, IntelliJ)
 .idea/
+
+# Vim/Neovim
 *.swp
 *.swo
 *~
-.DS_Store
+.*.swp
 
-# --- Uygulama çalışma çıktıları ---
-logs/
-archives/
-degerlendirme-raporları/
+# Emacs
+*~
+\#*\#
+.#*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ==============================================================================
+# Proje Ozel - Calisma Ciktilari
+# ==============================================================================
+
+# Kullanici yapilandirmasi (hassas veri icerebilir)
 config.json
+settings.json
+
+# Indirme arsivleri (kullaniciya ozel)
+archives/
+
+# Oturum loglari
+logs/
+
+# Degerlendirme raporlari (yerel)
+degerlendirme-raporlari/
+
+# ==============================================================================
+# Araclar
+# ==============================================================================
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# pytype
+.pytype/
+
+# Cython debug
+cython_debug/
+
+# ==============================================================================
+# Ortam ve Gizli Dosyalar
+# ==============================================================================
+
+# Ortam degiskenleri
+.env
+.env.local
+.env.*.local
+*.env
+
+# Gizli anahtarlar
+*.pem
+*.key
+secrets.json
+credentials.json
+
+# ==============================================================================
+# Gecici Dosyalar
+# ==============================================================================
+
+*.tmp
+*.temp
+*.bak
+*.orig
+.cache/
+tmp/
+temp/

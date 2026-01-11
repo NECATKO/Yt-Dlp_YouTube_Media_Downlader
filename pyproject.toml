@@ -1,0 +1,158 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ytdlp-downloader"
+version = "0.1.0"
+description = "A portable Windows console application that wraps yt-dlp and ffmpeg for easy YouTube media downloading"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "NECATKO"}
+]
+keywords = [
+    "yt-dlp",
+    "youtube",
+    "downloader",
+    "video",
+    "audio",
+    "mp3",
+    "mp4",
+    "ffmpeg",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "yt-dlp>=2024.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.8.0",
+    "ruff>=0.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/NECATKO/Yt-Dlp_YouTube_Media_Downlader"
+Repository = "https://github.com/NECATKO/Yt-Dlp_YouTube_Media_Downlader"
+Issues = "https://github.com/NECATKO/Yt-Dlp_YouTube_Media_Downlader/issues"
+
+[project.scripts]
+ytdlp-downloader = "ytdlp_app.app:run"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ytdlp_app*"]
+
+[tool.setuptools.package-data]
+ytdlp_app = ["py.typed"]
+
+# ============================================================================
+# pytest configuration
+# ============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
+
+# ============================================================================
+# mypy configuration
+# ============================================================================
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+strict_equality = true
+strict_concatenate = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+show_error_codes = true
+show_column_numbers = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+# ============================================================================
+# ruff configuration
+# ============================================================================
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "ERA",    # eradicate (commented-out code)
+    "PL",     # pylint
+    "RUF",    # Ruff-specific rules
+]
+ignore = [
+    "PLR0913",  # Too many arguments
+    "PLR2004",  # Magic value used in comparison
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ytdlp_app"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG", "PLR"]
+
+# ============================================================================
+# coverage configuration
+# ============================================================================
+[tool.coverage.run]
+source = ["ytdlp_app"]
+branch = true
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
