@@ -17,7 +17,7 @@ from .exceptions import (
 )
 from .validators import is_valid_url, is_youtube_url, validate_url
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     # Main entry point
