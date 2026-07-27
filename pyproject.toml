@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ytdlp-downloader"
-version = "0.3.0"
-description = "A portable Windows console application that wraps yt-dlp and ffmpeg for easy YouTube media downloading"
+dynamic = ["version"]
+description = "A portable cross-platform console application that wraps yt-dlp and ffmpeg for easy YouTube media downloading"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
@@ -27,7 +27,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: Apache Software License",
-    "Operating System :: Microsoft :: Windows",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -56,6 +56,9 @@ Issues = "https://github.com/NECATKO/Yt-Dlp_YouTube_Media_Downlader/issues"
 
 [project.scripts]
 ytdlp-downloader = "ytdlp_app.app:run"
+
+[tool.setuptools.dynamic]
+version = {attr = "ytdlp_app.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]

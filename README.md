@@ -1,9 +1,9 @@
 # yt-dlp Downloader (portable)
 
-A portable Windows console application that wraps yt-dlp and ffmpeg. Features interactive folder setup, MP4/MP3 mode selection, playlist handling, download archives to prevent duplicates, colorized console output, and detailed logging.
+A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs on Windows, Linux, and macOS. Features interactive folder setup, MP4/MP3 mode selection, playlist handling, download archives to prevent duplicates, colorized console output, and detailed logging.
 
 ## Features
-- **One-click setup**: Automatically installs Python 3.11+, yt-dlp, ffmpeg, and Deno via winget
+- **One-click setup**: Automatically installs Python 3.11+, yt-dlp, ffmpeg, and Deno (winget on Windows; apt/dnf/pacman/brew elsewhere)
 - **Auto-update**: Silent update checks from GitHub releases on each launch
 - **Interactive prompts**: Choose MP4/MP3 mode, playlist vs single video, and quality profiles
 - **Colorized output**: Syntax-highlighted console output (downloads in green, errors in red, warnings in yellow, etc.)
@@ -11,7 +11,7 @@ A portable Windows console application that wraps yt-dlp and ffmpeg. Features in
 - **Session continuity**: Download multiple URLs in a single session without restarting
 
 ## How it works
-1. Launch `Run.bat`. First run installs Python 3.11+, yt-dlp inside `.venv`, ffmpeg, and Deno through winget.
+1. Launch `Run.bat` (Windows) or `./run.sh` (Linux/macOS). First run installs Python 3.11+, yt-dlp inside `.venv`, ffmpeg, and Deno through your platform's package manager.
 2. You are asked once for base download folders (defaults: `Videos` and `Music`). Choices are saved to `config.json`.
 3. Each session: enter a URL, choose Video (MP4) or Audio (MP3), decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
 4. yt-dlp runs with resume/retry flags (`--continue`, `--retries infinite`, `--fragment-retries infinite`); archive files prevent duplicates; a log captures the full command output.
@@ -77,14 +77,15 @@ A portable Windows console application that wraps yt-dlp and ffmpeg. Features in
 | `models.py` | Data classes for paths, config, entries, and download plans |
 
 ## Requirements
-- Windows 10/11 with winget (Windows App Installer)
+- Python 3.11 or newer
+- Windows 10/11 with winget (Windows App Installer), or Linux/macOS with apt/dnf/pacman/brew
 - Internet connection for installation and downloads
 
 ## Troubleshooting
 | Problem | Solution |
 |---------|----------|
-| Install fails | Run `Run.bat` as Administrator. Ensure winget and internet access. |
-| yt-dlp/ffmpeg not found | Rerun `install.ps1` or open a new terminal after installation. |
+| Install fails | Run `Run.bat` as Administrator (Windows). Ensure your package manager and internet access work. |
+| yt-dlp/ffmpeg not found | Rerun `install.ps1` (Windows) or `install.sh` (Linux/macOS), or open a new terminal after installation. |
 | Change download folders | Delete `config.json` and relaunch. |
 | Force re-download | Delete the relevant archive file in `archives/`. |
 | Deno warning appears | Install Deno: `winget install DenoLand.Deno` or rerun `install.ps1`. |
@@ -96,10 +97,10 @@ See [LICENSE](LICENSE) for details.
 
 ## yt-dlp Downloader (taşınabilir) — Türkçe
 
-yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir Windows konsol uygulaması. İnteraktif klasör kurulumu, MP4/MP3 mod seçimi, playlist yönetimi, tekrarları engelleyen arşiv sistemi, renkli konsol çıktısı ve detaylı loglama özellikleri sunar.
+yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, Linux ve macOS üzerinde çalışır. İnteraktif klasör kurulumu, MP4/MP3 mod seçimi, playlist yönetimi, tekrarları engelleyen arşiv sistemi, renkli konsol çıktısı ve detaylı loglama özellikleri sunar.
 
 ## Özellikler
-- **Tek tıkla kurulum**: Python 3.11+, yt-dlp, ffmpeg ve Deno winget ile otomatik kurulur
+- **Tek tıkla kurulum**: Python 3.11+, yt-dlp, ffmpeg ve Deno otomatik kurulur (Windows'ta winget; diğer sistemlerde apt/dnf/pacman/brew)
 - **Otomatik güncelleme**: Her açılışta GitHub'dan sessiz güncelleme kontrolü
 - **İnteraktif menüler**: MP4/MP3 modu, playlist/tek video seçimi ve kalite profilleri
 - **Renkli çıktı**: Söz dizimi vurgulu konsol çıktısı (indirmeler yeşil, hatalar kırmızı, uyarılar sarı, vb.)
@@ -107,7 +108,7 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir Windows konsol uygulaması. �
 - **Oturum sürekliliği**: Tek oturumda yeniden başlatmadan birden fazla URL indir
 
 ### Nasıl çalışır
-1. `Run.bat` ile başlat. İlk çalıştırmada winget ile Python 3.11+, `.venv` içinde yt-dlp, ffmpeg ve Deno kurulur.
+1. `Run.bat` (Windows) veya `./run.sh` (Linux/macOS) ile başlat. İlk çalıştırmada sisteminin paket yöneticisiyle Python 3.11+, `.venv` içinde yt-dlp, ffmpeg ve Deno kurulur.
 2. İlk seferde video/müzik klasörlerini sorar (varsayılan: `Videos`, `Music`). Tercihler `config.json` içine kaydedilir.
 3. Her oturumda: URL gir, Video (MP4) veya Ses (MP3) seç, playlist URL'si için tüm liste mi tek video mu karar ver, MP4 ise profil seç.
 4. yt-dlp devam/tekrar dene bayraklarıyla (`--continue`, `--retries infinite`, `--fragment-retries infinite`) çalışır; arşiv dosyaları tekrar indirmeyi engeller; konsol çıktısı log'a yazılır.
@@ -173,14 +174,15 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir Windows konsol uygulaması. �
 | `models.py` | Yollar, yapılandırma, girdiler ve indirme planları için veri sınıfları |
 
 ### Gereksinimler
-- Winget (Windows Uygulama Yükleyicisi) ile Windows 10/11
+- Python 3.11 veya üzeri
+- Winget (Windows Uygulama Yükleyicisi) ile Windows 10/11, veya apt/dnf/pacman/brew ile Linux/macOS
 - Kurulum ve indirmeler için internet bağlantısı
 
 ### Sorun giderme
 | Sorun | Çözüm |
 |-------|-------|
-| Kurulum başarısız | `Run.bat`'i Yönetici olarak çalıştır. Winget ve internet erişimini doğrula. |
-| yt-dlp/ffmpeg bulunamıyor | `install.ps1`'i tekrar çalıştır veya kurulumdan sonra yeni bir terminal aç. |
+| Kurulum başarısız | `Run.bat`'i Yönetici olarak çalıştır (Windows). Paket yöneticisi ve internet erişimini doğrula. |
+| yt-dlp/ffmpeg bulunamıyor | `install.ps1` (Windows) veya `install.sh` (Linux/macOS) dosyasını tekrar çalıştır, ya da kurulumdan sonra yeni bir terminal aç. |
 | İndirme klasörlerini değiştir | `config.json` dosyasını sil ve yeniden başlat. |
 | Yeniden indirmeyi zorla | `archives/` içindeki ilgili arşiv dosyasını sil. |
 | Deno uyarısı görünüyor | Deno kur: `winget install DenoLand.Deno` veya `install.ps1`'i yeniden çalıştır. |

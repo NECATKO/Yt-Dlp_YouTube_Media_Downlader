@@ -17,12 +17,13 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Get current version from git tag or pyproject.toml
+# Get the installed version in tag form ("v1.2.3"), so it can be compared
+# directly against the GitHub release tag_name.
 get_current_version() {
-    if command -v git &> /dev/null && git describe --tags 2>/dev/null; then
-        git describe --tags 2>/dev/null | head -1
-    elif [[ -f "pyproject.toml" ]]; then
-        grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2
+    if [[ -f "app_version.txt" ]]; then
+        tr -d '[:space:]' < app_version.txt
+    elif command -v git &> /dev/null; then
+        git describe --tags --abbrev=0 2>/dev/null || echo "unknown"
     else
         echo "unknown"
     fi
@@ -110,23 +111,39 @@ main() {
                 # Copy new files (preserving config)
                 EXTRACT_DIR="$TMP_DIR/$GITHUB_REPO-${LATEST#v}"
                 
-                # Backup config
-                [[ -f config.json ]] && cp config.json "$TMP_DIR/config.json.bak"
-                [[ -f settings.json ]] && cp settings.json "$TMP_DIR/settings.json.bak"
-                
-                # Copy new files
+                # Backup config. Plain `[[ -f x ]] && cp x y` would abort the
+                # whole script under `set -e` whenever the file is absent.
+                if [[ -f config.json ]]; then
+                    cp config.json "$TMP_DIR/config.json.bak"
+                fi
+
+                # Replace the package outright. Copying onto the existing
+                # directory would nest it as ytdlp_app/ytdlp_app and leave
+                # removed modules behind.
+                rm -rf ytdlp_app
                 cp -r "$EXTRACT_DIR/ytdlp_app" .
                 cp "$EXTRACT_DIR/downloader.py" .
                 cp "$EXTRACT_DIR/pyproject.toml" .
-                
+                if [[ -f "$EXTRACT_DIR/app_version.txt" ]]; then
+                    cp "$EXTRACT_DIR/app_version.txt" .
+                fi
+                for script in run.sh update.sh install.sh; do
+                    if [[ -f "$EXTRACT_DIR/$script" ]]; then
+                        cp "$EXTRACT_DIR/$script" .
+                        chmod +x "$script"
+                    fi
+                done
+
                 # Restore config
-                [[ -f "$TMP_DIR/config.json.bak" ]] && cp "$TMP_DIR/config.json.bak" config.json
-                [[ -f "$TMP_DIR/settings.json.bak" ]] && cp "$TMP_DIR/settings.json.bak" settings.json
-                
+                if [[ -f "$TMP_DIR/config.json.bak" ]]; then
+                    cp "$TMP_DIR/config.json.bak" config.json
+                fi
+
                 # Cleanup
                 rm -rf "$TMP_DIR"
-                
-                echo -e "${GREEN}Update installed successfully!${NC}"
+
+                echo -e "${GREEN}Update installed to $LATEST successfully!${NC}"
+                echo -e "${YELLOW}Restart the application to use the new version.${NC}"
             fi
         fi
     else

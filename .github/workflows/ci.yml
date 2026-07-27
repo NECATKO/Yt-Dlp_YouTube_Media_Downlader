@@ -91,6 +91,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install build
 
+      - name: Check version consistency
+        run: python scripts/check_version.py ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+
       - name: Build package
         run: python -m build
 
@@ -133,6 +136,11 @@ jobs:
           Copy-Item -Path "Run.bat" -Destination $releaseDir
           Copy-Item -Path "install.ps1" -Destination $releaseDir
           Copy-Item -Path "update.ps1" -Destination $releaseDir
+          Copy-Item -Path "run.sh" -Destination $releaseDir
+          Copy-Item -Path "install.sh" -Destination $releaseDir
+          Copy-Item -Path "update.sh" -Destination $releaseDir
+          # app_version.txt is what the updaters compare against the release tag.
+          Copy-Item -Path "app_version.txt" -Destination $releaseDir
           Copy-Item -Path "README.md" -Destination $releaseDir
           Copy-Item -Path "LICENSE" -Destination $releaseDir
           Copy-Item -Path "pyproject.toml" -Destination $releaseDir
@@ -141,15 +149,15 @@ jobs:
           New-Item -ItemType Directory -Path "$releaseDir/archives" -Force
           New-Item -ItemType Directory -Path "$releaseDir/logs" -Force
 
-          # Create ZIP
-          $version = "${{ github.ref_name }}"
-          Compress-Archive -Path $releaseDir -DestinationPath "YtDlpDownloader-Portable-$version.zip"
+          # The asset name must stay stable across releases: update.ps1 looks the
+          # asset up by exact name, so a version-stamped name is never found.
+          Compress-Archive -Path $releaseDir -DestinationPath "YtDlpDownloader-Portable.zip"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            YtDlpDownloader-Portable-*.zip
+            YtDlpDownloader-Portable.zip
             dist/*.whl
             dist/*.tar.gz
           generate_release_notes: true

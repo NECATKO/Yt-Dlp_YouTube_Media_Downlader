@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-07-28
+
+Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 should upgrade** — that release shipped an unusable build.
+
+### Fixed
+- **v0.3.0 shipped untranslated**: the release tag predates the i18n repair commit, so the published ZIP printed raw translation keys (`prompt_url`, `prompt_mode`, …) instead of text. This release is the first one containing the fix.
+- **Auto-update never worked**: `update.ps1` looked for a release asset named `YtDlpDownloader-Portable.zip` while CI published `YtDlpDownloader-Portable-<tag>.zip`, so every update check reported the asset as missing. CI now publishes the stable name the updater expects.
+- **Update check compared mismatched formats**: `app_version.txt` stored `0.3.0` while it is compared against the GitHub tag `v0.3.0`, so the app considered itself outdated on every launch. The file now stores the tag form.
+- **`app_version.txt` was missing from the portable ZIP**, leaving fresh portable installs with no local version to compare.
+- **`update.sh` read the version from `pyproject.toml`**, which no longer carries a literal version; it now reads `app_version.txt`. It also copied the package *into* the existing `ytdlp_app/` directory (creating `ytdlp_app/ytdlp_app`) and could abort silently under `set -e` when an optional file was absent.
+
+### Changed
+- **Single-source versioning**: `ytdlp_app.__version__` is now the only place the version is written. `pyproject.toml` reads it dynamically, and `scripts/check_version.py` (wired into CI) fails the build if `app_version.txt` or the release tag disagrees.
+- The portable ZIP now includes `run.sh`, `install.sh`, `update.sh`, and `app_version.txt`, so the documented Linux/macOS workflow actually works from a release download.
+- Corrected metadata and docs that claimed Windows-only support and Python 3.10+; the app requires **Python 3.11+** (it uses `StrEnum`) and is tested on Linux, Windows, and macOS.
+
+## [0.3.0] - 2026-01-11
+
+### Added
+- **Modern console UI**: boxed panels and styled menus.
+- **Full localization (i18n)**: hardcoded strings moved behind a translation layer (English and Turkish).
+- **CommandBuilder pattern**: a dedicated builder for assembling yt-dlp command lines.
+
+### Changed
+- **Architecture refactor**: the monolithic `run()` function became the modular `InteractiveSession` class in `session.py`.
+- **Cleaner code**: magic numbers in menu choices replaced with readable enums.
+- **Performance**: cached the system dependency checks (ffmpeg, yt-dlp, deno).
+
+> Note: the published v0.3.0 artifact is broken — see [0.3.1].
+
 ## [0.2.0] - 2026-01-11
 
 ### Added
@@ -25,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Build job: Distributable package creation
   - Release job: Automatic GitHub release on tags
   - Supported platforms: Ubuntu, Windows, macOS
-  - Python versions: 3.10, 3.11, 3.12, 3.13
+  - Python versions: 3.11, 3.12, 3.13
 
 #### New Modules
 - **exceptions.py**: Custom exception hierarchy for error handling
@@ -53,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Cross-Platform Support
 - **install.sh**: Unix installation script
   - Supports apt, dnf, pacman, brew package managers
-  - Automatic OS detection and Python 3.10+ installation
+  - Automatic OS detection and Python 3.11+ installation
 - **run.sh**: Cross-platform launcher script
 - **update.sh**: Cross-platform updater script with config backup
 
@@ -92,6 +122,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # Değişiklik Günlüğü (Türkçe)
 
+## [0.3.1] - 2026-07-28
+
+Bozuk v0.3.0 paketini onaran yama sürümü. **v0.3.0 kullanan herkes güncellemeli** — o sürüm kullanılamaz bir paketle yayınlandı.
+
+### Düzeltilenler
+- **v0.3.0 çevirisiz yayınlandı**: sürüm etiketi i18n onarım commit'inden önce atıldığı için yayınlanan ZIP, metin yerine ham çeviri anahtarlarını (`prompt_url`, `prompt_mode`, …) yazdırıyordu. Düzeltmeyi içeren ilk sürüm budur.
+- **Otomatik güncelleme hiç çalışmıyordu**: `update.ps1`, `YtDlpDownloader-Portable.zip` adlı bir dosya ararken CI `YtDlpDownloader-Portable-<etiket>.zip` yayınlıyordu; bu yüzden her kontrol "dosya bulunamadı" ile sonuçlanıyordu. CI artık güncelleyicinin beklediği sabit adı kullanıyor.
+- **Sürüm karşılaştırması uyumsuz biçimdeydi**: `app_version.txt` içinde `0.3.0` yazarken karşılaştırma GitHub etiketi `v0.3.0` ile yapılıyordu; uygulama her açılışta kendini eski sanıyordu. Dosya artık etiket biçimini saklıyor.
+- **`app_version.txt` taşınabilir ZIP'te yoktu**, bu yüzden yeni kurulumlarda karşılaştırılacak yerel sürüm bulunmuyordu.
+- **`update.sh` sürümü `pyproject.toml`'dan okuyordu**; orada artık sabit bir sürüm yok, dosya artık `app_version.txt` okuyor. Ayrıca paketi mevcut `ytdlp_app/` dizininin *içine* kopyalıyordu (`ytdlp_app/ytdlp_app` oluşuyordu) ve isteğe bağlı bir dosya yoksa `set -e` nedeniyle sessizce sonlanabiliyordu.
+
+### Değişenler
+- **Tek kaynaklı sürüm yönetimi**: sürüm artık yalnızca `ytdlp_app.__version__` içinde yazılı. `pyproject.toml` onu dinamik okuyor ve CI'a bağlanan `scripts/check_version.py`, `app_version.txt` ya da sürüm etiketi uyuşmazsa derlemeyi durduruyor.
+- Taşınabilir ZIP artık `run.sh`, `install.sh`, `update.sh` ve `app_version.txt` içeriyor; belgelenen Linux/macOS akışı böylece indirilen paketten gerçekten çalışıyor.
+- Windows'a özel destek ve Python 3.10+ iddiasında bulunan meta veriler ve belgeler düzeltildi; uygulama **Python 3.11+** gerektiriyor (`StrEnum` kullanıyor) ve Linux, Windows, macOS üzerinde test ediliyor.
+
 ## [0.3.0] - 2026-01-11
 
 ### Eklenenler
@@ -103,6 +149,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mimari Yenileme**: Tek parça halindeki `run()` fonksiyonu modüler `InteractiveSession` sınıfına dönüştürüldü.
 - **Temiz Kod**: Menü seçimlerindeki "sihirli sayılar" (magic numbers) okunabilir Enum yapılarıyla değiştirildi.
 - **Performans**: Sistem bağımlılık kontrollerine (ffmpeg, yt-dlp, deno) önbellekleme eklendi.
+
+> Not: yayınlanan v0.3.0 paketi bozuk — bkz. [0.3.1].
 
 ## [0.2.0] - 2026-01-11
 
@@ -124,7 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Build işi: Dağıtılabilir paket oluşturma
   - Release işi: Tag'lerde otomatik GitHub Release
   - Desteklenen platformlar: Ubuntu, Windows, macOS
-  - Python sürümleri: 3.10, 3.11, 3.12, 3.13
+  - Python sürümleri: 3.11, 3.12, 3.13
 
 #### Yeni Modüller
 - **exceptions.py**: Hata yönetimi için özel istisna hiyerarşisi
