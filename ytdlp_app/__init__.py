@@ -5,6 +5,7 @@ This package provides a user-friendly console interface for downloading
 videos and audio from YouTube and other supported platforms.
 """
 
+from ._version import __version__
 from .app import run
 from .exceptions import (
     CommandExecutionError,
@@ -16,12 +17,6 @@ from .exceptions import (
     YtDlpWrapperError,
 )
 from .validators import is_valid_url, is_youtube_url, validate_url
-
-# Single source of truth for the version. pyproject.toml reads this attribute
-# statically. app_version.txt holds the same version in git-tag form ("v" prefix)
-# because the updaters compare it against the GitHub release tag_name; CI enforces
-# that all three agree.
-__version__ = "0.3.1"
 
 __all__ = [
     "CommandExecutionError",

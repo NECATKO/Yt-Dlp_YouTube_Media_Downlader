@@ -67,7 +67,10 @@ def load_config(config_file: Path) -> dict[str, Any]:
     try:
         data = json.loads(config_file.read_text(encoding="utf-8"))
     except Exception:
-        print("WARNING: config.json could not be read; it will be recreated.")
+        # Runs before the language is known -- the config being unreadable is
+        # exactly what would have told us which language to use -- so this
+        # falls back to English.
+        print(paint(t("config_read_warning"), Colors.YELLOW))
         return {}
     # A JSON file whose top level is a list or scalar is as unusable as a
     # corrupt one; callers rely on getting a mapping back.

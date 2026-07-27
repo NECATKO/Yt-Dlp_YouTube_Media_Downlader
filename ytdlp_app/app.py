@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from ._version import __version__
 from .config import (
     ensure_dirs_interactive,
     ensure_language_interactive,
@@ -10,7 +11,7 @@ from .config import (
     load_settings,
 )
 from .i18n import set_language, t
-from .logging_utils import log_error, now_stamp
+from .logging_utils import Colors, log_error, now_stamp
 from .models import AppPaths, UserConfig
 from .session import InteractiveSession
 from .ui import ConsoleUI
@@ -47,6 +48,12 @@ def run() -> int:
         # Language must be resolved before anything else is printed, otherwise
         # every t() lookup falls through to the raw key.
         set_language(ensure_language_interactive(ui, cfg, config_file=paths.config_file))
+
+        ui.print_panel(
+            t("app_version", version=__version__),
+            title=t("app_title"),
+            color=Colors.CYAN,
+        )
 
         videos_base, music_base, _cfg = ensure_dirs_interactive(
             ui, cfg, config_file=paths.config_file, app_name=app_name

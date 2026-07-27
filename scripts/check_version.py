@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-INIT_FILE = ROOT / "ytdlp_app" / "__init__.py"
+VERSION_MODULE = ROOT / "ytdlp_app" / "_version.py"
 VERSION_FILE = ROOT / "app_version.txt"
 
 
@@ -27,11 +27,11 @@ def read_package_version() -> str:
     """Parse __version__ out of the package without importing it."""
     match = re.search(
         r"^__version__\s*=\s*[\"']([^\"']+)[\"']",
-        INIT_FILE.read_text(encoding="utf-8"),
+        VERSION_MODULE.read_text(encoding="utf-8"),
         re.MULTILINE,
     )
     if not match:
-        sys.exit(f"ERROR: no __version__ assignment found in {INIT_FILE}")
+        sys.exit(f"ERROR: no __version__ assignment found in {VERSION_MODULE}")
     return match.group(1)
 
 

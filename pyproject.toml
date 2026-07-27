@@ -58,7 +58,9 @@ Issues = "https://github.com/NECATKO/Yt-Dlp_YouTube_Media_Downlader/issues"
 ytdlp-downloader = "ytdlp_app.app:run"
 
 [tool.setuptools.dynamic]
-version = {attr = "ytdlp_app.__version__"}
+# Points at the leaf module rather than the package, so setuptools can read the
+# literal without importing (and thus without executing) the whole package.
+version = {attr = "ytdlp_app._version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]

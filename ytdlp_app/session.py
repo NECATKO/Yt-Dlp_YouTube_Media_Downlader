@@ -88,6 +88,11 @@ class InteractiveSession:
 
             if "is not a valid URL" in content:
                 return t("error_invalid_url")
+            # Checked before "Video unavailable": yt-dlp reports a copyright
+            # takedown as an unavailable video with the reason appended, and the
+            # specific cause is the more useful message.
+            if "copyright" in content.lower():
+                return t("error_copyright")
             if "Video unavailable" in content:
                 return t("error_unavailable")
             if "Private video" in content:

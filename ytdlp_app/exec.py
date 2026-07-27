@@ -11,6 +11,7 @@ import subprocess
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from .i18n import t
 from .logging_utils import (
     Colors,
     append_log,
@@ -70,9 +71,10 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
         Returns 130 on keyboard interrupt.
         Returns 1 on unexpected errors.
     """
-    print(f"\n{Colors.BOLD}=== RUNNING COMMAND ==={Colors.RESET}")
+    header = t("command_running")
+    print(f"\n{Colors.BOLD}=== {header} ==={Colors.RESET}")
     print(colorize_command(cmd))
-    print(f"{Colors.BOLD}======================={Colors.RESET}\n")
+    print(f"{Colors.BOLD}{'=' * (len(header) + 8)}{Colors.RESET}\n")
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -103,11 +105,8 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
 
             rc = p.wait()
             if rc == 0:
-                print(
-                    "\n"
-                    + paint(">>> Command finished successfully.", Colors.GREEN, Colors.BOLD)
-                    + "\n"
-                )
+                message = f">>> {t('command_success', code=rc)}"
+                print("\n" + paint(message, Colors.GREEN, Colors.BOLD) + "\n")
             # A non-zero code is reported by the caller, which has the context
             # to know whether it is fatal (see the two-stage compatibility flow).
 
@@ -115,7 +114,8 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
             return rc
 
     except KeyboardInterrupt:
-        print("\n>>> Operation cancelled by user (Ctrl+C).")
+        print(f"\n>>> {t('status_cancelled')} (Ctrl+C).")
+        # The log stays English: it is a diagnostic artifact, not UI.
         append_log(
             log_path,
             f"\n[INFO {datetime.now().isoformat(timespec='seconds')}] "
@@ -123,6 +123,6 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
         )
         return 130
     except Exception as ex:
-        print("Command failed unexpectedly. See log for details.")
+        print(t("command_failed"))
         log_error(log_path, "Unexpected error while running command", ex)
         return 1
