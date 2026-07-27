@@ -145,36 +145,33 @@ class DownloadPlan:
     Contains all information needed to execute a download, including
     URL, mode, output paths, and command-line arguments.
 
+    The command-line arguments themselves are not stored here: the download is
+    driven by the CommandBuilder that produced them. js_args is the exception,
+    because the playlist fetch and the skip probe need the same JS runtime flags
+    outside of any download command.
+
     Attributes:
         url: The URL to download from.
         mode: Download mode ('mp4' for video, 'mp3' for audio).
         is_playlist: Whether the URL is a playlist.
         playlist_id: Playlist identifier, or None for single items.
-        mp4_profile: MP4 quality profile (1=compatibility, 2=quality), or None.
-        remux_container: Container choice for quality mode (1=MKV, 2=MP4), or None.
+        mp4_profile: MP4 quality profile, or None for audio downloads.
+        remux_container: Container choice for quality mode, or None.
         base_dir: Base directory for downloaded files.
         output_template: yt-dlp output template string.
         archive_path: Path to the download archive file.
         log_path: Path to the session log file.
-        playlist_flag: yt-dlp playlist flag ('--yes-playlist' or '--no-playlist').
         js_args: Arguments for JavaScript runtime configuration.
-        stability_args: Arguments for retry and stability settings.
-        post_args: Arguments for post-processing (metadata, thumbnails).
-        common_args: Common arguments including output and archive settings.
     """
 
     url: str
     mode: Mode
     is_playlist: bool
     playlist_id: str | None
-    mp4_profile: int | None
-    remux_container: int | None
+    mp4_profile: ProfileChoice | None
+    remux_container: ContainerChoice | None
     base_dir: Path
     output_template: str
     archive_path: Path
     log_path: Path
-    playlist_flag: str
     js_args: list[str]
-    stability_args: list[str]
-    post_args: list[str]
-    common_args: list[str]

@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .exceptions import ValidationError
 from .exec import run_capture, run_cmd_tee
 from .i18n import t
 from .logging_utils import Colors, append_log, log_error, now_stamp, paint
@@ -32,8 +33,10 @@ from .playlist import (
     is_playlist_url,
     read_archive_ids,
 )
+from .settings import AppSettings
 from .skip_probe import probe_skip_reason
 from .system import deno_available, ffmpeg_available, refresh_tool_cache, yt_dlp_available
+from .validators import validate_url
 from .yt_dlp import CommandBuilder
 
 if TYPE_CHECKING:
@@ -43,17 +46,25 @@ if TYPE_CHECKING:
 class InteractiveSession:
     """Manages an interactive download session."""
 
-    def __init__(self, ui: ConsoleUI, config: UserConfig, paths: AppPaths) -> None:
+    def __init__(
+        self,
+        ui: ConsoleUI,
+        config: UserConfig,
+        paths: AppPaths,
+        settings: AppSettings | None = None,
+    ) -> None:
         """Initialize the session.
 
         Args:
             ui: The UI interface.
             config: User configuration.
             paths: Application paths.
+            settings: Advanced settings from config.json; defaults when omitted.
         """
         self.ui = ui
         self.config = config
         self.paths = paths
+        self.settings = settings if settings is not None else AppSettings()
         self.log_path: Path | None = None
 
     def analyze_log_for_error(self, log_path: Path) -> str:
@@ -147,6 +158,27 @@ class InteractiveSession:
                 if self.handle_error(self.log_path):
                     return 1
 
+    def _ask_url(self) -> str | None:
+        """Prompt for a URL until a usable one is given.
+
+        Returns:
+            The validated URL, or None when the user asked to exit.
+        """
+        while True:
+            raw = self.ui.ask_text("\n" + t("prompt_url"))
+            if not raw:
+                self.ui.print(t("error_no_url"))
+                return None
+            try:
+                # Guards against input yt-dlp would misread, most importantly a
+                # leading "-", which it would take as a command-line flag.
+                return validate_url(raw)
+            except ValidationError:
+                self.ui.print(
+                    f"{paint(t('label_error'), Colors.RED, Colors.BOLD)} "
+                    f"{paint(t('error_url_invalid_input'), Colors.RED)}"
+                )
+
     def _process_one_cycle(self) -> bool:
         """Process one download cycle.
 
@@ -160,9 +192,8 @@ class InteractiveSession:
         refresh_tool_cache()
 
         # 1) URL
-        url = self.ui.ask_text("\n" + t("prompt_url"))
-        if not url:
-            self.ui.print(t("error_no_url"))
+        url = self._ask_url()
+        if url is None:
             return False
 
         # 2) Mode selection
@@ -214,49 +245,50 @@ class InteractiveSession:
         playlist_id = get_playlist_id(url) if is_playlist else None
 
         # 5) MP4 profile
-        mp4_profile = None
-        remux_container = None
+        mp4_profile: ProfileChoice | None = None
+        remux_container: ContainerChoice | None = None
         if mode == DownloadMode.VIDEO:
-            mp4_profile = self.ui.pick(
-                t("prompt_mp4_profile"),
-                [
-                    t("profile_compatibility"),
-                    t("profile_quality"),
-                ],
+            mp4_profile = ProfileChoice(
+                self.ui.pick(
+                    t("prompt_mp4_profile"),
+                    [
+                        t("profile_compatibility"),
+                        t("profile_quality"),
+                    ],
+                )
             )
             if mp4_profile == ProfileChoice.QUALITY:
-                remux_container = self.ui.pick(
-                    t("prompt_container"),
-                    [
-                        t("container_mkv"),
-                        t("container_mp4"),
-                    ],
+                remux_container = ContainerChoice(
+                    self.ui.pick(
+                        t("prompt_container"),
+                        [
+                            t("container_mkv"),
+                            t("container_mp4"),
+                        ],
+                    )
                 )
 
         # 6) Directories and templates
         self.paths.archives_dir.mkdir(parents=True, exist_ok=True)
         self.paths.logs_dir.mkdir(parents=True, exist_ok=True)
 
+        templates = self.settings.output
         if mode == DownloadMode.VIDEO:
             if is_playlist:
                 base_dir = self.config.videos_dir / "yt-dlp"
-                output_template = str(
-                    base_dir / "%(playlist_title)s" / "%(playlist_index)03d - %(title)s.%(ext)s"
-                )
+                output_template = str(base_dir / templates.playlist_video_template)
                 archive_path = self.paths.archives_dir / f"playlist_{playlist_id}_mp4.txt"
             else:
                 base_dir = self.config.videos_dir / "Downloaded Videos"
-                output_template = str(base_dir / "%(title)s.%(ext)s")
+                output_template = str(base_dir / templates.single_video_template)
                 archive_path = self.paths.archives_dir / "single_videos_mp4.txt"
         elif is_playlist:
             base_dir = self.config.music_dir / "yt-dlp"
-            output_template = str(
-                base_dir / "%(playlist_title)s" / "%(playlist_index)03d - %(title)s.%(ext)s"
-            )
+            output_template = str(base_dir / templates.playlist_audio_template)
             archive_path = self.paths.archives_dir / f"playlist_{playlist_id}_mp3.txt"
         else:
             base_dir = self.config.music_dir / "Downloaded Music"
-            output_template = str(base_dir / "%(title)s.%(ext)s")
+            output_template = str(base_dir / templates.single_audio_template)
             archive_path = self.paths.archives_dir / "single_audios_mp3.txt"
 
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -299,6 +331,7 @@ class InteractiveSession:
             archive_path=archive_path,
             is_playlist=is_playlist,
             use_deno=deno_ok,
+            settings=self.settings,
         )
 
         plan = DownloadPlan(
@@ -312,11 +345,7 @@ class InteractiveSession:
             output_template=output_template,
             archive_path=archive_path,
             log_path=log_path,
-            playlist_flag="--yes-playlist" if is_playlist else "--no-playlist",
             js_args=cmd_builder.js_args,
-            stability_args=cmd_builder.stability_args,
-            post_args=cmd_builder.build_post_args(mode),
-            common_args=cmd_builder.common_args,
         )
 
         # 8) Playlist mapping
@@ -365,7 +394,7 @@ class InteractiveSession:
         output_template: str,
         archive_path: Path,
         deno_ok: bool,
-        mp4_profile: int | None,
+        mp4_profile: ProfileChoice | None,
     ) -> None:
         """Print session summary before download using a panel."""
         lines = []

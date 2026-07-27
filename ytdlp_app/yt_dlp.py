@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .models import DownloadMode
+from .settings import AppSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,6 +29,7 @@ class CommandBuilder:
         archive_path: Path,
         is_playlist: bool,
         use_deno: bool = True,
+        settings: AppSettings | None = None,
     ) -> None:
         """Initialize the CommandBuilder.
 
@@ -37,12 +39,15 @@ class CommandBuilder:
             archive_path: Path to the download archive file.
             is_playlist: Whether the URL is a playlist.
             use_deno: Whether to use Deno as the JS runtime.
+            settings: User settings driving retry, rate limit, proxy, audio
+                format and subtitle behavior. Defaults are used when omitted.
         """
         self.url = url
         self.output_template = output_template
         self.archive_path = archive_path
         self.is_playlist = is_playlist
         self.use_deno = use_deno
+        self.settings = settings if settings is not None else AppSettings()
 
     @property
     def js_args(self) -> list[str]:
@@ -54,21 +59,11 @@ class CommandBuilder:
 
     @property
     def stability_args(self) -> list[str]:
-        """Build stability and retry arguments for yt-dlp."""
-        return [
-            "--continue",
-            "--ignore-errors",
-            "--retries",
-            "infinite",
-            "--fragment-retries",
-            "infinite",
-            "--concurrent-fragments",
-            "4",
-            "--sleep-interval",
-            "1",
-            "--max-sleep-interval",
-            "3",
-        ]
+        """Build stability and retry arguments for yt-dlp.
+
+        Also carries the rate limit and proxy, which are off by default.
+        """
+        return self.settings.download.to_args()
 
     @property
     def common_args(self) -> list[str]:
@@ -85,13 +80,14 @@ class CommandBuilder:
         ]
 
     def build_post_args(self, mode: DownloadMode) -> list[str]:
-        """Build post-processing arguments for yt-dlp."""
-        post_args = ["--embed-metadata", "--add-metadata"]
+        """Build post-processing arguments for yt-dlp.
+
+        For audio this also carries the extraction flags (--extract-audio and
+        the target format), so build_mp3 only has to pick the source stream.
+        """
         if mode == DownloadMode.AUDIO:
-            post_args += ["--embed-thumbnail", "--convert-thumbnails", "jpg"]
-        else:
-            post_args += ["--embed-thumbnail"]
-        return post_args
+            return self.settings.audio.to_args()
+        return self.settings.video.to_args()
 
     def _assemble(self, selection: list[str], mode: DownloadMode) -> list[str]:
         """Combine a format selection with the arguments every command shares.
@@ -150,17 +146,9 @@ class CommandBuilder:
         )
 
     def build_mp3(self) -> list[str]:
-        """Build command for MP3 audio extraction."""
-        return self._assemble(
-            [
-                "yt-dlp",
-                "-f",
-                "bestaudio/best",
-                "--extract-audio",
-                "--audio-format",
-                "mp3",
-                "--audio-quality",
-                "0",
-            ],
-            DownloadMode.AUDIO,
-        )
+        """Build command for audio extraction.
+
+        The extraction flags come from the audio settings via build_post_args,
+        so the target format follows whatever the user configured.
+        """
+        return self._assemble(["yt-dlp", "-f", "bestaudio/best"], DownloadMode.AUDIO)

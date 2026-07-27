@@ -3,7 +3,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from .config import ensure_dirs_interactive, ensure_language_interactive, load_config
+from .config import (
+    ensure_dirs_interactive,
+    ensure_language_interactive,
+    load_config,
+    load_settings,
+)
 from .i18n import set_language, t
 from .logging_utils import log_error, now_stamp
 from .models import AppPaths, UserConfig
@@ -53,7 +58,7 @@ def run() -> int:
             saved_at=(_cfg.get("saved_at") or None),
         )
 
-        session = InteractiveSession(ui, user_config, paths)
+        session = InteractiveSession(ui, user_config, paths, load_settings(_cfg))
         return session.run_loop()
 
     except (KeyboardInterrupt, EOFError):

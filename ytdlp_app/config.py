@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from .i18n import get_available_languages, get_language_name, t
 from .logging_utils import Colors, paint
+from .settings import AppSettings
 
 if TYPE_CHECKING:
     from .ui import UI
@@ -81,6 +82,39 @@ def save_config(config_file: Path, cfg: dict[str, Any]) -> None:
         cfg: The configuration dictionary to save.
     """
     config_file.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_settings(cfg: dict[str, Any]) -> AppSettings:
+    """Read the advanced settings out of a loaded configuration dict.
+
+    Configs written before settings existed simply have no "settings" key, so
+    they resolve to the defaults and need no migration.
+
+    Args:
+        cfg: The configuration dictionary from load_config().
+
+    Returns:
+        The parsed settings, or all-defaults when the key is absent or unusable.
+    """
+    raw = cfg.get("settings")
+    if not isinstance(raw, dict):
+        return AppSettings()
+    return AppSettings.from_dict(raw)
+
+
+def save_settings(config_file: Path, cfg: dict[str, Any], settings: AppSettings) -> None:
+    """Write the advanced settings back into config.json.
+
+    Mutates ``cfg`` so the caller keeps holding the current state.
+
+    Args:
+        config_file: Path to the configuration file.
+        cfg: The configuration dictionary to update and persist.
+        settings: The settings to store.
+    """
+    cfg["settings"] = settings.to_dict()
+    cfg["saved_at"] = datetime.now().isoformat(timespec="seconds")
+    save_config(config_file, cfg)
 
 
 def delete_config(config_file: Path) -> None:

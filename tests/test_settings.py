@@ -101,10 +101,10 @@ class TestAppSettings:
     def test_default_values(self) -> None:
         """Test default app settings."""
         settings = AppSettings()
-        assert settings.use_deno is True
-        assert settings.default_mode == "mp4"
-        assert settings.default_mp4_profile == 1
-        assert settings.language == "en"
+        assert settings.download.concurrent_fragments == 4
+        assert settings.audio.audio_format == "mp3"
+        assert settings.video.embed_subtitles is False
+        assert settings.output.single_video_template == "%(title)s.%(ext)s"
 
     def test_from_dict_empty(self) -> None:
         """Test loading from empty dict uses defaults."""
@@ -114,35 +114,28 @@ class TestAppSettings:
 
     def test_from_dict_partial(self) -> None:
         """Test loading from partial dict."""
-        data = {
-            "download": {"concurrent_fragments": 8},
-            "language": "tr",
-        }
+        data = {"download": {"concurrent_fragments": 8}}
         settings = AppSettings.from_dict(data)
 
         assert settings.download.concurrent_fragments == 8
-        assert settings.language == "tr"
         # Other defaults preserved
         assert settings.download.sleep_interval == 1
+        assert settings.audio.audio_format == "mp3"
 
     def test_to_dict(self) -> None:
         """Test conversion to dictionary."""
         settings = AppSettings()
         data = settings.to_dict()
 
-        assert "download" in data
-        assert "audio" in data
-        assert "video" in data
-        assert "output" in data
+        assert set(data) == {"download", "audio", "video", "output"}
         assert data["download"]["concurrent_fragments"] == 4
-        assert data["use_deno"] is True
 
     def test_roundtrip(self) -> None:
         """Test dict -> settings -> dict preserves values."""
         original = {
             "download": {"concurrent_fragments": 8, "rate_limit": "2M"},
             "audio": {"audio_quality": 5},
-            "language": "de",
+            "video": {"subtitle_languages": "en,tr"},
         }
 
         settings = AppSettings.from_dict(original)
@@ -151,4 +144,4 @@ class TestAppSettings:
         assert result["download"]["concurrent_fragments"] == 8
         assert result["download"]["rate_limit"] == "2M"
         assert result["audio"]["audio_quality"] == 5
-        assert result["language"] == "de"
+        assert result["video"]["subtitle_languages"] == "en,tr"

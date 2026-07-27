@@ -1,36 +1,34 @@
 {
-  "_comment": "Advanced settings for ytdlp-downloader. Edit these to customize behavior.",
-  "download": {
-    "concurrent_fragments": 4,
-    "sleep_interval": 1,
-    "max_sleep_interval": 3,
-    "retries": "infinite",
-    "fragment_retries": "infinite",
-    "rate_limit": null,
-    "proxy": null
-  },
-  "audio": {
-    "audio_quality": 0,
-    "audio_format": "mp3",
-    "embed_thumbnail": true,
-    "embed_metadata": true,
-    "convert_thumbnails": "jpg"
-  },
-  "video": {
-    "embed_thumbnail": true,
-    "embed_metadata": true,
-    "embed_subtitles": false,
-    "subtitle_languages": "en",
-    "write_subtitles": false
-  },
-  "output": {
-    "single_video_template": "%(title)s.%(ext)s",
-    "single_audio_template": "%(title)s.%(ext)s",
-    "playlist_video_template": "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s",
-    "playlist_audio_template": "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s"
-  },
-  "use_deno": true,
-  "default_mode": "mp4",
-  "default_mp4_profile": 1,
-  "language": "en"
+  "_comment": "Advanced settings live under the \"settings\" key of config.json, in the shape shown below. Edit them there, or use the in-app settings menu. Any key you omit falls back to the default shown here.",
+  "settings": {
+    "download": {
+      "concurrent_fragments": 4,
+      "sleep_interval": 1,
+      "max_sleep_interval": 3,
+      "retries": "infinite",
+      "fragment_retries": "infinite",
+      "rate_limit": null,
+      "proxy": null
+    },
+    "audio": {
+      "audio_quality": 0,
+      "audio_format": "mp3",
+      "embed_thumbnail": true,
+      "embed_metadata": true,
+      "convert_thumbnails": "jpg"
+    },
+    "video": {
+      "embed_thumbnail": true,
+      "embed_metadata": true,
+      "embed_subtitles": false,
+      "subtitle_languages": "en",
+      "write_subtitles": false
+    },
+    "output": {
+      "single_video_template": "%(title)s.%(ext)s",
+      "single_audio_template": "%(title)s.%(ext)s",
+      "playlist_video_template": "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s",
+      "playlist_audio_template": "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s"
+    }
+  }
 }

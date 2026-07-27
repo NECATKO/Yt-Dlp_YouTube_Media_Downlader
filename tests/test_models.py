@@ -2,7 +2,13 @@
 
 from pathlib import Path
 
-from ytdlp_app.models import AppPaths, DownloadPlan, PlaylistEntry, UserConfig
+from ytdlp_app.models import (
+    AppPaths,
+    DownloadPlan,
+    PlaylistEntry,
+    ProfileChoice,
+    UserConfig,
+)
 
 
 class TestAppPaths:
@@ -89,21 +95,17 @@ class TestDownloadPlan:
             mode="mp4",
             is_playlist=False,
             playlist_id=None,
-            mp4_profile=1,
+            mp4_profile=ProfileChoice.COMPATIBILITY,
             remux_container=None,
             base_dir=tmp_path / "Videos",
             output_template="%(title)s.%(ext)s",
             archive_path=tmp_path / "archives" / "single_videos_mp4.txt",
             log_path=tmp_path / "logs" / "test.log",
-            playlist_flag="--no-playlist",
             js_args=["--js-runtime", "deno"],
-            stability_args=["--continue", "--retries", "infinite"],
-            post_args=["--embed-metadata"],
-            common_args=["--concurrent-fragments", "4"],
         )
         assert plan.mode == "mp4"
         assert plan.is_playlist is False
-        assert plan.mp4_profile == 1
+        assert plan.mp4_profile == ProfileChoice.COMPATIBILITY
 
     def test_download_plan_mp3_playlist(self, tmp_path: Path) -> None:
         """Test DownloadPlan for playlist MP3 download."""
@@ -118,11 +120,7 @@ class TestDownloadPlan:
             output_template="%(playlist_title)s/%(playlist_index)s - %(title)s.%(ext)s",
             archive_path=tmp_path / "archives" / "playlist_PLtest_mp3.txt",
             log_path=tmp_path / "logs" / "test.log",
-            playlist_flag="--yes-playlist",
             js_args=[],
-            stability_args=[],
-            post_args=[],
-            common_args=[],
         )
         assert plan.mode == "mp3"
         assert plan.is_playlist is True

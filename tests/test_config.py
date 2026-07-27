@@ -8,9 +8,12 @@ from ytdlp_app.config import (
     default_dirs,
     delete_config,
     load_config,
+    load_settings,
     normalize_user_path,
     save_config,
+    save_settings,
 )
+from ytdlp_app.settings import AppSettings
 
 
 class TestNormalizeUserPath:
@@ -129,3 +132,43 @@ class TestDeleteConfig:
         config_file = tmp_path / "nonexistent.json"
         # Should not raise
         delete_config(config_file)
+
+
+class TestSettingsPersistence:
+    """Tests for load_settings / save_settings."""
+
+    def test_missing_key_yields_defaults(self) -> None:
+        """A config written before settings existed must still load."""
+        settings = load_settings({"app": "yt-dlp-downloader", "language": "tr"})
+        assert settings.download.concurrent_fragments == 4
+        assert settings.audio.audio_format == "mp3"
+
+    def test_non_dict_value_yields_defaults(self) -> None:
+        """A corrupt settings value must not break startup."""
+        assert load_settings({"settings": "nonsense"}).download.proxy is None
+
+    def test_roundtrip_through_file(self, tmp_path: Path) -> None:
+        """Saved settings come back unchanged after a reload."""
+        config_file = tmp_path / "config.json"
+        cfg: dict[str, Any] = {"app": "yt-dlp-downloader", "language": "tr"}
+
+        settings = AppSettings()
+        settings.download.proxy = "http://proxy:8080"
+        settings.audio.audio_format = "opus"
+        save_settings(config_file, cfg, settings)
+
+        reloaded = load_settings(load_config(config_file))
+        assert reloaded.download.proxy == "http://proxy:8080"
+        assert reloaded.audio.audio_format == "opus"
+
+    def test_save_preserves_unrelated_keys(self, tmp_path: Path) -> None:
+        """Saving settings must not drop the language or directories."""
+        config_file = tmp_path / "config.json"
+        cfg: dict[str, Any] = {"language": "tr", "videos_dir": "/videos"}
+
+        save_settings(config_file, cfg, AppSettings())
+
+        stored = load_config(config_file)
+        assert stored["language"] == "tr"
+        assert stored["videos_dir"] == "/videos"
+        assert "settings" in stored

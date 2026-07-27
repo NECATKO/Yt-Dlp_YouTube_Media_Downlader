@@ -171,28 +171,21 @@ class OutputSettings:
 class AppSettings:
     """Complete application settings.
 
-    This class combines all settings categories and provides methods
-    for loading from and saving to configuration files.
+    Persisted under the "settings" key of config.json. The interface language
+    and the download directories are deliberately not here: they live at the top
+    level of config.json because they are resolved before the settings are read.
 
     Attributes:
         download: Download behavior settings.
         audio: Audio extraction settings.
         video: Video download settings.
         output: Output template settings.
-        use_deno: Whether to use Deno for JS challenges.
-        default_mode: Default download mode ('mp4' or 'mp3').
-        default_mp4_profile: Default MP4 profile (1=compatibility, 2=quality).
-        language: UI language code.
     """
 
     download: DownloadSettings = field(default_factory=DownloadSettings)
     audio: AudioSettings = field(default_factory=AudioSettings)
     video: VideoSettings = field(default_factory=VideoSettings)
     output: OutputSettings = field(default_factory=OutputSettings)
-    use_deno: bool = True
-    default_mode: str = "mp4"
-    default_mp4_profile: int = 1
-    language: str = "en"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppSettings:
@@ -257,12 +250,6 @@ class AppSettings:
                 ),
             )
 
-        # Top-level settings
-        settings.use_deno = data.get("use_deno", True)
-        settings.default_mode = data.get("default_mode", "mp4")
-        settings.default_mp4_profile = data.get("default_mp4_profile", 1)
-        settings.language = data.get("language", "en")
-
         return settings
 
     def to_dict(self) -> dict[str, Any]:
@@ -301,12 +288,4 @@ class AppSettings:
                 "playlist_video_template": self.output.playlist_video_template,
                 "playlist_audio_template": self.output.playlist_audio_template,
             },
-            "use_deno": self.use_deno,
-            "default_mode": self.default_mode,
-            "default_mp4_profile": self.default_mp4_profile,
-            "language": self.language,
         }
-
-
-# Default settings instance
-DEFAULT_SETTINGS = AppSettings()

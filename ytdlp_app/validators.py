@@ -7,31 +7,6 @@ from urllib.parse import urlparse
 
 from .exceptions import ValidationError
 
-# Supported video platforms
-SUPPORTED_HOSTS = frozenset(
-    {
-        # YouTube
-        "youtube.com",
-        "www.youtube.com",
-        "m.youtube.com",
-        "youtu.be",
-        "music.youtube.com",
-        # Other popular platforms supported by yt-dlp
-        "vimeo.com",
-        "dailymotion.com",
-        "twitch.tv",
-        "twitter.com",
-        "x.com",
-        "facebook.com",
-        "instagram.com",
-        "tiktok.com",
-        "soundcloud.com",
-        "bandcamp.com",
-        "vk.com",
-        "bilibili.com",
-    }
-)
-
 # Pattern to detect common URL injection attempts
 _DANGEROUS_PATTERN = re.compile(r"[;&|`$]")
 
@@ -62,38 +37,6 @@ def is_valid_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
         return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-    except Exception:
-        return False
-
-
-def is_supported_url(url: str) -> bool:
-    """
-    Check if the URL is from a supported platform.
-
-    Args:
-        url: The URL string to validate.
-
-    Returns:
-        True if the URL is from a known supported platform, False otherwise.
-
-    Note:
-        yt-dlp supports many more sites, but this checks common ones.
-        Returns True for unknown hosts as yt-dlp may still support them.
-    """
-    if not is_valid_url(url):
-        return False
-
-    try:
-        parsed = urlparse(url.strip())
-        host = parsed.netloc.lower()
-
-        # Remove 'www.' prefix for comparison
-        if host.startswith("www."):
-            host = host[4:]
-
-        # Check if it's a known supported host
-        # Return True even for unknown hosts (yt-dlp supports many sites)
-        return True
     except Exception:
         return False
 
