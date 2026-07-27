@@ -4,8 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from ytdlp_app.config import (
     default_dirs,
     delete_config,
@@ -32,7 +30,7 @@ class TestNormalizeUserPath:
     def test_handles_empty_string(self) -> None:
         """Test handling of empty string."""
         result = normalize_user_path("")
-        assert result == Path(".")
+        assert result == Path()
 
 
 class TestDefaultDirs:

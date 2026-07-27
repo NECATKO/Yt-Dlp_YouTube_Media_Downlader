@@ -6,12 +6,14 @@ download process coordination.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .exec import run_capture, run_cmd_tee
 from .i18n import t
-from .logging_utils import Colors, append_log, log_error, now_stamp
+from .logging_utils import Colors, append_log, log_error, now_stamp, paint
 from .models import (
     ActionChoice,
     AppPaths,
@@ -20,6 +22,7 @@ from .models import (
     DownloadPlan,
     ModeChoice,
     PlaylistChoice,
+    PlaylistEntry,
     ProfileChoice,
     UserConfig,
 )
@@ -30,15 +33,17 @@ from .playlist import (
     read_archive_ids,
 )
 from .skip_probe import probe_skip_reason
-from .system import deno_available, ffmpeg_available, yt_dlp_available
-from .ui import ConsoleUI
+from .system import deno_available, ffmpeg_available, refresh_tool_cache, yt_dlp_available
 from .yt_dlp import CommandBuilder
+
+if TYPE_CHECKING:
+    from .ui import ConsoleUI
 
 
 class InteractiveSession:
     """Manages an interactive download session."""
 
-    def __init__(self, ui: ConsoleUI, config: UserConfig, paths: AppPaths):
+    def __init__(self, ui: ConsoleUI, config: UserConfig, paths: AppPaths) -> None:
         """Initialize the session.
 
         Args:
@@ -52,42 +57,55 @@ class InteractiveSession:
         self.log_path: Path | None = None
 
     def analyze_log_for_error(self, log_path: Path) -> str:
-        """Read the last few lines of the log to find a user-friendly error cause."""
+        """Read the log to find a user-friendly error cause."""
         if not log_path.exists():
-            return "Unknown error (Log file not found)."
+            return t("error_log_missing")
 
         try:
-            # Read last 20 lines
-            with log_path.open("r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()[-20:]
+            # yt-dlp redraws its progress bar with bare carriage returns and
+            # run_cmd_tee writes them through verbatim, so splitting on "\n"
+            # alone (or letting universal newlines treat "\r" as a terminator)
+            # buries the real error under hundreds of progress fragments.
+            raw = log_path.read_text(encoding="utf-8", errors="replace")
+            lines = [ln.strip() for ln in re.split(r"[\r\n]+", raw) if ln.strip()]
 
-            content = "".join(lines)
+            # Classify on the diagnostic lines rather than a positional window:
+            # a long download can push the real error thousands of progress
+            # fragments back from the end of the file.
+            failures = [ln for ln in lines if "ERROR:" in ln or "WARNING:" in ln]
+            content = "\n".join(failures or lines[-200:])
 
             if "is not a valid URL" in content:
-                return "The provided input is not a valid URL supported by this tool."
+                return t("error_invalid_url")
             if "Video unavailable" in content:
-                return "The media is unavailable (it might be private, deleted, or region-locked)."
+                return t("error_unavailable")
+            if "Private video" in content:
+                return t("error_private")
+            if "members-only" in content or "members only" in content:
+                return t("error_members_only")
             if "HTTP Error 403" in content:
-                return "Access denied (HTTP 403). The site might be blocking the downloader."
+                return t("error_forbidden")
             if "Sign in to confirm your age" in content:
-                return "Age-restricted content. Cookies might be required."
+                return t("error_age_restricted")
             if "Unsupported URL" in content:
-                return "This URL format is not supported."
+                return t("error_unsupported_url")
+            if "not available in your country" in content or "geo restricted" in content.lower():
+                return t("error_region_blocked")
             if (
                 "Name or service not known" in content
                 or "Temporary failure in name resolution" in content
             ):
-                return "Network error. Please check your internet connection."
+                return t("error_network")
 
-            # Fallback: try to find a line starting with "ERROR:"
-            for line in reversed(lines):
+            # Nothing matched a known cause: quote the last raw ERROR verbatim.
+            for line in reversed(failures):
                 if "ERROR:" in line:
-                    # detailed error from yt-dlp
-                    return f"Error details: {line.strip().split('ERROR:', 1)[1].strip()}"
+                    detail = line.split("ERROR:", 1)[1].strip()
+                    return t("error_details", detail=detail)
 
-            return "An unexpected error occurred during the download."
+            return t("error_download_generic")
         except Exception:
-            return "Could not analyze error log."
+            return t("error_log_unreadable")
 
     def handle_error(self, log_path: Path | None) -> bool:
         """Display a friendly error message and ask to continue.
@@ -95,17 +113,12 @@ class InteractiveSession:
         Returns:
             True if user wants to exit, False if they want to continue/retry.
         """
-        if log_path:
-            friendly_msg = self.analyze_log_for_error(log_path)
-        else:
-            friendly_msg = "An unexpected system error occurred."
+        friendly_msg = self.analyze_log_for_error(log_path) if log_path else t("error_system")
 
-        self.ui.print(f"\n{Colors.RED}{Colors.BOLD}Download Failed{Colors.RESET}")
-        self.ui.print(f"{Colors.YELLOW}Reason: {friendly_msg}{Colors.RESET}")
+        self.ui.print(f"\n{Colors.RED}{Colors.BOLD}{t('download_failed')}{Colors.RESET}")
+        self.ui.print(f"{Colors.YELLOW}{t('error_reason', reason=friendly_msg)}{Colors.RESET}")
         if log_path:
-            self.ui.print(
-                f"\n{Colors.WHITE}For technical details, check the log file:{Colors.RESET}"
-            )
+            self.ui.print(f"\n{Colors.WHITE}{t('error_log_hint')}{Colors.RESET}")
             self.ui.print(f"{Colors.WHITE}{log_path}{Colors.RESET}")
 
         return self.ui.prompt_exit_on_failure()
@@ -114,21 +127,25 @@ class InteractiveSession:
         """Run the main interactive loop.
 
         Returns:
-            Exit code (0 for success).
+            Exit code (0 on a clean exit, 1 if the session ended on an error).
         """
-        try:
-            while True:
+        while True:
+            # The try sits inside the loop so that a failed cycle can return to
+            # the URL prompt when the user asks to keep going.
+            try:
                 if not self._process_one_cycle():
                     return 0
-        except KeyboardInterrupt:
-            self.ui.print(f"\n>>> {t('status_cancelled')} (Ctrl+C).")
-            return 0
-        except Exception as ex:
-            log_error(None, t("error_unexpected"), ex)
-            self.ui.print(t("error_check_logs"))
-            if self.handle_error(self.log_path):
+            except (KeyboardInterrupt, EOFError):
+                # EOF means stdin is gone (piped or closed); prompting again --
+                # which is what the generic handler below would do -- can only
+                # raise the same error.
+                self.ui.print(f"\n>>> {t('status_cancelled')} (Ctrl+C).")
                 return 0
-            return 0
+            except Exception as ex:
+                log_error(self.log_path, t("error_unexpected"), ex)
+                self.ui.print(t("error_check_logs"))
+                if self.handle_error(self.log_path):
+                    return 1
 
     def _process_one_cycle(self) -> bool:
         """Process one download cycle.
@@ -137,6 +154,10 @@ class InteractiveSession:
             True to continue loop, False to exit.
         """
         self.log_path = None
+
+        # Tool availability is cached; drop it each cycle so a user who installs
+        # a missing tool mid-session stops being warned about it.
+        refresh_tool_cache()
 
         # 1) URL
         url = self.ui.ask_text("\n" + t("prompt_url"))
@@ -153,23 +174,26 @@ class InteractiveSession:
 
         if not yt_dlp_available():
             self.ui.print(
-                f"{Colors.RED}{Colors.BOLD}ERROR:{Colors.RESET} {Colors.RED}{t('error_ytdlp_not_found')}{Colors.RESET}"
+                f"{paint(t('label_error'), Colors.RED, Colors.BOLD)} "
+                f"{paint(t('error_ytdlp_not_found'), Colors.RED)}"
             )
             return False
 
         if not ffmpeg_available():
             self.ui.print(
-                f"\n{Colors.YELLOW}{Colors.BOLD}WARNING:{Colors.RESET} {Colors.YELLOW}{t('error_ffmpeg_not_found')}{Colors.RESET}\n"
-                f"{Colors.WHITE}- MP3 mode may fail to convert audio.{Colors.RESET}\n"
-                f"{Colors.WHITE}- MP4 mode may fail to merge/recode and attach thumbnails.{Colors.RESET}\n"
-                f"{Colors.CYAN}Fix: run install.ps1 or install ffmpeg and add it to PATH.{Colors.RESET}\n"
+                f"\n{paint(t('label_warning'), Colors.YELLOW, Colors.BOLD)} "
+                f"{paint(t('error_ffmpeg_not_found'), Colors.YELLOW)}\n"
+                f"{paint('- ' + t('warn_ffmpeg_mp3'), Colors.WHITE)}\n"
+                f"{paint('- ' + t('warn_ffmpeg_mp4'), Colors.WHITE)}\n"
+                f"{paint(t('warn_ffmpeg_fix'), Colors.CYAN)}\n"
             )
 
         if not deno_ok:
             self.ui.print(
-                f"\n{Colors.YELLOW}{Colors.BOLD}WARNING:{Colors.RESET} {Colors.YELLOW}Deno runtime not found.{Colors.RESET}\n"
-                f"{Colors.WHITE}- Some videos may fail if yt-dlp cannot solve JS challenges.{Colors.RESET}\n"
-                f"{Colors.CYAN}- Install Deno (https://deno.com) or rerun install.ps1.{Colors.RESET}\n"
+                f"\n{paint(t('label_warning'), Colors.YELLOW, Colors.BOLD)} "
+                f"{paint(t('warn_deno_missing'), Colors.YELLOW)}\n"
+                f"{paint('- ' + t('warn_deno_detail'), Colors.WHITE)}\n"
+                f"{paint('- ' + t('warn_deno_fix'), Colors.CYAN)}\n"
             )
 
         # 4) Playlist vs single video
@@ -224,23 +248,23 @@ class InteractiveSession:
                 base_dir = self.config.videos_dir / "Downloaded Videos"
                 output_template = str(base_dir / "%(title)s.%(ext)s")
                 archive_path = self.paths.archives_dir / "single_videos_mp4.txt"
+        elif is_playlist:
+            base_dir = self.config.music_dir / "yt-dlp"
+            output_template = str(
+                base_dir / "%(playlist_title)s" / "%(playlist_index)03d - %(title)s.%(ext)s"
+            )
+            archive_path = self.paths.archives_dir / f"playlist_{playlist_id}_mp3.txt"
         else:
-            if is_playlist:
-                base_dir = self.config.music_dir / "yt-dlp"
-                output_template = str(
-                    base_dir / "%(playlist_title)s" / "%(playlist_index)03d - %(title)s.%(ext)s"
-                )
-                archive_path = self.paths.archives_dir / f"playlist_{playlist_id}_mp3.txt"
-            else:
-                base_dir = self.config.music_dir / "Downloaded Music"
-                output_template = str(base_dir / "%(title)s.%(ext)s")
-                archive_path = self.paths.archives_dir / "single_audios_mp3.txt"
+            base_dir = self.config.music_dir / "Downloaded Music"
+            output_template = str(base_dir / "%(title)s.%(ext)s")
+            archive_path = self.paths.archives_dir / "single_audios_mp3.txt"
 
         base_dir.mkdir(parents=True, exist_ok=True)
-        self.log_path = (
+        log_path = (
             self.paths.logs_dir
             / f"yt-dlp_{mode}_{'playlist' if is_playlist else 'single'}_{now_stamp()}.log"
         )
+        self.log_path = log_path
 
         self._print_summary_panel(
             mode,
@@ -253,7 +277,7 @@ class InteractiveSession:
         )
 
         append_log(
-            self.log_path,
+            log_path,
             (
                 "\n" + "=" * 80 + "\n"
                 f"[{datetime.now().isoformat(timespec='seconds')}] START\n"
@@ -261,7 +285,8 @@ class InteractiveSession:
                 f"base_dir={base_dir}\n"
                 f"output_template={output_template}\n"
                 f"archive_path={archive_path}\n"
-                f"ffmpeg_available={ffmpeg_available()} yt_dlp_available={yt_dlp_available()} deno_available={deno_ok}\n"
+                f"ffmpeg_available={ffmpeg_available()} "
+                f"yt_dlp_available={yt_dlp_available()} deno_available={deno_ok}\n"
                 + "=" * 80
                 + "\n"
             ),
@@ -286,7 +311,7 @@ class InteractiveSession:
             base_dir=base_dir,
             output_template=output_template,
             archive_path=archive_path,
-            log_path=self.log_path,
+            log_path=log_path,
             playlist_flag="--yes-playlist" if is_playlist else "--no-playlist",
             js_args=cmd_builder.js_args,
             stability_args=cmd_builder.stability_args,
@@ -300,14 +325,8 @@ class InteractiveSession:
             try:
                 entries = fetch_playlist_entries(plan.url, plan.js_args, run_capture)
             except Exception as ex:
-                log_error(
-                    self.log_path,
-                    "Failed to fetch playlist entries (skip report may be partial)",
-                    ex,
-                )
-                self.ui.print(
-                    f"Could not fetch playlist entries; skip report may be incomplete.\n{ex}\n"
-                )
+                log_error(log_path, t("playlist_fetch_failed_log"), ex)
+                self.ui.print(f"{t('playlist_fetch_failed')}\n{ex}\n")
                 if self.ui.prompt_exit_on_failure():
                     return False
 
@@ -317,15 +336,16 @@ class InteractiveSession:
             return False
 
         append_log(
-            self.log_path,
-            f"\n[INFO {datetime.now().isoformat(timespec='seconds')}] DOWNLOAD_FINISHED returncode={final_rc}\n",
+            log_path,
+            f"\n[INFO {datetime.now().isoformat(timespec='seconds')}] "
+            f"DOWNLOAD_FINISHED returncode={final_rc}\n",
         )
 
         # 10) Skip report
         self._show_skip_report(plan, entries)
 
         self.ui.print("\n" + t("tasks_completed"))
-        self.ui.print(f"{t('info_log')} {self.log_path}")
+        self.ui.print(f"{t('info_log')} {log_path}")
         self.ui.print(f"{t('info_config')} {self.paths.config_file}")
 
         next_action = self.ui.pick(
@@ -346,42 +366,45 @@ class InteractiveSession:
         archive_path: Path,
         deno_ok: bool,
         mp4_profile: int | None,
-    ):
+    ) -> None:
         """Print session summary before download using a panel."""
         lines = []
+        lines.append(f"{paint(t('info_mode'), Colors.YELLOW)} {paint(mode, Colors.GREEN)}")
         lines.append(
-            f"{Colors.YELLOW}{t('info_mode')} {Colors.RESET}{Colors.GREEN}{mode}{Colors.RESET}"
+            f"{paint(t('info_is_playlist'), Colors.YELLOW)} {paint(is_playlist, Colors.CYAN)}"
         )
         lines.append(
-            f"{Colors.YELLOW}{t('info_is_playlist')} {Colors.RESET}{Colors.CYAN}{is_playlist}{Colors.RESET}"
+            f"{paint(t('info_output_folder'), Colors.YELLOW)} {paint(base_dir, Colors.WHITE)}"
         )
         lines.append(
-            f"{Colors.YELLOW}{t('info_output_folder')} {Colors.RESET}{Colors.WHITE}{base_dir}{Colors.RESET}"
+            f"{paint(t('info_output_template'), Colors.YELLOW)} "
+            f"{paint(output_template, Colors.WHITE)}"
         )
         lines.append(
-            f"{Colors.YELLOW}{t('info_output_template')} {Colors.RESET}{Colors.WHITE}{output_template}{Colors.RESET}"
+            f"{paint(t('info_archive_file'), Colors.YELLOW)} {paint(archive_path, Colors.WHITE)}"
         )
         lines.append(
-            f"{Colors.YELLOW}{t('info_archive_file')} {Colors.RESET}{Colors.WHITE}{archive_path}{Colors.RESET}"
-        )
-        lines.append(
-            f"{Colors.YELLOW}{t('info_log_file')} {Colors.RESET}{Colors.WHITE}{self.log_path}{Colors.RESET}"
+            f"{paint(t('info_log_file'), Colors.YELLOW)} {paint(self.log_path, Colors.WHITE)}"
         )
 
         deno_status = (
-            f"{Colors.GREEN}Yes{Colors.RESET}" if deno_ok else f"{Colors.RED}No{Colors.RESET}"
+            f"{Colors.GREEN}{t('label_yes')}{Colors.RESET}"
+            if deno_ok
+            else f"{Colors.RED}{t('label_no')}{Colors.RESET}"
         )
-        lines.append(f"{Colors.YELLOW}{t('info_deno')} {Colors.RESET}{deno_status}")
+        lines.append(f"{paint(t('info_deno'), Colors.YELLOW)} {deno_status}")
 
         if mode == DownloadMode.VIDEO:
             profile_name = (
-                "Compatibility" if mp4_profile == ProfileChoice.COMPATIBILITY else "Quality"
+                t("profile_compatibility_short")
+                if mp4_profile == ProfileChoice.COMPATIBILITY
+                else t("profile_quality_short")
             )
             lines.append(
-                f"{Colors.YELLOW}{t('info_profile')} {Colors.RESET}{Colors.MAGENTA}{profile_name}{Colors.RESET}"
+                f"{paint(t('info_profile'), Colors.YELLOW)} {paint(profile_name, Colors.MAGENTA)}"
             )
 
-        self.ui.print_panel("\n".join(lines), title="Download Summary", color=Colors.BLUE)
+        self.ui.print_panel("\n".join(lines), title=t("summary_title"), color=Colors.BLUE)
 
     def _execute_download(self, plan: DownloadPlan, cmd_builder: CommandBuilder) -> int | None:
         """Execute the download commands.
@@ -393,26 +416,30 @@ class InteractiveSession:
 
         log_path = self.log_path
         if not log_path:
-            self.ui.print("Error: Log path not initialized.")
+            self.ui.print(t("error_log_uninitialized"))
             return None
 
         if plan.mode == DownloadMode.VIDEO:
             if plan.mp4_profile == ProfileChoice.COMPATIBILITY:
                 cmd_stage1 = cmd_builder.build_mp4_compatibility_stage1()
                 self.ui.print(
-                    f"{Colors.BLUE}{Colors.BOLD}### {t('stage1_title')}{Colors.RESET} {Colors.CYAN}{t('stage1_desc')}{Colors.RESET}"
+                    f"{paint('### ' + t('stage1_title'), Colors.BLUE, Colors.BOLD)} "
+                    f"{paint(t('stage1_desc'), Colors.CYAN)}"
                 )
                 rc1 = run_cmd_tee(cmd_stage1, log_path)
                 final_rc = rc1
 
                 if rc1 == 130:
                     return None
-                if rc1 != 0 and self.handle_error(log_path):
-                    return None
+                if rc1 != 0:
+                    # Expected whenever an item has no avc1+mp4a rendition --
+                    # that is exactly what Stage 2 is for. Not a failure yet.
+                    self.ui.print(f"{Colors.YELLOW}{t('stage1_partial')}{Colors.RESET}")
 
                 cmd_stage2 = cmd_builder.build_mp4_compatibility_stage2()
                 self.ui.print(
-                    f"{Colors.BLUE}{Colors.BOLD}### {t('stage2_title')}{Colors.RESET} {Colors.CYAN}{t('stage2_desc')}{Colors.RESET}"
+                    f"{paint('### ' + t('stage2_title'), Colors.BLUE, Colors.BOLD)} "
+                    f"{paint(t('stage2_desc'), Colors.CYAN)}"
                 )
                 rc2 = run_cmd_tee(cmd_stage2, log_path)
                 final_rc = rc2
@@ -426,14 +453,16 @@ class InteractiveSession:
                 if plan.remux_container == ContainerChoice.MKV:
                     cmd_quality = cmd_builder.build_mp4_quality_mkv()
                     self.ui.print(
-                        f"{Colors.MAGENTA}{Colors.BOLD}### {t('quality_title')}{Colors.RESET} {Colors.GREEN}{t('quality_mkv_desc')}{Colors.RESET}"
+                        f"{paint('### ' + t('quality_title'), Colors.MAGENTA, Colors.BOLD)} "
+                        f"{paint(t('quality_mkv_desc'), Colors.GREEN)}"
                     )
                     rc = run_cmd_tee(cmd_quality, log_path)
                     final_rc = rc
                 else:
                     cmd_quality_mp4 = cmd_builder.build_mp4_quality_remux()
                     self.ui.print(
-                        f"{Colors.MAGENTA}{Colors.BOLD}### {t('quality_title')}{Colors.RESET} {Colors.GREEN}{t('quality_mp4_desc')}{Colors.RESET}"
+                        f"{paint('### ' + t('quality_title'), Colors.MAGENTA, Colors.BOLD)} "
+                        f"{paint(t('quality_mp4_desc'), Colors.GREEN)}"
                     )
                     rc = run_cmd_tee(cmd_quality_mp4, log_path)
                     final_rc = rc
@@ -445,7 +474,8 @@ class InteractiveSession:
         else:
             cmd_audio = cmd_builder.build_mp3()
             self.ui.print(
-                f"{Colors.GREEN}{Colors.BOLD}### {t('mp3_title')}{Colors.RESET} {Colors.CYAN}{t('mp3_desc')}{Colors.RESET}"
+                f"{paint('### ' + t('mp3_title'), Colors.GREEN, Colors.BOLD)} "
+                f"{paint(t('mp3_desc'), Colors.CYAN)}"
             )
             rc = run_cmd_tee(cmd_audio, log_path)
             final_rc = rc
@@ -457,22 +487,20 @@ class InteractiveSession:
 
         return final_rc
 
-    def _show_skip_report(self, plan: DownloadPlan, entries: list):
+    def _show_skip_report(self, plan: DownloadPlan, entries: list[PlaylistEntry]) -> None:
         """Show skipped items report."""
         if plan.is_playlist and entries:
             downloaded_ids = read_archive_ids(Path(plan.archive_path))
             skipped = [e for e in entries if e.id and e.id not in downloaded_ids]
 
             if skipped:
-                self.ui.print(
-                    f"\n{Colors.YELLOW}{Colors.BOLD}=============================={Colors.RESET}"
-                )
-                self.ui.print(
-                    f"{Colors.YELLOW}{Colors.BOLD}SKIPPED ITEMS (not downloaded){Colors.RESET}"
-                )
-                self.ui.print(
-                    f"{Colors.YELLOW}{Colors.BOLD}=============================={Colors.RESET}"
-                )
+                header = t("skip_report_title")
+                rule = "=" * len(header)
+                self.ui.print(f"\n{Colors.YELLOW}{Colors.BOLD}{rule}{Colors.RESET}")
+                self.ui.print(f"{Colors.YELLOW}{Colors.BOLD}{header}{Colors.RESET}")
+                self.ui.print(f"{Colors.YELLOW}{Colors.BOLD}{rule}{Colors.RESET}")
+
+                self.ui.print(t("playlist_analyzing"))
 
                 for e in skipped:
                     idx = e.playlist_index
@@ -482,7 +510,7 @@ class InteractiveSession:
                     reason = probe_skip_reason(vurl, plan.js_args, run_capture)
 
                     self.ui.print(f"- #{idx:03d}  ({vid})")
-                    self.ui.print(f"  Title : {title}")
-                    self.ui.print(f"  Reason: {reason}\n")
+                    self.ui.print(f"  {t('skip_item_title')} {title}")
+                    self.ui.print(f"  {t('skip_item_reason')} {reason}\n")
             else:
                 self.ui.print("\n" + t("playlist_all_archived"))

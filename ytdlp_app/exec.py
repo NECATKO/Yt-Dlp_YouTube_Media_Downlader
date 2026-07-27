@@ -9,9 +9,19 @@ from __future__ import annotations
 import io
 import subprocess
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .logging_utils import Colors, append_log, colorize_command, colorize_line, log_error
+from .logging_utils import (
+    Colors,
+    append_log,
+    colorize_command,
+    colorize_line,
+    log_error,
+    paint,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def run_capture(cmd: list[str]) -> tuple[int, str, str]:
@@ -31,6 +41,7 @@ def run_capture(cmd: list[str]) -> tuple[int, str, str]:
     try:
         p = subprocess.run(
             cmd,
+            check=False,
             shell=False,
             capture_output=True,
             text=True,
@@ -93,11 +104,12 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
             rc = p.wait()
             if rc == 0:
                 print(
-                    f"\n{Colors.GREEN}{Colors.BOLD}>>> Command finished successfully.{Colors.RESET}\n"
+                    "\n"
+                    + paint(">>> Command finished successfully.", Colors.GREEN, Colors.BOLD)
+                    + "\n"
                 )
-            # else:
-            #     # Let the caller handle error reporting based on context
-            #     pass
+            # A non-zero code is reported by the caller, which has the context
+            # to know whether it is fatal (see the two-stage compatibility flow).
 
             f.write(f"\n>>> returncode = {rc}\n")
             return rc
@@ -106,7 +118,8 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
         print("\n>>> Operation cancelled by user (Ctrl+C).")
         append_log(
             log_path,
-            f"\n[INFO {datetime.now().isoformat(timespec='seconds')}] Interrupted by user (Ctrl+C)\n",
+            f"\n[INFO {datetime.now().isoformat(timespec='seconds')}] "
+            "Interrupted by user (Ctrl+C)\n",
         )
         return 130
     except Exception as ex:

@@ -1,9 +1,6 @@
 """Tests for ytdlp_app.i18n module."""
 
-from pathlib import Path
-
-import pytest
-
+from ytdlp_app import i18n
 from ytdlp_app.i18n import (
     get_available_languages,
     get_language,
@@ -31,10 +28,28 @@ class TestLoadLocale:
         assert locale.get("mode_audio") == "Ses (MP3)"
 
     def test_fallback_to_english(self) -> None:
-        """Test fallback to English for unknown language."""
+        """An unknown language still yields the full English catalogue."""
         locale = load_locale("xyz_unknown")
-        # Should return English or empty dict
-        assert isinstance(locale, dict)
+        assert locale == load_locale("en")
+
+    def test_per_key_fallback_to_english(self) -> None:
+        """Keys a translation has not caught up on fall back to English text."""
+        en = load_locale("en")
+        tr = load_locale("tr")
+        # Every English key must resolve in every language, never as a raw key.
+        assert set(tr) >= set(en)
+
+    def test_cached_locale_is_not_shared(self) -> None:
+        """set_language must not hand out the lru_cache'd dict itself."""
+        set_language("en")
+        before = load_locale("en")["mode_video"]
+        set_language("en")
+        # Mutating the active translations must not poison the cache.
+        i18n._translations["mode_video"] = "TAMPERED"
+        try:
+            assert load_locale("en")["mode_video"] == before
+        finally:
+            set_language("en")
 
 
 class TestSetAndGetLanguage:

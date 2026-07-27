@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlparse
 
 from .models import CaptureRunner, PlaylistEntry
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Regex pattern to detect YouTube channel URL paths
 _CHANNEL_PATH_PATTERN = re.compile(r"^/(channel|c|user|@)")
@@ -33,10 +36,7 @@ def is_playlist_url(url: str) -> bool:
         return True
 
     # Channel patterns: /channel/, /c/, /user/, /@username
-    if _CHANNEL_PATH_PATTERN.match(path):
-        return True
-
-    return False
+    return bool(_CHANNEL_PATH_PATTERN.match(path))
 
 
 def get_playlist_id(url: str) -> str:
@@ -63,8 +63,8 @@ def read_archive_ids(archive_path: Path) -> set[str]:
         return set()
 
     ids: set[str] = set()
-    for line in archive_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = line.strip()
+    for raw_line in archive_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
         if not line:
             continue
         parts = line.split()
@@ -75,7 +75,7 @@ def read_archive_ids(archive_path: Path) -> set[str]:
 def fetch_playlist_entries(
     url: str, js_args: list[str], runner: CaptureRunner
 ) -> list[PlaylistEntry]:
-    cmd = ["yt-dlp", "--flat-playlist", "-J", "--yes-playlist", url] + js_args
+    cmd = ["yt-dlp", "--flat-playlist", "-J", "--yes-playlist", url, *js_args]
     rc, out, err = runner(cmd)
     if rc != 0 or not out.strip():
         raise RuntimeError(f"Could not fetch playlist JSON.\nreturncode={rc}\nstderr:\n{err}")
@@ -84,9 +84,7 @@ def fetch_playlist_entries(
     entries = data.get("entries") or []
     result: list[PlaylistEntry] = []
 
-    idx = 0
-    for e in entries:
-        idx += 1
+    for idx, e in enumerate(entries, start=1):
         vid = e.get("id") or e.get("url")
         title = e.get("title") or ""
         result.append(

@@ -45,3 +45,16 @@ def deno_available() -> bool:
         True if Deno is found, False otherwise.
     """
     return shutil.which("deno") is not None
+
+
+def refresh_tool_cache() -> None:
+    """Forget cached tool lookups.
+
+    The checks above are cached so a single download cycle does not re-scan
+    PATH repeatedly. That cache must not outlive the cycle: the app tells users
+    to install a missing tool and keep going, and it would otherwise keep
+    reporting the tool as missing for the rest of the session.
+    """
+    ffmpeg_available.cache_clear()
+    yt_dlp_available.cache_clear()
+    deno_available.cache_clear()

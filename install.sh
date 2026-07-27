@@ -34,14 +34,14 @@ detect_os() {
 OS=$(detect_os)
 echo -e "${YELLOW}Detected OS:${NC} $OS"
 
-# Check for Python 3.10+
+# Check for Python 3.11+
 check_python() {
     if command -v python3 &> /dev/null; then
         PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
         MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
         MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
         
-        if [[ $MAJOR -ge 3 && $MINOR -ge 10 ]]; then
+        if [[ $MAJOR -ge 3 && $MINOR -ge 11 ]]; then
             echo -e "${GREEN}Python $PYTHON_VERSION found${NC}"
             return 0
         fi
@@ -51,7 +51,7 @@ check_python() {
 
 # Install Python if needed
 install_python() {
-    echo -e "${YELLOW}Installing Python 3.10+...${NC}"
+    echo -e "${YELLOW}Installing Python 3.11+...${NC}"
     
     case $OS in
         macos)
@@ -74,7 +74,7 @@ install_python() {
             sudo pacman -S --noconfirm python python-pip
             ;;
         *)
-            echo -e "${RED}Unknown OS. Please install Python 3.10+ manually.${NC}"
+            echo -e "${RED}Unknown OS. Please install Python 3.11+ manually.${NC}"
             exit 1
             ;;
     esac
@@ -153,7 +153,7 @@ main() {
     if ! check_python; then
         install_python
         if ! check_python; then
-            echo -e "${RED}Failed to install Python 3.10+${NC}"
+            echo -e "${RED}Failed to install Python 3.11+${NC}"
             exit 1
         fi
     fi

@@ -22,10 +22,16 @@ def get_locales_dir() -> Path:
     Returns:
         Path to the locales directory.
     """
-    # Check for locales in package directory first
-    package_dir = Path(__file__).parent.parent / "locales"
+    # Shipped inside the package, so it survives both wheel installs and the
+    # portable ZIP (which copies the ytdlp_app directory wholesale).
+    package_dir = Path(__file__).parent / "locales"
     if package_dir.exists():
         return package_dir
+
+    # Fall back to the pre-0.4 repository layout (locales/ next to the package)
+    repo_dir = Path(__file__).parent.parent / "locales"
+    if repo_dir.exists():
+        return repo_dir
 
     # Fall back to current working directory
     cwd_locales = Path.cwd() / "locales"
@@ -35,38 +41,39 @@ def get_locales_dir() -> Path:
     return package_dir
 
 
+def _read_locale_file(locales_dir: Path, language: str) -> dict[str, str]:
+    """Read a single locale JSON file, returning {} if unreadable."""
+    locale_file = locales_dir / f"{language}.json"
+    if not locale_file.exists():
+        return {}
+    try:
+        data = json.loads(locale_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 @lru_cache(maxsize=8)
 def load_locale(language: str) -> dict[str, str]:
     """Load translations for a specific language.
+
+    English is always loaded as the base layer and the requested language is
+    overlaid on top, so a key that a translation has not caught up on yet
+    renders as English rather than leaking the raw key to the user.
 
     Args:
         language: Language code (e.g., 'en', 'tr', 'de').
 
     Returns:
         Dictionary mapping translation keys to translated strings.
-        Falls back to English if the requested language is not found.
     """
     locales_dir = get_locales_dir()
-    locale_file = locales_dir / f"{language}.json"
 
-    # Try requested language
-    if locale_file.exists():
-        try:
-            return json.loads(locale_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-
-    # Fall back to English
+    merged = _read_locale_file(locales_dir, "en")
     if language != "en":
-        en_file = locales_dir / "en.json"
-        if en_file.exists():
-            try:
-                return json.loads(en_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+        merged.update(_read_locale_file(locales_dir, language))
 
-    # Return empty dict if no locale found
-    return {}
+    return merged
 
 
 def set_language(language: str) -> None:
@@ -75,9 +82,14 @@ def set_language(language: str) -> None:
     Args:
         language: Language code (e.g., 'en', 'tr', 'de').
     """
-    global _current_language, _translations
+    # Process-wide state by design: t() is called from every module and taking a
+    # catalogue argument at each of the ~80 call sites would serve nobody.
+    global _current_language, _translations  # noqa: PLW0603
+
     _current_language = language
-    _translations = load_locale(language)
+    # Copy: load_locale is lru_cached, so handing out the cached object itself
+    # would let any mutation poison every later lookup.
+    _translations = dict(load_locale(language))
 
 
 def get_language() -> str:
@@ -107,12 +119,19 @@ def t(key: str, **kwargs: Any) -> str:
         >>> t("greeting", name="World")
         "Hello, World!"
     """
+    if not _translations:
+        # Nothing loaded yet: fall back to the default catalogue rather than
+        # echoing raw keys at the user. This covers UI shown before the
+        # language is known, such as the language picker itself.
+        set_language(_current_language)
+
     text = _translations.get(key, key)
 
     if kwargs:
         try:
             return text.format(**kwargs)
-        except KeyError:
+        except (KeyError, IndexError, ValueError):
+            # A malformed placeholder in a translation must not crash the app.
             return text
 
     return text

@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "A portable Windows console application that wraps yt-dlp and ffmpeg for easy YouTube media downloading"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "NECATKO"}
 ]
@@ -29,7 +29,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -63,7 +62,7 @@ where = ["."]
 include = ["ytdlp_app*"]
 
 [tool.setuptools.package-data]
-ytdlp_app = ["py.typed"]
+ytdlp_app = ["py.typed", "locales/*.json"]
 
 # ============================================================================
 # pytest configuration
@@ -85,13 +84,13 @@ markers = [
 # mypy configuration
 # ============================================================================
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
 strict_equality = true
-strict_concatenate = true
+extra_checks = true
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
@@ -109,7 +108,7 @@ disallow_untyped_defs = false
 # ============================================================================
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -129,7 +128,15 @@ select = [
     "RUF",    # Ruff-specific rules
 ]
 ignore = [
+    # Complexity heuristics. This is an interactive CLI: the main cycle walks
+    # the user through a fixed sequence of prompts, and the error classifiers
+    # are flat lookup chains. Splitting them to satisfy a counter would make
+    # them harder to follow, not easier.
+    "PLR0911",  # Too many return statements
+    "PLR0912",  # Too many branches
     "PLR0913",  # Too many arguments
+    "PLR0915",  # Too many statements
+    "PLR0917",  # Too many positional arguments
     "PLR2004",  # Magic value used in comparison
 ]
 

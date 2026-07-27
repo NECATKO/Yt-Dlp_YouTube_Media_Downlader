@@ -6,12 +6,14 @@ yt-dlp command output, and logging functions for session logs.
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 import traceback
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class Colors:
@@ -32,6 +34,24 @@ class Colors:
     WHITE = "\033[97m"
 
 
+def paint(text: object, *codes: str) -> str:
+    """Wrap text in ANSI codes and reset afterwards.
+
+    Keeps colorized f-strings readable: paint(x, Colors.YELLOW) instead of
+    f"{Colors.YELLOW}{x}{Colors.RESET}".
+
+    Args:
+        text: The value to render (stringified).
+        *codes: ANSI codes to apply, e.g. Colors.BOLD, Colors.RED.
+
+    Returns:
+        The text wrapped in the given codes and a trailing reset.
+    """
+    if not codes:
+        return str(text)
+    return f"{''.join(codes)}{text}{Colors.RESET}"
+
+
 def _enable_windows_ansi() -> None:
     """Enable ANSI escape codes on Windows terminals.
 
@@ -40,7 +60,8 @@ def _enable_windows_ansi() -> None:
     """
     if sys.platform == "win32":
         try:
-            import ctypes
+            # Imported lazily: ctypes.windll only exists on Windows.
+            import ctypes  # noqa: PLC0415
 
             kernel32 = ctypes.windll.kernel32
             # Enable VIRTUAL_TERMINAL_PROCESSING

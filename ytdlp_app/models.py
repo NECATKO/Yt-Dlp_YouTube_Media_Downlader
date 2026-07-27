@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
-from pathlib import Path
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class DownloadMode(StrEnum):

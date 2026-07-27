@@ -3,7 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from .config import ensure_dirs_interactive, load_config
+from .config import ensure_dirs_interactive, ensure_language_interactive, load_config
+from .i18n import set_language, t
+from .logging_utils import log_error, now_stamp
 from .models import AppPaths, UserConfig
 from .session import InteractiveSession
 from .ui import ConsoleUI
@@ -36,11 +38,16 @@ def run() -> int:
     try:
         # 0) config: load or create paths (once)
         cfg = load_config(paths.config_file)
+
+        # Language must be resolved before anything else is printed, otherwise
+        # every t() lookup falls through to the raw key.
+        set_language(ensure_language_interactive(ui, cfg, config_file=paths.config_file))
+
         videos_base, music_base, _cfg = ensure_dirs_interactive(
             ui, cfg, config_file=paths.config_file, app_name=app_name
         )
         user_config = UserConfig(
-            app=str((_cfg.get("app") or app_name)),
+            app=str(_cfg.get("app") or app_name),
             videos_dir=videos_base,
             music_dir=music_base,
             saved_at=(_cfg.get("saved_at") or None),
@@ -49,10 +56,12 @@ def run() -> int:
         session = InteractiveSession(ui, user_config, paths)
         return session.run_loop()
 
-    except KeyboardInterrupt:
-        ui.print("\n>>> Operation cancelled by user (Ctrl+C).")
+    except (KeyboardInterrupt, EOFError):
+        ui.print(f"\n>>> {t('status_cancelled')} (Ctrl+C).")
         return 0
     except Exception as ex:
-        # If something crashes before session loop or outside of it
-        ui.print(f"Unexpected error: {ex}")
+        # If something crashes before session loop or outside of it there is no
+        # session log yet, so open a dedicated crash log to keep the traceback.
+        crash_log = paths.logs_dir / f"crash_{now_stamp()}.log"
+        log_error(crash_log, t("error_unexpected"), ex)
         return 1

@@ -1,10 +1,8 @@
 {
   "_language": "English",
   "_code": "en",
-
   "app_title": "yt-dlp Downloader",
   "app_version": "Version {version}",
-
   "prompt_url": "Enter video or playlist URL (blank = exit): ",
   "prompt_mode": "What do you want to download?",
   "prompt_playlist": "This looks like a playlist. Download entire playlist or just this video?",
@@ -12,19 +10,14 @@
   "prompt_container": "Choose container format:",
   "prompt_continue": "Download another? (Y/N): ",
   "prompt_exit_error": "An error occurred. Do you want to exit? (Y/N): ",
-
   "mode_video": "Video (MP4)",
   "mode_audio": "Audio (MP3)",
-
   "playlist_full": "Download entire playlist",
   "playlist_single": "Download only this video",
-
   "profile_compatibility": "Compatibility (lossless when possible, recode fallback)",
   "profile_quality": "Quality (best video + audio, no recode)",
-
   "container_mkv": "MKV (always works)",
   "container_mp4": "MP4 (may fail with some codecs)",
-
   "status_checking": "Checking dependencies...",
   "status_downloading": "Downloading...",
   "status_processing": "Processing...",
@@ -32,7 +25,6 @@
   "status_failed": "Download failed.",
   "status_cancelled": "Operation cancelled.",
   "status_skipped": "Skipped (already downloaded)",
-
   "error_ytdlp_not_found": "yt-dlp not found. Please run the installer first.",
   "error_ffmpeg_not_found": "ffmpeg not found. Please run the installer first.",
   "error_invalid_url": "Invalid URL. Please enter a valid video or playlist URL.",
@@ -46,7 +38,6 @@
   "error_no_url": "No URL provided. Exiting.",
   "error_unexpected": "Unexpected error (top-level)",
   "error_check_logs": "Unexpected error. Check logs if available.",
-
   "info_mode": "Mode:",
   "info_is_playlist": "Is playlist?:",
   "info_output_folder": "Output folder:",
@@ -57,26 +48,20 @@
   "info_profile": "MP4 profile:",
   "info_log": "Log:",
   "info_config": "Config:",
-
   "stage1_title": "STAGE 1 (Compatibility):",
   "stage1_desc": "lossless MP4 when avc1+mp4a is available...",
   "stage2_title": "STAGE 2 (Compatibility):",
   "stage2_desc": "download remaining items and recode to MP4...",
-  
   "quality_title": "QUALITY:",
   "quality_mkv_desc": "No recode. Output container: MKV",
   "quality_mp4_desc": "No recode. Will try MP4 remux.",
-  
   "mp3_title": "MP3:",
   "mp3_desc": "Downloading best audio and converting to MP3...",
-  
   "playlist_all_archived": "All playlist items appear archived (no skips).",
   "tasks_completed": "All tasks completed.",
-  
   "prompt_next": "What next?",
   "action_download": "Download another URL",
   "action_exit": "Exit",
-
   "config_setup_title": "Initial Setup",
   "config_videos_prompt": "Enter folder path for VIDEOS (blank = default):",
   "config_music_prompt": "Enter folder path for MUSIC (blank = default):",
@@ -86,7 +71,6 @@
   "config_videos": "Videos: {path}",
   "config_music": "Music: {path}",
   "config_edit_hint": "To change these later, edit config.json at: {path}",
-
   "skip_reason_private": "Private video",
   "skip_reason_members_only": "Members-only content",
   "skip_reason_age_restricted": "Age verification required",
@@ -99,17 +83,48 @@
   "skip_reason_timeout": "Connection timed out",
   "skip_reason_rate_limited": "Rate limited (HTTP 429)",
   "skip_reason_unknown": "Unknown error",
-
   "playlist_fetching": "Fetching playlist information...",
   "playlist_items": "{count} items in playlist",
   "playlist_skipped": "{count} items were skipped",
   "playlist_analyzing": "Analyzing skipped items...",
-
   "command_running": "Running command:",
   "command_success": "Command finished successfully. Return code: {code}",
   "command_failed": "Command finished with errors. Return code: {code}",
-
   "bye": "Goodbye!",
   "yes": "y",
-  "no": "n"
+  "no": "n",
+  "label_error": "ERROR:",
+  "label_warning": "WARNING:",
+  "label_yes": "Yes",
+  "label_no": "No",
+  "prompt_select": "Select (1-{max}): ",
+  "error_invalid_choice": "Invalid choice. Please enter 1-{max}.",
+  "warn_ffmpeg_mp3": "MP3 mode may fail to convert audio.",
+  "warn_ffmpeg_mp4": "MP4 mode may fail to merge/recode and attach thumbnails.",
+  "warn_ffmpeg_fix": "Fix: run install.ps1 or install ffmpeg and add it to PATH.",
+  "warn_deno_missing": "Deno runtime not found.",
+  "warn_deno_detail": "Some videos may fail if yt-dlp cannot solve JS challenges.",
+  "warn_deno_fix": "Install Deno (https://deno.com) or rerun install.ps1.",
+  "summary_title": "Download Summary",
+  "profile_compatibility_short": "Compatibility",
+  "profile_quality_short": "Quality",
+  "stage1_partial": "Stage 1 could not cover every item; Stage 2 will handle the rest.",
+  "download_failed": "Download Failed",
+  "error_reason": "Reason: {reason}",
+  "error_log_hint": "For technical details, check the log file:",
+  "error_system": "An unexpected system error occurred.",
+  "error_log_missing": "Unknown error (log file not found).",
+  "error_log_unreadable": "Could not analyze the error log.",
+  "error_log_uninitialized": "Error: log path not initialized.",
+  "error_download_generic": "An unexpected error occurred during the download.",
+  "error_forbidden": "Access denied (HTTP 403). The site might be blocking the downloader.",
+  "error_unsupported_url": "This URL format is not supported.",
+  "error_details": "Error details: {detail}",
+  "playlist_fetch_failed": "Could not fetch playlist entries; the skip report may be incomplete.",
+  "playlist_fetch_failed_log": "Failed to fetch playlist entries (skip report may be partial)",
+  "skip_report_title": "SKIPPED ITEMS (not downloaded)",
+  "skip_item_title": "Title :",
+  "skip_item_reason": "Reason:",
+  "config_path_prompt": "Path: ",
+  "config_file_at": "Config: {path}"
 }

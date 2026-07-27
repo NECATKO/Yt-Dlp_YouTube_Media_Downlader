@@ -20,20 +20,20 @@ from .validators import is_valid_url, is_youtube_url, validate_url
 __version__ = "0.3.0"
 
 __all__ = [
-    # Main entry point
-    "run",
-    # Version
-    "__version__",
-    # Exceptions
-    "YtDlpWrapperError",
     "CommandExecutionError",
     "ConfigurationError",
     "DownloadError",
     "NetworkError",
     "PlaylistError",
     "ValidationError",
+    # Exceptions
+    "YtDlpWrapperError",
+    # Version
+    "__version__",
     # Validators
     "is_valid_url",
     "is_youtube_url",
+    # Main entry point
+    "run",
     "validate_url",
 ]

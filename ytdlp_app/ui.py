@@ -9,7 +9,16 @@ from __future__ import annotations
 import re
 from typing import Protocol
 
-from .logging_utils import Colors
+from .i18n import t
+from .logging_utils import Colors, paint
+
+#: Matches ANSI SGR escape sequences, which occupy no columns on screen.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def visible_len(text: str) -> int:
+    """Return the on-screen width of a string, ignoring ANSI color codes."""
+    return len(_ANSI_RE.sub("", text))
 
 
 class UI(Protocol):
@@ -94,11 +103,9 @@ class ConsoleUI:
             color: Color code for the border.
         """
         lines = text.split("\n")
-        width = max(
-            (len(line.replace(Colors.RESET, "").replace(Colors.BOLD, "")) for line in lines),
-            default=0,
-        )
-        width = max(width, len(title) + 4 if title else 0)
+        title_len = visible_len(title) if title else 0
+        width = max((visible_len(line) for line in lines), default=0)
+        width = max(width, title_len + 4 if title else 0)
         width += 2  # Padding
 
         # Box drawing characters
@@ -109,22 +116,19 @@ class ConsoleUI:
         # Top border
         if title:
             title_text = f" {Colors.BOLD}{title}{Colors.RESET}{color} "
-            left_len = (width - len(title) - 2) // 2
-            right_len = width - len(title) - 2 - left_len
-            print(f"{color}{tl}{h * left_len}{title_text}{h * right_len}{tr}{Colors.RESET}")
+            left_len = (width - title_len - 2) // 2
+            right_len = width - title_len - 2 - left_len
+            self.print(f"{color}{tl}{h * left_len}{title_text}{h * right_len}{tr}{Colors.RESET}")
         else:
-            print(f"{color}{tl}{h * width}{tr}{Colors.RESET}")
+            self.print(f"{color}{tl}{h * width}{tr}{Colors.RESET}")
 
         # Content
         for line in lines:
-            # Simple padding calculation (ignoring color codes for length)
-            # This is a basic approximation; strictly accurate ANSI length is harder
-            visible_len = len(re.sub(r"\x1b\[[0-9;]*m", "", line))
-            padding = width - visible_len
-            print(f"{color}{v}{Colors.RESET} {line}{' ' * (padding - 1)}{color}{v}{Colors.RESET}")
+            padding = max(width - visible_len(line) - 1, 0)
+            self.print(f"{color}{v}{Colors.RESET} {line}{' ' * padding}{color}{v}{Colors.RESET}")
 
         # Bottom border
-        print(f"{color}{bl}{h * width}{br}{Colors.RESET}")
+        self.print(f"{color}{bl}{h * width}{br}{Colors.RESET}")
 
     def pick(self, prompt: str, options: list[str]) -> int:
         """Present numbered options and get user's choice.
@@ -139,30 +143,39 @@ class ConsoleUI:
         Returns:
             The 1-based index of the selected option.
         """
+        if not options:
+            raise ValueError("pick() requires at least one option")
+
+        prompt_len = visible_len(prompt)
+
         while True:
             # Calculate width for the box
-            max_len = max(len(opt) for opt in options)
-            max_len = max(max_len, len(prompt)) + 6
+            max_len = max(visible_len(opt) for opt in options)
+            max_len = max(max_len, prompt_len) + 6
 
-            print(
-                f"\n{Colors.CYAN}┌─ {Colors.BOLD}{prompt}{Colors.RESET}{Colors.CYAN} {'─' * (max_len - len(prompt) - 3)}┐{Colors.RESET}"
+            self.print(
+                f"\n{Colors.CYAN}┌─ {paint(prompt, Colors.BOLD)}{Colors.CYAN} "
+                f"{'─' * max(max_len - prompt_len - 3, 0)}┐{Colors.RESET}"
             )
 
             for i, opt in enumerate(options, start=1):
                 idx_str = f"{i}."
-                padding = max_len - len(opt) - len(idx_str) - 2
-                print(
-                    f"{Colors.CYAN}│{Colors.RESET} {Colors.YELLOW}{idx_str}{Colors.RESET} {Colors.WHITE}{opt}{Colors.RESET}{' ' * padding}{Colors.CYAN}│{Colors.RESET}"
+                padding = max(max_len - visible_len(opt) - len(idx_str) - 2, 0)
+                self.print(
+                    f"{paint('│', Colors.CYAN)} {paint(idx_str, Colors.YELLOW)} "
+                    f"{paint(opt, Colors.WHITE)}{' ' * padding}{paint('│', Colors.CYAN)}"
                 )
 
-            print(f"{Colors.CYAN}└{'─' * max_len}┘{Colors.RESET}")
+            self.print(f"{Colors.CYAN}└{'─' * max_len}┘{Colors.RESET}")
 
-            ans = input(f"{Colors.GREEN}Select (1-{len(options)}): {Colors.RESET}").strip()
+            ans = input(
+                f"{Colors.GREEN}{t('prompt_select', max=len(options))}{Colors.RESET}"
+            ).strip()
             if ans.isdigit():
                 n = int(ans)
                 if 1 <= n <= len(options):
                     return n
-            print(f"{Colors.RED}Invalid choice. Please enter 1-{len(options)}.{Colors.RESET}")
+            self.print(f"{Colors.RED}{t('error_invalid_choice', max=len(options))}{Colors.RESET}")
 
     def ask_text(self, prompt: str) -> str:
         """Ask the user for text input with colored prompt.
@@ -179,13 +192,14 @@ class ConsoleUI:
         """Ask if user wants to exit after an error.
 
         Returns:
-            True if user enters 'y' or 'yes', False otherwise.
+            True if the user affirms, False otherwise.
         """
         ans = (
-            input(
-                f"\n{Colors.RED}{Colors.BOLD}An error occurred. Do you want to exit? (Y/N): {Colors.RESET}"
-            )
+            input(f"\n{Colors.RED}{Colors.BOLD}{t('prompt_exit_error')}{Colors.RESET}")
             .strip()
             .lower()
         )
-        return ans in ("y", "yes")
+        # Accept the localized affirmative (Turkish uses "e") as well as the
+        # English forms, which users type out of habit regardless of language.
+        affirmative = {"y", "yes", t("yes").strip().lower()}
+        return ans in affirmative

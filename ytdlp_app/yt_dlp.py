@@ -6,9 +6,12 @@ arguments for various download modes (MP4, MP3) and quality profiles.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .models import DownloadMode
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class CommandBuilder:
@@ -25,7 +28,7 @@ class CommandBuilder:
         archive_path: Path,
         is_playlist: bool,
         use_deno: bool = True,
-    ):
+    ) -> None:
         """Initialize the CommandBuilder.
 
         Args:
@@ -47,7 +50,7 @@ class CommandBuilder:
         base = ["--remote-components", "ejs:github"]
         if not self.use_deno:
             return base
-        return ["--js-runtime", "deno"] + base
+        return ["--js-runtime", "deno", *base]
 
     @property
     def stability_args(self) -> list[str]:
@@ -90,45 +93,50 @@ class CommandBuilder:
             post_args += ["--embed-thumbnail"]
         return post_args
 
+    def _assemble(self, selection: list[str], mode: DownloadMode) -> list[str]:
+        """Combine a format selection with the arguments every command shares.
+
+        common_args must stay last: it ends with the URL, which yt-dlp reads
+        positionally.
+        """
+        return [
+            *selection,
+            *self.stability_args,
+            *self.js_args,
+            *self.build_post_args(mode),
+            *self.common_args,
+        ]
+
     def build_mp4_compatibility_stage1(self) -> list[str]:
         """Build Stage 1 command for MP4 compatibility mode."""
-        return (
+        return self._assemble(
             [
                 "yt-dlp",
                 "-f",
                 "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]",
                 "--merge-output-format",
                 "mp4",
-            ]
-            + self.stability_args
-            + self.js_args
-            + self.build_post_args(DownloadMode.VIDEO)
-            + self.common_args
+            ],
+            DownloadMode.VIDEO,
         )
 
     def build_mp4_compatibility_stage2(self) -> list[str]:
         """Build Stage 2 command for MP4 compatibility mode."""
-        return (
-            ["yt-dlp", "-f", "bv*+ba/b", "--recode-video", "mp4"]
-            + self.stability_args
-            + self.js_args
-            + self.build_post_args(DownloadMode.VIDEO)
-            + self.common_args
+        return self._assemble(
+            ["yt-dlp", "-f", "bv*+ba/b", "--recode-video", "mp4"],
+            DownloadMode.VIDEO,
         )
 
     def build_mp4_quality_mkv(self) -> list[str]:
         """Build command for MP4 quality mode with MKV container."""
-        return (
-            ["yt-dlp", "-f", "bv*+ba/b", "--merge-output-format", "mkv"]
-            + self.stability_args
-            + self.js_args
-            + self.build_post_args(DownloadMode.VIDEO)
-            + self.common_args
+        return self._assemble(
+            ["yt-dlp", "-f", "bv*+ba/b", "--merge-output-format", "mkv"],
+            DownloadMode.VIDEO,
         )
 
     def build_mp4_quality_remux(self) -> list[str]:
         """Build command for MP4 quality mode with MP4 remux."""
-        return (
+        return self._assemble(
             [
                 "yt-dlp",
                 "-f",
@@ -137,16 +145,13 @@ class CommandBuilder:
                 "mp4",
                 "--remux-video",
                 "mp4",
-            ]
-            + self.stability_args
-            + self.js_args
-            + self.build_post_args(DownloadMode.VIDEO)
-            + self.common_args
+            ],
+            DownloadMode.VIDEO,
         )
 
     def build_mp3(self) -> list[str]:
         """Build command for MP3 audio extraction."""
-        return (
+        return self._assemble(
             [
                 "yt-dlp",
                 "-f",
@@ -156,9 +161,6 @@ class CommandBuilder:
                 "mp3",
                 "--audio-quality",
                 "0",
-            ]
-            + self.stability_args
-            + self.js_args
-            + self.build_post_args(DownloadMode.AUDIO)
-            + self.common_args
+            ],
+            DownloadMode.AUDIO,
         )

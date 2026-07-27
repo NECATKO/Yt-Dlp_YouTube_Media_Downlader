@@ -6,14 +6,18 @@ as well as interactive setup for first-run configuration.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .logging_utils import Colors
-from .ui import UI
+from .i18n import get_available_languages, get_language_name, t
+from .logging_utils import Colors, paint
+
+if TYPE_CHECKING:
+    from .ui import UI
 
 
 def normalize_user_path(s: str) -> Path:
@@ -60,10 +64,13 @@ def load_config(config_file: Path) -> dict[str, Any]:
     if not config_file.exists():
         return {}
     try:
-        return json.loads(config_file.read_text(encoding="utf-8"))
+        data = json.loads(config_file.read_text(encoding="utf-8"))
     except Exception:
         print("WARNING: config.json could not be read; it will be recreated.")
         return {}
+    # A JSON file whose top level is a list or scalar is as unusable as a
+    # corrupt one; callers rely on getting a mapping back.
+    return data if isinstance(data, dict) else {}
 
 
 def save_config(config_file: Path, cfg: dict[str, Any]) -> None:
@@ -86,6 +93,44 @@ def delete_config(config_file: Path) -> None:
         config_file.unlink()
 
 
+def ensure_language_interactive(ui: UI, existing_cfg: dict, *, config_file: Path) -> str:
+    """Resolve the interface language, asking once on first run.
+
+    The choice is persisted to config.json so later runs are silent. Users
+    change it afterwards by editing that file.
+
+    Args:
+        ui: The UI interface.
+        existing_cfg: The loaded configuration dict (mutated in place).
+        config_file: Path to the configuration file.
+
+    Returns:
+        The resolved language code.
+    """
+    available = get_available_languages()
+    saved = str(existing_cfg.get("language") or "").strip().lower()
+
+    if saved in available:
+        return saved
+    if len(available) < 2:
+        return available[0] if available else "en"
+
+    # Nothing recorded yet. Translations are not loaded at this point, so the
+    # prompt has to carry its own text in every language it offers.
+    choice = ui.pick(
+        "Select language / Dil secin",
+        [get_language_name(code) for code in available],
+    )
+    language = available[choice - 1]
+
+    existing_cfg["language"] = language
+    # A read-only config location must not stop the app from starting.
+    with contextlib.suppress(Exception):
+        save_config(config_file, existing_cfg)
+
+    return language
+
+
 def ensure_dirs_interactive(
     ui: UI, existing_cfg: dict, *, config_file: Path, app_name: str
 ) -> tuple[Path, Path, dict]:
@@ -102,12 +147,10 @@ def ensure_dirs_interactive(
     music_dir = normalize_user_path(m_raw) if m_raw else None
 
     def announce_paths(v_dir: Path, m_dir: Path) -> None:
-        ui.print(
-            f"{Colors.CYAN}Using download folders ({Colors.YELLOW}Videos:{Colors.RESET} {Colors.WHITE}{v_dir}{Colors.RESET} {Colors.CYAN}|{Colors.RESET} {Colors.YELLOW}Music:{Colors.RESET} {Colors.WHITE}{m_dir}{Colors.RESET}{Colors.CYAN}).{Colors.RESET}"
-        )
-        ui.print(
-            f"{Colors.YELLOW}To change these later, edit config.json at:{Colors.RESET} {Colors.WHITE}{config_file}{Colors.RESET}\n"
-        )
+        ui.print(paint(t("config_using"), Colors.CYAN))
+        ui.print(paint(t("config_videos", path=v_dir), Colors.YELLOW))
+        ui.print(paint(t("config_music", path=m_dir), Colors.YELLOW))
+        ui.print(paint(t("config_edit_hint", path=config_file), Colors.YELLOW) + "\n")
 
     # If config already has both values, use them without asking again.
     if videos_dir and music_dir:
@@ -116,38 +159,39 @@ def ensure_dirs_interactive(
         announce_paths(videos_dir, music_dir)
         return videos_dir, music_dir, existing_cfg
 
-    ui.print(
-        f"{Colors.YELLOW}{Colors.BOLD}Download folders not set yet. Configure them now (this is only asked once).{Colors.RESET}"
-    )
+    ui.print(paint(t("config_setup_title"), Colors.YELLOW, Colors.BOLD))
 
-    def ask_path(label: str, default: Path) -> Path:
-        ui.print(
-            f"\n{Colors.CYAN}Enter folder path for {Colors.BOLD}{label}{Colors.RESET}{Colors.CYAN} (blank = default):{Colors.RESET}"
-        )
-        ui.print(f"{Colors.YELLOW}Default:{Colors.RESET} {Colors.WHITE}{default}{Colors.RESET}")
-        s = ui.ask_text(f"{Colors.GREEN}Path: {Colors.RESET}")
+    def ask_path(prompt: str, default: Path) -> Path:
+        ui.print("\n" + paint(prompt, Colors.CYAN))
+        ui.print(paint(t("config_default", path=default), Colors.YELLOW))
+        s = ui.ask_text(paint(t("config_path_prompt"), Colors.GREEN))
         if not s:
             return default
         return normalize_user_path(s)
 
-    videos_dir = ask_path("VIDEOS", videos_dir or def_videos)
-    music_dir = ask_path("MUSIC", music_dir or def_music)
+    videos_dir = ask_path(t("config_videos_prompt"), videos_dir or def_videos)
+    music_dir = ask_path(t("config_music_prompt"), music_dir or def_music)
 
     videos_dir.mkdir(parents=True, exist_ok=True)
     music_dir.mkdir(parents=True, exist_ok=True)
 
-    new_cfg = {
-        "app": app_name,
-        "videos_dir": str(videos_dir),
-        "music_dir": str(music_dir),
-        "saved_at": datetime.now().isoformat(timespec="seconds"),
-    }
+    # Start from the existing config so keys we do not own here (notably the
+    # language chosen by ensure_language_interactive) survive the rewrite.
+    new_cfg = dict(existing_cfg)
+    new_cfg.update(
+        {
+            "app": app_name,
+            "videos_dir": str(videos_dir),
+            "music_dir": str(music_dir),
+            "saved_at": datetime.now().isoformat(timespec="seconds"),
+        }
+    )
     save_config(config_file, new_cfg)
 
-    ui.print(f"\n{Colors.GREEN}{Colors.BOLD}Settings saved:{Colors.RESET}")
-    ui.print(f"  {Colors.YELLOW}Videos:{Colors.RESET} {Colors.WHITE}{videos_dir}{Colors.RESET}")
-    ui.print(f"  {Colors.YELLOW}Music :{Colors.RESET} {Colors.WHITE}{music_dir}{Colors.RESET}")
-    ui.print(f"  {Colors.YELLOW}Config:{Colors.RESET} {Colors.WHITE}{config_file}{Colors.RESET}\n")
+    ui.print("\n" + paint(t("config_saved"), Colors.GREEN, Colors.BOLD))
+    ui.print("  " + paint(t("config_videos", path=videos_dir), Colors.YELLOW))
+    ui.print("  " + paint(t("config_music", path=music_dir), Colors.YELLOW))
+    ui.print("  " + paint(t("config_file_at", path=config_file), Colors.YELLOW) + "\n")
     announce_paths(videos_dir, music_dir)
 
     return videos_dir, music_dir, new_cfg

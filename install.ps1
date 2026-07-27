@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-$MinPythonVersion = [Version]"3.10"
+$MinPythonVersion = [Version]"3.11"
 
 function Has-Command([string]$name) {
   return [bool](Get-Command $name -ErrorAction SilentlyContinue)

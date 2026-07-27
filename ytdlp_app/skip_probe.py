@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
-from .models import CaptureRunner
+if TYPE_CHECKING:
+    from .models import CaptureRunner
 
 
 def probe_skip_reason(video_url: str, js_args: list[str], runner: CaptureRunner) -> str:
     """
     Try to explain why an item was skipped by asking yt-dlp for metadata only.
     """
-    cmd = ["yt-dlp", "-J", "--no-playlist", "--skip-download", video_url] + js_args
+    cmd = ["yt-dlp", "-J", "--no-playlist", "--skip-download", video_url, *js_args]
     rc, out, err = runner(cmd)
 
     if rc == 130:
@@ -24,9 +26,7 @@ def probe_skip_reason(video_url: str, js_args: list[str], runner: CaptureRunner)
             return "Members-only (channel subscription required)"
         if "age-restricted" in e or "age restricted" in e or "confirm your age" in e:
             return "Age verification required (sign in)"
-        if "not available in your country" in e or (
-            "country" in e and "available" in e
-        ):
+        if "not available in your country" in e or ("country" in e and "available" in e):
             return "Region blocked"
         if "video unavailable" in e or "unavailable" in e:
             return "Video unavailable or removed"
@@ -36,12 +36,7 @@ def probe_skip_reason(video_url: str, js_args: list[str], runner: CaptureRunner)
             return "Sign-in required"
         if "requested format is not available" in e:
             return "Requested format not available (format list missing / JS challenge)"
-        if (
-            "unable to extract" in e
-            or "nsig" in e
-            or "signature" in e
-            or "challenge" in e
-        ):
+        if "unable to extract" in e or "nsig" in e or "signature" in e or "challenge" in e:
             return "YouTube JS challenge or signature extraction issue"
         if "timed out" in e or "timeout" in e:
             return "Connection timed out"

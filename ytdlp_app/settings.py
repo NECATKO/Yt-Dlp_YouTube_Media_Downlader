@@ -7,7 +7,6 @@ to customize download behavior, performance settings, and output formats.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 
@@ -196,7 +195,7 @@ class AppSettings:
     language: str = "en"
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AppSettings":
+    def from_dict(cls, data: dict[str, Any]) -> AppSettings:
         """Create settings from a dictionary.
 
         Args:

@@ -1,12 +1,9 @@
 """Tests for ytdlp_app.settings module."""
 
-import pytest
-
 from ytdlp_app.settings import (
     AppSettings,
     AudioSettings,
     DownloadSettings,
-    OutputSettings,
     VideoSettings,
 )
 

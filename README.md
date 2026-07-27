@@ -3,7 +3,7 @@
 A portable Windows console application that wraps yt-dlp and ffmpeg. Features interactive folder setup, MP4/MP3 mode selection, playlist handling, download archives to prevent duplicates, colorized console output, and detailed logging.
 
 ## Features
-- **One-click setup**: Automatically installs Python 3.10+, yt-dlp, ffmpeg, and Deno via winget
+- **One-click setup**: Automatically installs Python 3.11+, yt-dlp, ffmpeg, and Deno via winget
 - **Auto-update**: Silent update checks from GitHub releases on each launch
 - **Interactive prompts**: Choose MP4/MP3 mode, playlist vs single video, and quality profiles
 - **Colorized output**: Syntax-highlighted console output (downloads in green, errors in red, warnings in yellow, etc.)
@@ -11,7 +11,7 @@ A portable Windows console application that wraps yt-dlp and ffmpeg. Features in
 - **Session continuity**: Download multiple URLs in a single session without restarting
 
 ## How it works
-1. Launch `Run.bat`. First run installs Python 3.10+, yt-dlp inside `.venv`, ffmpeg, and Deno through winget.
+1. Launch `Run.bat`. First run installs Python 3.11+, yt-dlp inside `.venv`, ffmpeg, and Deno through winget.
 2. You are asked once for base download folders (defaults: `Videos` and `Music`). Choices are saved to `config.json`.
 3. Each session: enter a URL, choose Video (MP4) or Audio (MP3), decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
 4. yt-dlp runs with resume/retry flags (`--continue`, `--retries infinite`, `--fragment-retries infinite`); archive files prevent duplicates; a log captures the full command output.
@@ -99,7 +99,7 @@ See [LICENSE](LICENSE) for details.
 yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir Windows konsol uygulaması. İnteraktif klasör kurulumu, MP4/MP3 mod seçimi, playlist yönetimi, tekrarları engelleyen arşiv sistemi, renkli konsol çıktısı ve detaylı loglama özellikleri sunar.
 
 ## Özellikler
-- **Tek tıkla kurulum**: Python 3.10+, yt-dlp, ffmpeg ve Deno winget ile otomatik kurulur
+- **Tek tıkla kurulum**: Python 3.11+, yt-dlp, ffmpeg ve Deno winget ile otomatik kurulur
 - **Otomatik güncelleme**: Her açılışta GitHub'dan sessiz güncelleme kontrolü
 - **İnteraktif menüler**: MP4/MP3 modu, playlist/tek video seçimi ve kalite profilleri
 - **Renkli çıktı**: Söz dizimi vurgulu konsol çıktısı (indirmeler yeşil, hatalar kırmızı, uyarılar sarı, vb.)
@@ -107,7 +107,7 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir Windows konsol uygulaması. �
 - **Oturum sürekliliği**: Tek oturumda yeniden başlatmadan birden fazla URL indir
 
 ### Nasıl çalışır
-1. `Run.bat` ile başlat. İlk çalıştırmada winget ile Python 3.10+, `.venv` içinde yt-dlp, ffmpeg ve Deno kurulur.
+1. `Run.bat` ile başlat. İlk çalıştırmada winget ile Python 3.11+, `.venv` içinde yt-dlp, ffmpeg ve Deno kurulur.
 2. İlk seferde video/müzik klasörlerini sorar (varsayılan: `Videos`, `Music`). Tercihler `config.json` içine kaydedilir.
 3. Her oturumda: URL gir, Video (MP4) veya Ses (MP3) seç, playlist URL'si için tüm liste mi tek video mu karar ver, MP4 ise profil seç.
 4. yt-dlp devam/tekrar dene bayraklarıyla (`--continue`, `--retries infinite`, `--fragment-retries infinite`) çalışır; arşiv dosyaları tekrar indirmeyi engeller; konsol çıktısı log'a yazılır.
