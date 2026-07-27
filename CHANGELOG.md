@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **In-app settings menu**: type `s` at the URL prompt (or pick *Settings* after a download) to change the interface language, the download folders, the proxy, the speed limit, the parallel fragment count, the audio format and quality, and the subtitle options. Every change is written to `config.json` immediately, and a language switch applies without a restart.
+- Advanced settings are now honored at runtime. They live under the `"settings"` key of `config.json`; a config written before this change has no such key and keeps the previous defaults exactly, so nothing changes until you opt in. See `settings.example.json` for the full shape.
+- The URL prompt validates its input and asks again instead of passing anything straight to yt-dlp — most concretely, a URL starting with `-` is no longer read as a command-line flag.
+- Startup banner showing the application name and version.
+- Test coverage for `CommandBuilder`, the skip-reason prober, and the settings menu, none of which had any.
+
+### Fixed
+- **The skip report was entirely in English**, even in Turkish, despite the translations for it already existing. All fifteen messages now go through the translation layer, as do the command banner and the success, cancellation, and failure lines.
+- `analyze_log_for_error` now recognizes copyright takedowns, which it previously reported with the generic "video unavailable" message.
+
+### Changed
+- `AppSettings` drops `use_deno`, `default_mode`, `default_mp4_profile`, and `language`: the first three are detected or asked for interactively, and the language lives at the top level of `config.json` because it must resolve before the settings load.
+- `DownloadPlan` drops four argument fields that were built every cycle and never read; its profile fields are typed as the enums they are compared against.
+- Removed `is_supported_url`, which computed a hostname and then unconditionally returned `True`, and eleven locale keys describing a status UI that was never built.
+
 ## [0.3.1] - 2026-07-28
 
 Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 should upgrade** — that release shipped an unusable build.
@@ -121,6 +139,24 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
 ---
 
 # Değişiklik Günlüğü (Türkçe)
+
+## [Yayınlanmadı]
+
+### Eklenenler
+- **Uygulama içi ayarlar menüsü**: URL isteminde `s` yazarak (veya indirme sonrası *Ayarlar* seçeneğiyle) arayüz dilini, indirme klasörlerini, vekil sunucuyu, hız sınırını, paralel parça sayısını, ses formatı ve kalitesini, altyazı seçeneklerini değiştirin. Her değişiklik anında `config.json` dosyasına yazılır ve dil değişimi yeniden başlatma gerektirmez.
+- Gelişmiş ayarlar artık çalışma zamanında dikkate alınıyor. `config.json` içindeki `"settings"` anahtarı altında tutuluyorlar; bu değişiklikten önce yazılmış bir yapılandırmada bu anahtar yoktur ve önceki varsayılanlar birebir korunur, yani siz istemeden hiçbir şey değişmez. Tam şema için `settings.example.json` dosyasına bakın.
+- URL istemi girdiyi doğruluyor ve her şeyi doğrudan yt-dlp'ye geçirmek yerine yeniden soruyor — en somut olarak, `-` ile başlayan bir adres artık komut satırı bayrağı sanılmıyor.
+- Uygulama adını ve sürümünü gösteren açılış paneli.
+- `CommandBuilder`, atlama nedeni yoklayıcısı ve ayarlar menüsü için testler; hiçbirinin testi yoktu.
+
+### Düzeltilenler
+- **Atlama raporu tamamen İngilizceydi**, Türkçe kullanımda bile — üstelik çevirileri zaten mevcuttu. On beş mesajın tamamı artık çeviri katmanından geçiyor; komut başlığı ile başarı, iptal ve hata satırları da öyle.
+- `analyze_log_for_error` artık telif hakkı kaldırmalarını tanıyor; daha önce bunları genel "video kullanılamıyor" mesajıyla bildiriyordu.
+
+### Değişenler
+- `AppSettings`'ten `use_deno`, `default_mode`, `default_mp4_profile` ve `language` kaldırıldı: ilk üçü otomatik algılanıyor veya kullanıcıya soruluyor, dil ise ayarlardan önce çözülmesi gerektiği için `config.json`'un üst seviyesinde duruyor.
+- `DownloadPlan`'dan her döngüde doldurulup hiç okunmayan dört argüman alanı kaldırıldı; profil alanları karşılaştırıldıkları enum türleriyle tiplendi.
+- Bir alan adı hesaplayıp koşulsuz `True` dönen `is_supported_url` ve hiç yapılmamış bir durum arayüzünü tarif eden on bir çeviri anahtarı silindi.
 
 ## [0.3.1] - 2026-07-28
 

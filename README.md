@@ -6,6 +6,7 @@ A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs
 - **One-click setup**: Automatically installs Python 3.11+, yt-dlp, ffmpeg, and Deno (winget on Windows; apt/dnf/pacman/brew elsewhere)
 - **Auto-update**: Silent update checks from GitHub releases on each launch
 - **Interactive prompts**: Choose MP4/MP3 mode, playlist vs single video, and quality profiles
+- **Settings menu**: Change the language, download folders, proxy, speed limit, audio format, and subtitles from inside the app — type `s` at the URL prompt
 - **Colorized output**: Syntax-highlighted console output (downloads in green, errors in red, warnings in yellow, etc.)
 - **Skip reporting**: Explains why playlist items were skipped (private, region-blocked, age-restricted, members-only, etc.)
 - **Session continuity**: Download multiple URLs in a single session without restarting
@@ -86,7 +87,8 @@ A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs
 |---------|----------|
 | Install fails | Run `Run.bat` as Administrator (Windows). Ensure your package manager and internet access work. |
 | yt-dlp/ffmpeg not found | Rerun `install.ps1` (Windows) or `install.sh` (Linux/macOS), or open a new terminal after installation. |
-| Change download folders | Delete `config.json` and relaunch. |
+| Change download folders | Type `s` at the URL prompt and pick the folder to change. |
+| Change the interface language | Type `s` at the URL prompt and pick "Interface language". |
 | Force re-download | Delete the relevant archive file in `archives/`. |
 | Deno warning appears | Install Deno: `winget install DenoLand.Deno` or rerun `install.ps1`. |
 
@@ -103,6 +105,7 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, 
 - **Tek tıkla kurulum**: Python 3.11+, yt-dlp, ffmpeg ve Deno otomatik kurulur (Windows'ta winget; diğer sistemlerde apt/dnf/pacman/brew)
 - **Otomatik güncelleme**: Her açılışta GitHub'dan sessiz güncelleme kontrolü
 - **İnteraktif menüler**: MP4/MP3 modu, playlist/tek video seçimi ve kalite profilleri
+- **Ayarlar menüsü**: Dil, indirme klasörleri, vekil sunucu, hız sınırı, ses formatı ve altyazıları uygulama içinden değiştir — URL isteminde `s` yaz
 - **Renkli çıktı**: Söz dizimi vurgulu konsol çıktısı (indirmeler yeşil, hatalar kırmızı, uyarılar sarı, vb.)
 - **Atlama raporu**: Playlist öğelerinin neden atlandığını açıklar (özel, bölge kısıtı, yaş kısıtı, üyelik gerekli, vb.)
 - **Oturum sürekliliği**: Tek oturumda yeniden başlatmadan birden fazla URL indir
@@ -183,7 +186,8 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, 
 |-------|-------|
 | Kurulum başarısız | `Run.bat`'i Yönetici olarak çalıştır (Windows). Paket yöneticisi ve internet erişimini doğrula. |
 | yt-dlp/ffmpeg bulunamıyor | `install.ps1` (Windows) veya `install.sh` (Linux/macOS) dosyasını tekrar çalıştır, ya da kurulumdan sonra yeni bir terminal aç. |
-| İndirme klasörlerini değiştir | `config.json` dosyasını sil ve yeniden başlat. |
+| İndirme klasörlerini değiştir | URL isteminde `s` yaz ve değiştirmek istediğin klasörü seç. |
+| Arayüz dilini değiştir | URL isteminde `s` yaz ve "Arayuz dili" seçeneğini seç. |
 | Yeniden indirmeyi zorla | `archives/` içindeki ilgili arşiv dosyasını sil. |
 | Deno uyarısı görünüyor | Deno kur: `winget install DenoLand.Deno` veya `install.ps1`'i yeniden çalıştır. |
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .exceptions import ValidationError
 from .exec import run_capture, run_cmd_tee
@@ -34,6 +34,7 @@ from .playlist import (
     read_archive_ids,
 )
 from .settings import AppSettings
+from .settings_menu import run_settings_menu
 from .skip_probe import probe_skip_reason
 from .system import deno_available, ffmpeg_available, refresh_tool_cache, yt_dlp_available
 from .validators import validate_url
@@ -41,6 +42,9 @@ from .yt_dlp import CommandBuilder
 
 if TYPE_CHECKING:
     from .ui import ConsoleUI
+
+#: Typed at the URL prompt to open the settings menu instead of downloading.
+SETTINGS_SHORTCUT = "s"
 
 
 class InteractiveSession:
@@ -52,6 +56,7 @@ class InteractiveSession:
         config: UserConfig,
         paths: AppPaths,
         settings: AppSettings | None = None,
+        cfg: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the session.
 
@@ -60,11 +65,14 @@ class InteractiveSession:
             config: User configuration.
             paths: Application paths.
             settings: Advanced settings from config.json; defaults when omitted.
+            cfg: The raw config.json contents, which the settings menu edits and
+                persists. An empty dict is used when omitted.
         """
         self.ui = ui
         self.config = config
         self.paths = paths
         self.settings = settings if settings is not None else AppSettings()
+        self.cfg = cfg if cfg is not None else {}
         self.log_path: Path | None = None
 
     def analyze_log_for_error(self, log_path: Path) -> str:
@@ -163,8 +171,20 @@ class InteractiveSession:
                 if self.handle_error(self.log_path):
                     return 1
 
+    def open_settings(self) -> None:
+        """Open the settings menu and adopt whatever it changed."""
+        self.config = run_settings_menu(
+            self.ui,
+            self.cfg,
+            self.settings,
+            self.config,
+            self.paths.config_file,
+        )
+
     def _ask_url(self) -> str | None:
         """Prompt for a URL until a usable one is given.
+
+        Also accepts the settings shortcut, handling it before returning.
 
         Returns:
             The validated URL, or None when the user asked to exit.
@@ -174,6 +194,9 @@ class InteractiveSession:
             if not raw:
                 self.ui.print(t("error_no_url"))
                 return None
+            if raw.strip().lower() == SETTINGS_SHORTCUT:
+                self.open_settings()
+                continue
             try:
                 # Guards against input yt-dlp would misread, most importantly a
                 # leading "-", which it would take as a command-line flag.
@@ -386,9 +409,15 @@ class InteractiveSession:
             t("prompt_next"),
             [
                 t("action_download"),
+                t("action_settings"),
                 t("action_exit"),
             ],
         )
+        if next_action == ActionChoice.SETTINGS:
+            self.open_settings()
+            # Settings are not a terminal choice: fall through to the URL
+            # prompt so the user can act on what they just changed.
+            return True
         return next_action == ActionChoice.DOWNLOAD_ANOTHER
 
     def _print_summary_panel(

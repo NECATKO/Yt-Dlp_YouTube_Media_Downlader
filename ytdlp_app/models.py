@@ -53,7 +53,8 @@ class ActionChoice(IntEnum):
     """User selection for next action."""
 
     DOWNLOAD_ANOTHER = 1
-    EXIT = 2
+    SETTINGS = 2
+    EXIT = 3
 
 
 #: Type alias for download mode - either video (mp4) or audio (mp3).

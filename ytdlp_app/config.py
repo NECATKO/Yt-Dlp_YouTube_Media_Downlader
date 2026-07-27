@@ -133,8 +133,8 @@ def delete_config(config_file: Path) -> None:
 def ensure_language_interactive(ui: UI, existing_cfg: dict, *, config_file: Path) -> str:
     """Resolve the interface language, asking once on first run.
 
-    The choice is persisted to config.json so later runs are silent. Users
-    change it afterwards by editing that file.
+    The choice is persisted to config.json so later runs are silent. It can be
+    changed afterwards from the in-app settings menu (see settings_menu.py).
 
     Args:
         ui: The UI interface.

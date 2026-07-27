@@ -65,7 +65,7 @@ def run() -> int:
             saved_at=(_cfg.get("saved_at") or None),
         )
 
-        session = InteractiveSession(ui, user_config, paths, load_settings(_cfg))
+        session = InteractiveSession(ui, user_config, paths, load_settings(_cfg), _cfg)
         return session.run_loop()
 
     except (KeyboardInterrupt, EOFError):
