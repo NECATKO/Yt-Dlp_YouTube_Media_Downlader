@@ -10,7 +10,7 @@ from .exceptions import ValidationError
 # Raw whitespace and control characters are never valid inside an HTTP URL.
 # Shell metacharacters such as "&" are deliberately allowed: commands are
 # executed with shell=False, and "&" is required by ordinary query strings.
-_INVALID_URL_CHAR_PATTERN = re.compile(r"[\\x00-\\x20\\x7f]")
+_INVALID_URL_CHAR_PATTERN = re.compile(r"[\x00-\x20\x7f]")
 
 
 def is_valid_url(url: str) -> bool:

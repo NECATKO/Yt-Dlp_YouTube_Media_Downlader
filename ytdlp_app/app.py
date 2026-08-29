@@ -17,7 +17,6 @@ from .models import AppPaths, UserConfig
 from .session import InteractiveSession
 from .ui import ConsoleUI
 
-
 _APP_DIR_NAME = "ytdlp-downloader"
 
 
