@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -16,17 +17,31 @@ from .models import AppPaths, UserConfig
 from .session import InteractiveSession
 from .ui import ConsoleUI
 
+_APP_DIR_NAME = "ytdlp-downloader"
+
+
+def _installed_data_dir() -> Path:
+    """Return a writable per-user data directory for an installed package."""
+    if sys.platform == "win32":
+        root = os.environ.get("LOCALAPPDATA")
+        base = Path(root).expanduser() if root else Path.home() / "AppData" / "Local"
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        root = os.environ.get("XDG_DATA_HOME")
+        base = Path(root).expanduser() if root else Path.home() / ".local" / "share"
+    return base / _APP_DIR_NAME
+
 
 def _resolve_app_dir() -> Path:
-    # Portable behavior: prefer the script location (downloader.py).
+    """Keep portable state beside downloader.py; installed state stays per-user."""
     try:
         argv0 = Path(sys.argv[0]) if sys.argv else None
-        if argv0 and argv0.suffix.lower() == ".py":
+        if argv0 and argv0.name.lower() == "downloader.py":
             return argv0.resolve().parent
-    except Exception:
+    except (OSError, RuntimeError):
         pass
-    # Fallback: repository layout (package sits under app root).
-    return Path(__file__).resolve().parent.parent
+    return _installed_data_dir()
 
 
 def run() -> int:
@@ -38,6 +53,7 @@ def run() -> int:
         logs_dir=app_dir / "logs",
         archives_dir=app_dir / "archives",
     )
+    app_dir.mkdir(parents=True, exist_ok=True)
 
     ui = ConsoleUI()
 

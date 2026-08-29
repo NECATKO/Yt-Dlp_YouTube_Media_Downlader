@@ -21,6 +21,7 @@ class TestIsValidUrl:
             "http://example.com/video",
             "https://vimeo.com/123456",
             "https://youtu.be/dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=abc&list=PLtest123&index=2",
         ],
     )
     def test_returns_true_for_valid_urls(self, url: str) -> None:
@@ -102,10 +103,15 @@ class TestValidateUrl:
         with pytest.raises(ValidationError, match="cannot start with"):
             validate_url("-v https://example.com")
 
-    def test_raises_for_dangerous_chars(self) -> None:
-        """Test URLs with shell metacharacters raise ValidationError."""
-        with pytest.raises(ValidationError, match="dangerous characters"):
-            validate_url("https://example.com; rm -rf /")
+    def test_accepts_standard_playlist_query(self) -> None:
+        """Query separators are URL syntax, not shell syntax."""
+        url = "https://www.youtube.com/watch?v=abc&list=PLtest123&index=2"
+        assert validate_url(url) == url
+
+    def test_raises_for_unescaped_whitespace(self) -> None:
+        """Spaces and control characters must be encoded before use."""
+        with pytest.raises(ValidationError, match="whitespace or control"):
+            validate_url("https://example.com/video name")
 
 
 class TestValidatePathString:

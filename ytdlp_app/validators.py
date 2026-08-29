@@ -7,8 +7,10 @@ from urllib.parse import urlparse
 
 from .exceptions import ValidationError
 
-# Pattern to detect common URL injection attempts
-_DANGEROUS_PATTERN = re.compile(r"[;&|`$]")
+# Raw whitespace and control characters are never valid inside an HTTP URL.
+# Shell metacharacters such as "&" are deliberately allowed: commands are
+# executed with shell=False, and "&" is required by ordinary query strings.
+_INVALID_URL_CHAR_PATTERN = re.compile(r"[\x00-\x20\x7f]")
 
 
 def is_valid_url(url: str) -> bool:
@@ -26,8 +28,8 @@ def is_valid_url(url: str) -> bool:
 
     url = url.strip()
 
-    # Check for dangerous characters that could be shell injection
-    if _DANGEROUS_PATTERN.search(url):
+    # Spaces must be percent-encoded, and control characters are never safe.
+    if _INVALID_URL_CHAR_PATTERN.search(url):
         return False
 
     # URL shouldn't start with dash (could be interpreted as flag)
@@ -62,8 +64,8 @@ def validate_url(url: str) -> str:
     if url.startswith("-"):
         raise ValidationError("URL cannot start with '-' (potential command injection)")
 
-    if _DANGEROUS_PATTERN.search(url):
-        raise ValidationError("URL contains potentially dangerous characters")
+    if _INVALID_URL_CHAR_PATTERN.search(url):
+        raise ValidationError("URL contains unescaped whitespace or control characters")
 
     if not is_valid_url(url):
         raise ValidationError(f"Invalid URL format: {url}")
