@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +46,15 @@ if TYPE_CHECKING:
 
 #: Typed at the URL prompt to open the settings menu instead of downloading.
 SETTINGS_SHORTCUT = "s"
+
+
+class CycleOutcome(IntEnum):
+    """Result of one interactive cycle, including its process exit status."""
+
+    CONTINUE = -1
+    EXIT_SUCCESS = 0
+    EXIT_FAILURE = 1
+    INTERRUPTED = 130
 
 
 class InteractiveSession:
@@ -157,14 +167,15 @@ class InteractiveSession:
             # The try sits inside the loop so that a failed cycle can return to
             # the URL prompt when the user asks to keep going.
             try:
-                if not self._process_one_cycle():
-                    return 0
+                outcome = self._process_one_cycle()
+                if outcome != CycleOutcome.CONTINUE:
+                    return int(outcome)
             except (KeyboardInterrupt, EOFError):
                 # EOF means stdin is gone (piped or closed); prompting again --
                 # which is what the generic handler below would do -- can only
                 # raise the same error.
                 self.ui.print(f"\n>>> {t('status_cancelled')} (Ctrl+C).")
-                return 0
+                return int(CycleOutcome.INTERRUPTED)
             except Exception as ex:
                 log_error(self.log_path, t("error_unexpected"), ex)
                 self.ui.print(t("error_check_logs"))
@@ -207,12 +218,8 @@ class InteractiveSession:
                     f"{paint(t('error_url_invalid_input'), Colors.RED)}"
                 )
 
-    def _process_one_cycle(self) -> bool:
-        """Process one download cycle.
-
-        Returns:
-            True to continue loop, False to exit.
-        """
+    def _process_one_cycle(self) -> CycleOutcome:
+        """Process one download cycle and preserve its exit semantics."""
         self.log_path = None
 
         # Tool availability is cached; drop it each cycle so a user who installs
@@ -222,7 +229,7 @@ class InteractiveSession:
         # 1) URL
         url = self._ask_url()
         if url is None:
-            return False
+            return CycleOutcome.EXIT_SUCCESS
 
         # 2) Mode selection
         mode_choice = self.ui.pick(t("prompt_mode"), [t("mode_video"), t("mode_audio")])
@@ -236,7 +243,7 @@ class InteractiveSession:
                 f"{paint(t('label_error'), Colors.RED, Colors.BOLD)} "
                 f"{paint(t('error_ytdlp_not_found'), Colors.RED)}"
             )
-            return False
+            return CycleOutcome.EXIT_FAILURE
 
         if not ffmpeg_available():
             self.ui.print(
@@ -385,12 +392,16 @@ class InteractiveSession:
                 log_error(log_path, t("playlist_fetch_failed_log"), ex)
                 self.ui.print(f"{t('playlist_fetch_failed')}\n{ex}\n")
                 if self.ui.prompt_exit_on_failure():
-                    return False
+                    return CycleOutcome.EXIT_FAILURE
 
         # 9) DOWNLOAD
         final_rc = self._execute_download(plan, cmd_builder)
-        if final_rc is None:  # Exited early
-            return False
+        if final_rc == 130:
+            return CycleOutcome.INTERRUPTED
+        if final_rc != 0:
+            if self.handle_error(log_path):
+                return CycleOutcome.EXIT_FAILURE
+            return CycleOutcome.CONTINUE
 
         append_log(
             log_path,
@@ -417,8 +428,10 @@ class InteractiveSession:
             self.open_settings()
             # Settings are not a terminal choice: fall through to the URL
             # prompt so the user can act on what they just changed.
-            return True
-        return next_action == ActionChoice.DOWNLOAD_ANOTHER
+            return CycleOutcome.CONTINUE
+        if next_action == ActionChoice.DOWNLOAD_ANOTHER:
+            return CycleOutcome.CONTINUE
+        return CycleOutcome.EXIT_SUCCESS
 
     def _print_summary_panel(
         self,
@@ -469,18 +482,14 @@ class InteractiveSession:
 
         self.ui.print_panel("\n".join(lines), title=t("summary_title"), color=Colors.BLUE)
 
-    def _execute_download(self, plan: DownloadPlan, cmd_builder: CommandBuilder) -> int | None:
-        """Execute the download commands.
-
-        Returns:
-            Final return code, or None if cancelled/failed.
-        """
-        final_rc: int | None = None
+    def _execute_download(self, plan: DownloadPlan, cmd_builder: CommandBuilder) -> int:
+        """Execute download commands and return the final process status."""
+        final_rc = 1
 
         log_path = self.log_path
         if not log_path:
             self.ui.print(t("error_log_uninitialized"))
-            return None
+            return 1
 
         if plan.mode == DownloadMode.VIDEO:
             if plan.mp4_profile == ProfileChoice.COMPATIBILITY:
@@ -493,7 +502,7 @@ class InteractiveSession:
                 final_rc = rc1
 
                 if rc1 == 130:
-                    return None
+                    return 130
                 if rc1 != 0:
                     # Expected whenever an item has no avc1+mp4a rendition --
                     # that is exactly what Stage 2 is for. Not a failure yet.
@@ -508,9 +517,7 @@ class InteractiveSession:
                 final_rc = rc2
 
                 if rc2 == 130:
-                    return None
-                if rc2 != 0 and self.handle_error(log_path):
-                    return None
+                    return 130
 
             else:
                 if plan.remux_container == ContainerChoice.MKV:
@@ -531,9 +538,7 @@ class InteractiveSession:
                     final_rc = rc
 
                 if final_rc == 130:
-                    return None
-                if final_rc != 0 and self.handle_error(log_path):
-                    return None
+                    return 130
         else:
             cmd_audio = cmd_builder.build_mp3()
             self.ui.print(
@@ -544,9 +549,7 @@ class InteractiveSession:
             final_rc = rc
 
             if rc == 130:
-                return None
-            if rc != 0 and self.handle_error(log_path):
-                return None
+                return 130
 
         return final_rc
 
