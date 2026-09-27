@@ -9,6 +9,7 @@ import pytest
 from ytdlp_app.exec import (
     BAN_RETURN_CODE,
     BanSignal,
+    child_env,
     detect_ban_signal,
     find_ban_signal,
     run_cmd_tee,
@@ -40,6 +41,8 @@ class TestDetectBanSignal:
             "ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you\u2019re not a bot. "
             "Use --cookies-from-browser or --cookies for the authentication.",
             "ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you're not a bot.",
+            # The typographic apostrophe after a wrong-encoding round trip.
+            "ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you\ufffdre not a bot.",
         ],
     )
     def test_bot_check(self, line: str) -> None:
@@ -125,3 +128,21 @@ class TestRunCmdTeeBanGuard:
         cmd = _script("[download] 100% of 1.00MiB", "[download] Downloading item 429 of 500")
 
         assert run_cmd_tee(cmd, log, stop_on_ban=True) == 0
+
+
+class TestChildEncoding:
+    """Children must write UTF-8, because that is how their output is decoded."""
+
+    def test_env_forces_utf8(self) -> None:
+        env = child_env()
+        assert env["PYTHONIOENCODING"] == "utf-8"
+        assert env["PYTHONUTF8"] == "1"
+
+    def test_non_ascii_output_survives_the_pipe(self, tmp_path: Path) -> None:
+        """Regression: on Windows the child used the ANSI code page, and the
+        bot-check apostrophe arrived as U+FFFD (caught by CI on windows-latest)."""
+        log = tmp_path / "run.log"
+        cmd = _script("[download] Destination: \u00c7ok g\u00fczel \u2019 \u015f\u0131k.mkv")
+
+        assert run_cmd_tee(cmd, log) == 0
+        assert "\u00c7ok g\u00fczel \u2019 \u015f\u0131k" in log.read_text(encoding="utf-8")

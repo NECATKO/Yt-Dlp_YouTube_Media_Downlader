@@ -401,8 +401,15 @@ class TestEnsureYtdlp:
 
 
 class TestEnsure:
-    def test_refuses_to_run_without_the_portable_python(self, tmp_path: Path) -> None:
+    def test_refuses_to_run_without_the_portable_python(self, tmp_path: Path, monkeypatch) -> None:
+        # Pin a supported platform: this test must mean the same on macOS CI.
+        monkeypatch.setattr(portable, "platform_key", lambda: "linux-x86_64")
         with pytest.raises(PortableError, match="install"):
+            portable.ensure(RuntimeLayout(tmp_path), update_days=7)
+
+    def test_refuses_unsupported_platforms(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr(portable, "platform_key", lambda: None)
+        with pytest.raises(PortableError, match="supports Windows and Linux"):
             portable.ensure(RuntimeLayout(tmp_path), update_days=7)
 
     def test_status_command(self, capsys) -> None:

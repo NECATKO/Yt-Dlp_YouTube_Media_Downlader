@@ -7,6 +7,7 @@ with output capture and logging capabilities.
 from __future__ import annotations
 
 import io
+import os
 import re
 import subprocess
 from datetime import datetime
@@ -43,8 +44,9 @@ class BanSignal(StrEnum):
 
 
 _RATE_LIMIT_RE = re.compile(r"HTTP Error 429|429:? Too Many Requests", re.IGNORECASE)
-# YouTube writes the apostrophe as U+2019; accept the ASCII one as well.
-_BOT_CHECK_RE = re.compile(r"Sign in to confirm you[\u2019']re not a bot", re.IGNORECASE)
+# YouTube writes the apostrophe as U+2019; accept the ASCII one as well, and
+# U+FFFD, which is what U+2019 becomes if a child's output was mis-decoded.
+_BOT_CHECK_RE = re.compile(r"Sign in to confirm you[\u2019'\ufffd]re not a bot", re.IGNORECASE)
 # Only yt-dlp's own diagnostics count. A download line can quote a video title,
 # and a title may well mention either phrase. "Got error:" is how the fragment
 # downloader reports a failed attempt before retrying it.
@@ -67,6 +69,17 @@ def detect_ban_signal(line: str) -> BanSignal | None:
     if _RATE_LIMIT_RE.search(line):
         return BanSignal.RATE_LIMITED
     return None
+
+
+def child_env() -> dict[str, str]:
+    """Environment for the tools we launch: force their output to UTF-8.
+
+    Output is decoded as UTF-8 here. A Python child (yt-dlp) otherwise writes
+    to a pipe in the Windows ANSI code page, which turns non-ASCII titles, and
+    the apostrophe in YouTube's bot-check message, into replacement characters.
+    Run.bat already sets both variables; this covers every other launch path.
+    """
+    return {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
 
 def resolve_program(cmd: list[str]) -> list[str]:
@@ -120,6 +133,7 @@ def run_capture(cmd: list[str]) -> tuple[int, str, str]:
     try:
         p = subprocess.run(
             resolve_program(cmd),
+            env=child_env(),
             check=False,
             shell=False,
             capture_output=True,
@@ -171,6 +185,7 @@ def run_cmd_tee(cmd: list[str], log_path: Path, *, stop_on_ban: bool = False) ->
 
             p = subprocess.Popen(
                 real_cmd,
+                env=child_env(),
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
