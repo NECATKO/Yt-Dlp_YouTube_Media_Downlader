@@ -308,3 +308,73 @@ class TestPersistence:
         stored = json.loads(config_file.read_text(encoding="utf-8"))
         assert stored["app"] == "yt-dlp-downloader"
         assert stored["language"] == "en"
+
+
+class TestArchiveSettingsMenu:
+    """Entry 7 edits the four archive waits and persists them."""
+
+    ARCHIVE_ENTRY = 7
+
+    def _run(
+        self, answers: list[str], config_file: Path, user_config: UserConfig, settings: AppSettings
+    ) -> FakeUI:
+        ui = FakeUI(picks=[self.ARCHIVE_ENTRY, BACK], texts=answers)
+        _menu(ui, config_file, user_config, settings=settings).run()
+        return ui
+
+    def test_values_are_stored_and_persisted(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        settings = AppSettings()
+        # requests, min, max, subtitles
+        self._run(["2.5", "20", "90", "7"], config_file, user_config, settings)
+
+        assert settings.archive.sleep_requests == 2.5
+        assert settings.archive.sleep_interval == 20
+        assert settings.archive.max_sleep_interval == 90
+        assert settings.archive.sleep_subtitles == 7
+
+        stored = load_settings(json.loads(config_file.read_text(encoding="utf-8")))
+        assert stored.archive == settings.archive
+
+    def test_blank_answers_keep_the_defaults(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        settings = AppSettings()
+        self._run(["", "", "", ""], config_file, user_config, settings)
+
+        assert settings.archive.sleep_requests == 1.5
+        assert settings.archive.max_sleep_interval == 45
+
+    def test_decimal_comma_is_accepted(self, config_file: Path, user_config: UserConfig) -> None:
+        settings = AppSettings()
+        self._run(["1,25", "", "", ""], config_file, user_config, settings)
+
+        assert settings.archive.sleep_requests == 1.25
+
+    def test_invalid_values_are_rejected_then_accepted(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        settings = AppSettings()
+        # "abc", a negative, "nan" and an over-limit value are all refused.
+        self._run(
+            ["abc", "-1", "nan", "99999", "3", "", "", ""], config_file, user_config, settings
+        )
+
+        assert settings.archive.sleep_requests == 3
+
+    def test_max_below_min_is_corrected(self, config_file: Path, user_config: UserConfig) -> None:
+        settings = AppSettings()
+        self._run(["", "60", "30", ""], config_file, user_config, settings)
+
+        assert settings.archive.sleep_interval == 60
+        assert settings.archive.max_sleep_interval == 60
+
+    def test_regular_download_waits_are_untouched(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        settings = AppSettings()
+        self._run(["9", "99", "199", "9"], config_file, user_config, settings)
+
+        assert settings.download.sleep_interval == 1
+        assert settings.download.max_sleep_interval == 3

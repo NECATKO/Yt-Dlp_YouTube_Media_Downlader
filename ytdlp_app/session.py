@@ -12,8 +12,8 @@ from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .exceptions import ValidationError
-from .exec import run_capture, run_cmd_tee
+from .exceptions import PlaylistError, ValidationError
+from .exec import BAN_RETURN_CODE, find_ban_signal, run_capture, run_cmd_tee
 from .i18n import t
 from .logging_utils import Colors, append_log, log_error, now_stamp, paint
 from .models import (
@@ -31,21 +31,31 @@ from .models import (
 from .playlist import (
     fetch_playlist_entries,
     get_playlist_id,
+    is_channel_url,
     is_playlist_url,
     read_archive_ids,
+    resolve_channel_id,
+    safe_archive_token,
 )
 from .settings import AppSettings
 from .settings_menu import run_settings_menu
 from .skip_probe import probe_skip_reason
 from .system import deno_available, ffmpeg_available, refresh_tool_cache, yt_dlp_available
 from .validators import validate_url
-from .yt_dlp import CommandBuilder
+from .yt_dlp import CommandBuilder, js_runtime_args
 
 if TYPE_CHECKING:
     from .ui import ConsoleUI
 
 #: Typed at the URL prompt to open the settings menu instead of downloading.
 SETTINGS_SHORTCUT = "s"
+
+#: The mode menu, in the order its options are shown.
+_MODE_BY_CHOICE = {
+    ModeChoice.VIDEO: DownloadMode.VIDEO,
+    ModeChoice.AUDIO: DownloadMode.AUDIO,
+    ModeChoice.ARCHIVE: DownloadMode.ARCHIVE,
+}
 
 
 class CycleOutcome(IntEnum):
@@ -157,6 +167,60 @@ class InteractiveSession:
 
         return self.ui.prompt_exit_on_failure()
 
+    def report_ban(self) -> None:
+        """Tell the user YouTube is blocking us and how to resume."""
+        self.ui.print(f"\n{Colors.RED}{Colors.BOLD}{t('ban_detected_title')}{Colors.RESET}")
+        self.ui.print(f"{Colors.YELLOW}{t('ban_detected_detail')}{Colors.RESET}")
+        self.ui.print(f"{Colors.CYAN}{t('ban_retry_hint')}{Colors.RESET}")
+        if self.log_path:
+            self.ui.print(f"\n{Colors.WHITE}{t('error_log_hint')}{Colors.RESET}")
+            self.ui.print(f"{Colors.WHITE}{self.log_path}{Colors.RESET}")
+
+    def _archive_file_name(
+        self, url: str, channel_archive: bool, playlist_id: str | None, deno_ok: bool
+    ) -> str | None:
+        """Pick the download archive file for an archive-mode run.
+
+        A channel is keyed by its real channel id, so the handle URL, the
+        /channel/ URL and any tab URL of one channel all resume one archive.
+
+        Returns:
+            The file name, or None if YouTube blocked the channel lookup (the
+            user has already been told).
+        """
+        if not channel_archive:
+            if playlist_id:
+                return f"playlist_{safe_archive_token(playlist_id)}_archive.txt"
+            return "single_videos_archive.txt"
+
+        self.ui.print(paint(t("archive_resolving_channel"), Colors.CYAN))
+        extra_args = [*js_runtime_args(deno_ok), *self.settings.download.network_args()]
+        try:
+            channel_id = resolve_channel_id(url, extra_args, run_capture)
+        except PlaylistError as ex:
+            append_log(
+                self.log_path,
+                f"\n[WARN {datetime.now().isoformat(timespec='seconds')}] "
+                f"Channel id lookup failed: {ex}\n",
+            )
+            signal = find_ban_signal(str(ex))
+            if signal is not None:
+                append_log(
+                    self.log_path,
+                    f"[BAN-GUARD {datetime.now().isoformat(timespec='seconds')}] "
+                    f"Not starting the download: {signal.value} during the channel id lookup\n",
+                )
+                self.report_ban()
+                return None
+            # Not fatal: fall back to the identifier in the URL, which still
+            # resumes correctly as long as the same URL is used again.
+            channel_id = get_playlist_id(url)
+            self.ui.print(
+                f"{paint(t('label_warning'), Colors.YELLOW, Colors.BOLD)} "
+                f"{paint(t('archive_channel_id_fallback', id=channel_id), Colors.YELLOW)}"
+            )
+        return f"channel_{safe_archive_token(channel_id)}_archive.txt"
+
     def run_loop(self) -> int:
         """Run the main interactive loop.
 
@@ -232,8 +296,11 @@ class InteractiveSession:
             return CycleOutcome.EXIT_SUCCESS
 
         # 2) Mode selection
-        mode_choice = self.ui.pick(t("prompt_mode"), [t("mode_video"), t("mode_audio")])
-        mode = DownloadMode.VIDEO if mode_choice == ModeChoice.VIDEO else DownloadMode.AUDIO
+        mode_choice = self.ui.pick(
+            t("prompt_mode"), [t("mode_video"), t("mode_audio"), t("mode_archive")]
+        )
+        mode = _MODE_BY_CHOICE[ModeChoice(mode_choice)]
+        archive_mode = mode == DownloadMode.ARCHIVE
 
         # 3) Pre-flight checks
         deno_ok = deno_available()
@@ -264,8 +331,11 @@ class InteractiveSession:
 
         # 4) Playlist vs single video
         playlist_like = is_playlist_url(url)
+        # Archiving a channel always means the whole channel: there is no
+        # "this video" in a channel URL to fall back to.
+        channel_archive = archive_mode and is_channel_url(url)
         force_single = False
-        if playlist_like:
+        if playlist_like and not channel_archive:
             what = self.ui.pick(
                 t("prompt_playlist"),
                 [
@@ -307,8 +377,24 @@ class InteractiveSession:
         self.paths.archives_dir.mkdir(parents=True, exist_ok=True)
         self.paths.logs_dir.mkdir(parents=True, exist_ok=True)
 
+        log_path = (
+            self.paths.logs_dir
+            / f"yt-dlp_{mode}_{'playlist' if is_playlist else 'single'}_{now_stamp()}.log"
+        )
+        self.log_path = log_path
+
         templates = self.settings.output
-        if mode == DownloadMode.VIDEO:
+        if archive_mode:
+            base_dir = self.config.videos_dir / "yt-dlp"
+            output_template = str(base_dir / templates.archive_template)
+            archive_name = self._archive_file_name(url, channel_archive, playlist_id, deno_ok)
+            if archive_name is None:
+                # YouTube is already blocking us; report_ban has told the user.
+                if self.ui.prompt_exit_on_failure():
+                    return CycleOutcome.EXIT_FAILURE
+                return CycleOutcome.CONTINUE
+            archive_path = self.paths.archives_dir / archive_name
+        elif mode == DownloadMode.VIDEO:
             if is_playlist:
                 base_dir = self.config.videos_dir / "yt-dlp"
                 output_template = str(base_dir / templates.playlist_video_template)
@@ -327,11 +413,6 @@ class InteractiveSession:
             archive_path = self.paths.archives_dir / "single_audios_mp3.txt"
 
         base_dir.mkdir(parents=True, exist_ok=True)
-        log_path = (
-            self.paths.logs_dir
-            / f"yt-dlp_{mode}_{'playlist' if is_playlist else 'single'}_{now_stamp()}.log"
-        )
-        self.log_path = log_path
 
         self._print_summary_panel(
             mode,
@@ -383,9 +464,11 @@ class InteractiveSession:
             js_args=cmd_builder.js_args,
         )
 
-        # 8) Playlist mapping
+        # 8) Playlist mapping. Archive mode skips it: the listing exists only for
+        # the skip report, whose per-item probes are exactly the kind of extra
+        # traffic archive mode avoids.
         entries = []
-        if plan.is_playlist:
+        if plan.is_playlist and not archive_mode:
             try:
                 entries = fetch_playlist_entries(plan.url, plan.js_args, run_capture)
             except Exception as ex:
@@ -398,6 +481,11 @@ class InteractiveSession:
         final_rc = self._execute_download(plan, cmd_builder)
         if final_rc == 130:
             return CycleOutcome.INTERRUPTED
+        if final_rc == BAN_RETURN_CODE:
+            self.report_ban()
+            if self.ui.prompt_exit_on_failure():
+                return CycleOutcome.EXIT_FAILURE
+            return CycleOutcome.CONTINUE
         if final_rc != 0:
             if self.handle_error(log_path):
                 return CycleOutcome.EXIT_FAILURE
@@ -409,8 +497,9 @@ class InteractiveSession:
             f"DOWNLOAD_FINISHED returncode={final_rc}\n",
         )
 
-        # 10) Skip report
-        self._show_skip_report(plan, entries)
+        # 10) Skip report (never in archive mode, see step 8)
+        if not archive_mode:
+            self._show_skip_report(plan, entries)
 
         self.ui.print("\n" + t("tasks_completed"))
         self.ui.print(f"{t('info_log')} {log_path}")
@@ -479,6 +568,18 @@ class InteractiveSession:
             lines.append(
                 f"{paint(t('info_profile'), Colors.YELLOW)} {paint(profile_name, Colors.MAGENTA)}"
             )
+        elif mode == DownloadMode.ARCHIVE:
+            pacing = self.settings.archive
+            waits = t(
+                "info_archive_waits_value",
+                requests=f"{pacing.sleep_requests:g}",
+                low=f"{pacing.sleep_interval:g}",
+                high=f"{max(pacing.max_sleep_interval, pacing.sleep_interval):g}",
+                subtitles=f"{pacing.sleep_subtitles:g}",
+            )
+            lines.append(
+                f"{paint(t('info_archive_waits'), Colors.YELLOW)} {paint(waits, Colors.MAGENTA)}"
+            )
 
         self.ui.print_panel("\n".join(lines), title=t("summary_title"), color=Colors.BLUE)
 
@@ -490,6 +591,14 @@ class InteractiveSession:
         if not log_path:
             self.ui.print(t("error_log_uninitialized"))
             return 1
+
+        if plan.mode == DownloadMode.ARCHIVE:
+            cmd_archive = cmd_builder.build_archive()
+            self.ui.print(
+                f"{paint('### ' + t('archive_title'), Colors.MAGENTA, Colors.BOLD)} "
+                f"{paint(t('archive_desc'), Colors.CYAN)}"
+            )
+            return run_cmd_tee(cmd_archive, log_path, stop_on_ban=True)
 
         if plan.mode == DownloadMode.VIDEO:
             if plan.mp4_profile == ProfileChoice.COMPATIBILITY:

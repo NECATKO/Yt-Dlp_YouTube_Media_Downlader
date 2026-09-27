@@ -15,10 +15,11 @@ if TYPE_CHECKING:
 
 
 class DownloadMode(StrEnum):
-    """Download mode (video or audio)."""
+    """Download mode (video, audio, or a full channel/video archive)."""
 
     VIDEO = "mp4"
     AUDIO = "mp3"
+    ARCHIVE = "archive"
 
 
 class ModeChoice(IntEnum):
@@ -26,6 +27,7 @@ class ModeChoice(IntEnum):
 
     VIDEO = 1
     AUDIO = 2
+    ARCHIVE = 3
 
 
 class PlaylistChoice(IntEnum):
@@ -57,7 +59,7 @@ class ActionChoice(IntEnum):
     EXIT = 3
 
 
-#: Type alias for download mode - either video (mp4) or audio (mp3).
+#: Type alias for download mode - video (mp4), audio (mp3), or archive.
 Mode = DownloadMode
 
 
@@ -153,7 +155,7 @@ class DownloadPlan:
 
     Attributes:
         url: The URL to download from.
-        mode: Download mode ('mp4' for video, 'mp3' for audio).
+        mode: Download mode ('mp4' for video, 'mp3' for audio, 'archive').
         is_playlist: Whether the URL is a playlist.
         playlist_id: Playlist identifier, or None for single items.
         mp4_profile: MP4 quality profile, or None for audio downloads.

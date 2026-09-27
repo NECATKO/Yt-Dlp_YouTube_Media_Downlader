@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Archive mode** — a third option next to MP4 and MP3, for preserving a channel that may be deleted. For every video it keeps the video (up to 1080p, merged into MKV with chapters and metadata), the description, the info JSON, the thumbnail, and uploaded plus auto-generated Turkish/English subtitles converted to SRT, each video in its own folder under `<Videos>/yt-dlp/<channel>/`.
+  - A channel URL (`/@handle`, `/channel/UC…`, `/c/…`, `/user/…`, or one of its tabs) is archived whole: yt-dlp's nested Videos/Shorts/Live playlists are all downloaded, and the playlist-or-video question is skipped.
+  - The download archive is `archives/channel_<channel_id>_archive.txt`, keyed by the real channel id (looked up with one flat request), so every URL form of a channel resumes the same archive.
+  - Paced to stay under YouTube's limits: `--sleep-requests 1.5`, `--sleep-interval 15`, `--max-sleep-interval 45`, `--sleep-subtitles 5`, and 10 retries instead of infinite. The waits are editable from the settings menu (*Archive mode waits*) and stored under `settings.archive` in `config.json`; the speed limit and proxy still apply.
+  - **Ban guard**: when yt-dlp reports HTTP 429 or YouTube's "Sign in to confirm you're not a bot", the download is stopped at once, the event is logged as `[BAN-GUARD]`, and the user is told to wait a few hours and enter the same URL again to resume. The same check covers the channel id lookup.
+  - Archive mode sends no playlist-listing or skip-probe requests, and does not pass `--ignore-errors`, so an item whose subtitles or thumbnail failed is retried on the next run instead of being recorded as done.
 - **In-app settings menu**: type `s` at the URL prompt (or pick *Settings* after a download) to change the interface language, the download folders, the proxy, the speed limit, the parallel fragment count, the audio format and quality, and the subtitle options. Every change is written to `config.json` immediately, and a language switch applies without a restart.
 - Advanced settings are now honored at runtime. They live under the `"settings"` key of `config.json`; a config written before this change has no such key and keeps the previous defaults exactly, so nothing changes until you opt in. See `settings.example.json` for the full shape.
 - The URL prompt validates its input and asks again instead of passing anything straight to yt-dlp — most concretely, a URL starting with `-` is no longer read as a command-line flag.
@@ -19,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `analyze_log_for_error` now recognizes copyright takedowns, which it previously reported with the generic "video unavailable" message.
 
 ### Changed
+- `AppSettings` gains an `archive` section and `OutputSettings` an `archive_template`. Configs without them load the defaults, so no migration is needed. MP4 and MP3 commands are unchanged.
 - `AppSettings` drops `use_deno`, `default_mode`, `default_mp4_profile`, and `language`: the first three are detected or asked for interactively, and the language lives at the top level of `config.json` because it must resolve before the settings load.
 - `DownloadPlan` drops four argument fields that were built every cycle and never read; its profile fields are typed as the enums they are compared against.
 - Removed `is_supported_url`, which computed a hostname and then unconditionally returned `True`, and eleven locale keys describing a status UI that was never built.
@@ -143,6 +150,12 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
 ## [Yayınlanmadı]
 
 ### Eklenenler
+- **Arşiv modu** — silinme riski olan bir kanalı korumak için MP4 ve MP3'ün yanında üçüncü seçenek. Her video için videoyu (1080p'ye kadar, bölümler ve metadata gömülü MKV), açıklamayı, info JSON'u, kapak resmini ve Türkçe/İngilizce yüklenmiş + otomatik altyazıları (SRT'ye dönüştürülmüş) saklar; her video `<Videos>/yt-dlp/<kanal>/` altında kendi klasöründedir.
+  - Kanal URL'si (`/@handle`, `/channel/UC…`, `/c/…`, `/user/…` ya da sekmelerinden biri) bütünüyle arşivlenir: yt-dlp'nin iç içe Videos/Shorts/Live playlist'lerinin hepsi indirilir ve "tüm liste mi bu video mu" sorusu atlanır.
+  - İndirme arşivi `archives/channel_<channel_id>_archive.txt` dosyasıdır ve gerçek kanal kimliğiyle adlandırılır (tek bir düz istekle öğrenilir); böylece bir kanalın her URL biçimi aynı arşivden devam eder.
+  - YouTube sınırlarının altında kalacak tempo: `--sleep-requests 1.5`, `--sleep-interval 15`, `--max-sleep-interval 45`, `--sleep-subtitles 5` ve sonsuz yerine 10 deneme. Bekleme süreleri ayarlar menüsünden (*Arsiv modu bekleme sureleri*) değiştirilebilir ve `config.json` içinde `settings.archive` altında saklanır; hız sınırı ve proxy bu modda da geçerlidir.
+  - **Ban koruması**: yt-dlp HTTP 429 ya da YouTube'un "Sign in to confirm you're not a bot" mesajını bildirdiğinde indirme hemen durdurulur, olay log'a `[BAN-GUARD]` olarak yazılır ve kullanıcıya birkaç saat bekleyip aynı URL'yi tekrar vermesi, indirmenin kaldığı yerden devam edeceği söylenir. Aynı kontrol kanal kimliği sorgusunu da kapsar.
+  - Arşiv modu playlist listeleme ya da atlama yoklaması isteği göndermez ve `--ignore-errors` kullanmaz; altyazısı veya kapak resmi başarısız olan bir öğe tamamlanmış sayılmaz, sonraki çalıştırmada yeniden denenir.
 - **Uygulama içi ayarlar menüsü**: URL isteminde `s` yazarak (veya indirme sonrası *Ayarlar* seçeneğiyle) arayüz dilini, indirme klasörlerini, vekil sunucuyu, hız sınırını, paralel parça sayısını, ses formatı ve kalitesini, altyazı seçeneklerini değiştirin. Her değişiklik anında `config.json` dosyasına yazılır ve dil değişimi yeniden başlatma gerektirmez.
 - Gelişmiş ayarlar artık çalışma zamanında dikkate alınıyor. `config.json` içindeki `"settings"` anahtarı altında tutuluyorlar; bu değişiklikten önce yazılmış bir yapılandırmada bu anahtar yoktur ve önceki varsayılanlar birebir korunur, yani siz istemeden hiçbir şey değişmez. Tam şema için `settings.example.json` dosyasına bakın.
 - URL istemi girdiyi doğruluyor ve her şeyi doğrudan yt-dlp'ye geçirmek yerine yeniden soruyor — en somut olarak, `-` ile başlayan bir adres artık komut satırı bayrağı sanılmıyor.
@@ -154,6 +167,7 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
 - `analyze_log_for_error` artık telif hakkı kaldırmalarını tanıyor; daha önce bunları genel "video kullanılamıyor" mesajıyla bildiriyordu.
 
 ### Değişenler
+- `AppSettings`'e `archive` bölümü, `OutputSettings`'e `archive_template` eklendi. Bunları içermeyen yapılandırmalar varsayılanları yükler, taşıma gerekmez. MP4 ve MP3 komutları değişmedi.
 - `AppSettings`'ten `use_deno`, `default_mode`, `default_mp4_profile` ve `language` kaldırıldı: ilk üçü otomatik algılanıyor veya kullanıcıya soruluyor, dil ise ayarlardan önce çözülmesi gerektiği için `config.json`'un üst seviyesinde duruyor.
 - `DownloadPlan`'dan her döngüde doldurulup hiç okunmayan dört argüman alanı kaldırıldı; profil alanları karşılaştırıldıkları enum türleriyle tiplendi.
 - Bir alan adı hesaplayıp koşulsuz `True` dönen `is_supported_url` ve hiç yapılmamış bir durum arayüzünü tarif eden on bir çeviri anahtarı silindi.

@@ -7,8 +7,10 @@ with output capture and logging capabilities.
 from __future__ import annotations
 
 import io
+import re
 import subprocess
 from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from .i18n import t
@@ -23,6 +25,66 @@ from .logging_utils import (
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+#: Returned by run_cmd_tee when it stopped yt-dlp because YouTube started
+#: blocking. 75 is EX_TEMPFAIL: the same command will work again later.
+BAN_RETURN_CODE = 75
+
+#: How long a stopped yt-dlp gets to exit before it is killed outright.
+_TERMINATE_TIMEOUT = 10
+
+
+class BanSignal(StrEnum):
+    """Why YouTube is refusing us. The values are written to the log."""
+
+    RATE_LIMITED = "HTTP 429 Too Many Requests"
+    BOT_CHECK = "Sign in to confirm you're not a bot"
+
+
+_RATE_LIMIT_RE = re.compile(r"HTTP Error 429|429:? Too Many Requests", re.IGNORECASE)
+# YouTube writes the apostrophe as U+2019; accept the ASCII one as well.
+_BOT_CHECK_RE = re.compile(r"Sign in to confirm you[\u2019']re not a bot", re.IGNORECASE)
+# Only yt-dlp's own diagnostics count. A download line can quote a video title,
+# and a title may well mention either phrase. "Got error:" is how the fragment
+# downloader reports a failed attempt before retrying it.
+_DIAGNOSTIC_MARKERS = ("ERROR:", "WARNING:", "Got error:")
+
+
+def detect_ban_signal(line: str) -> BanSignal | None:
+    """Recognize the output yt-dlp prints once YouTube starts blocking requests.
+
+    Args:
+        line: One line of yt-dlp output.
+
+    Returns:
+        The kind of block, or None for any other line.
+    """
+    if not any(marker in line for marker in _DIAGNOSTIC_MARKERS):
+        return None
+    if _BOT_CHECK_RE.search(line):
+        return BanSignal.BOT_CHECK
+    if _RATE_LIMIT_RE.search(line):
+        return BanSignal.RATE_LIMITED
+    return None
+
+
+def find_ban_signal(text: str) -> BanSignal | None:
+    """Scan multi-line output (such as a captured stderr) for a ban signal."""
+    for line in text.splitlines():
+        signal = detect_ban_signal(line)
+        if signal is not None:
+            return signal
+    return None
+
+
+def _stop_process(p: subprocess.Popen[bytes]) -> None:
+    """Stop yt-dlp, escalating to kill if it does not exit in time."""
+    p.terminate()
+    try:
+        p.wait(timeout=_TERMINATE_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.wait()
 
 
 def run_capture(cmd: list[str]) -> tuple[int, str, str]:
@@ -56,7 +118,7 @@ def run_capture(cmd: list[str]) -> tuple[int, str, str]:
         return 1, "", f"{type(ex).__name__}: {ex}"
 
 
-def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
+def run_cmd_tee(cmd: list[str], log_path: Path, *, stop_on_ban: bool = False) -> int:
     """Run a command with live output streaming and logging.
 
     Streams command output to stdout in real-time with syntax highlighting,
@@ -65,9 +127,13 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
     Args:
         cmd: The command and arguments to execute.
         log_path: Path to the log file for capturing output.
+        stop_on_ban: Stop the command as soon as its output shows YouTube
+            rate limiting (HTTP 429) or demanding a bot check. Continuing to
+            send requests at that point only extends the block.
 
     Returns:
         The process return code.
+        Returns BAN_RETURN_CODE when stop_on_ban stopped the command.
         Returns 130 on keyboard interrupt.
         Returns 1 on unexpected errors.
     """
@@ -102,6 +168,19 @@ def run_cmd_tee(cmd: list[str], log_path: Path) -> int:
                 # Apply syntax highlighting for console, keep raw for log
                 print(colorize_line(line), end="", flush=True)
                 f.write(line)
+
+                signal = detect_ban_signal(line) if stop_on_ban else None
+                if signal is not None:
+                    # Stop reading before stopping the process: a merge left
+                    # running by yt-dlp could otherwise hold the pipe open.
+                    _stop_process(p)
+                    reader.close()
+                    f.write(
+                        f"\n[BAN-GUARD {datetime.now().isoformat(timespec='seconds')}] "
+                        f"Stopped yt-dlp: {signal.value} detected in: {line.strip()}\n"
+                        f">>> returncode = {BAN_RETURN_CODE}\n"
+                    )
+                    return BAN_RETURN_CODE
 
             rc = p.wait()
             if rc == 0:
