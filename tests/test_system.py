@@ -53,3 +53,20 @@ class TestResolveProgram:
         rc, out, _err = exec_module.run_capture(["yt-dlp", "--version"])
         assert rc == 0
         assert out.strip()
+
+
+class TestImpersonationAvailable:
+    def test_reports_the_running_interpreter(self, monkeypatch) -> None:
+        monkeypatch.setattr(system.shutil, "which", lambda _name: None)
+        real_find_spec = system.importlib.util.find_spec
+        monkeypatch.setattr(
+            system.importlib.util,
+            "find_spec",
+            lambda name: None if name == "curl_cffi" else real_find_spec(name),
+        )
+        assert system.impersonation_available() is False
+
+    def test_unknown_for_a_separate_executable(self, monkeypatch) -> None:
+        monkeypatch.setattr(system.importlib.util, "find_spec", lambda _name: None)
+        monkeypatch.setattr(system.shutil, "which", lambda _name: "/usr/bin/yt-dlp")
+        assert system.impersonation_available() is None

@@ -38,7 +38,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "yt-dlp>=2024.1.0",
+    # curl-cffi: yt-dlp requests YouTube subtitles with browser impersonation,
+    # and without it YouTube answers them with HTTP 429.
+    "yt-dlp[default,curl-cffi]>=2024.1.0",
 ]
 
 [project.optional-dependencies]

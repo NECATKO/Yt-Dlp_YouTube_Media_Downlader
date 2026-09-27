@@ -46,8 +46,10 @@ LOCK_FILE_NAME = "runtime.lock"
 YTDLP_UPDATE_DAYS = 7
 
 #: The pip requirement for yt-dlp. "default" adds the optional dependencies
-#: yt-dlp recommends, including its JS challenge solver scripts.
-YTDLP_REQUIREMENT = "yt-dlp[default]"
+#: yt-dlp recommends, including its JS challenge solver scripts. "curl-cffi"
+#: adds browser impersonation: yt-dlp requests every YouTube subtitle with it,
+#: and without it YouTube answers those requests with HTTP 429.
+YTDLP_REQUIREMENT = "yt-dlp[default,curl-cffi]"
 
 #: Components downloaded from runtime.lock by this module. Python is fetched by
 #: the launcher scripts, since nothing can run this module before it exists.
@@ -442,6 +444,10 @@ def ensure_ytdlp(
 ) -> None:
     """Install yt-dlp into the portable Python, upgrading it when it is stale.
 
+    An install made for a different YTDLP_REQUIREMENT (for example before an
+    extra was added) counts as stale, so the missing extra arrives on the next
+    launch rather than a week later.
+
     A failed first install is fatal: the app cannot work without yt-dlp. A
     failed upgrade is not, since the installed copy may still work (and the
     machine may simply be offline).
@@ -460,6 +466,8 @@ def ensure_ytdlp(
         except ValueError:
             # Never recorded ("None") or unreadable: update to be safe.
             stale = True
+        if state.get("ytdlp_requirement") != YTDLP_REQUIREMENT:
+            stale = True
         if not (force_update or stale):
             return
         print("Updating yt-dlp...", flush=True)
@@ -468,6 +476,7 @@ def ensure_ytdlp(
             return
 
     state["ytdlp_updated_at"] = current.isoformat(timespec="seconds")
+    state["ytdlp_requirement"] = YTDLP_REQUIREMENT
     save_state(layout, state)
 
 

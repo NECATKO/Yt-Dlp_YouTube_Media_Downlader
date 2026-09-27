@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test coverage for `CommandBuilder`, the skip-reason prober, and the settings menu, none of which had any.
 
 ### Fixed
+- **YouTube subtitles could not be downloaded at all.** yt-dlp requests every YouTube subtitle with browser impersonation, which needs the optional `curl_cffi` package that was never installed; YouTube answered those requests with HTTP 429. yt-dlp is now installed as `yt-dlp[default,curl-cffi]`, existing portable installs pick it up on their next launch, and archive mode warns up front when it is missing instead of reporting a ban.
 - **yt-dlp was reported missing on machines without a global copy.** The launchers start the `.venv` Python directly, which does not put `.venv`'s `yt-dlp` on PATH, while the app looked yt-dlp up on PATH. yt-dlp now runs as `python -m yt_dlp` from the app's own interpreter.
 - **The skip report was entirely in English**, even in Turkish, despite the translations for it already existing. All fifteen messages now go through the translation layer, as do the command banner and the success, cancellation, and failure lines.
 - `analyze_log_for_error` now recognizes copyright takedowns, which it previously reported with the generic "video unavailable" message.
@@ -176,6 +177,7 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
 - `CommandBuilder`, atlama nedeni yoklayıcısı ve ayarlar menüsü için testler; hiçbirinin testi yoktu.
 
 ### Düzeltilenler
+- **YouTube altyazıları hiç indirilemiyordu.** yt-dlp her YouTube altyazısını tarayıcı taklidiyle ister; bunun için gereken isteğe bağlı `curl_cffi` paketi hiç kurulmuyordu ve YouTube bu isteklere HTTP 429 dönüyordu. yt-dlp artık `yt-dlp[default,curl-cffi]` olarak kuruluyor, mevcut taşınabilir kurulumlar bunu bir sonraki açılışta alıyor ve arşiv modu paket eksikse bunu ban diye bildirmek yerine baştan uyarıyor.
 - **Global bir yt-dlp olmayan makinelerde yt-dlp "bulunamadı" görünüyordu.** Başlatıcılar `.venv` Python'unu doğrudan çalıştırdığı için `.venv` içindeki `yt-dlp` PATH'te değildi, uygulama ise yt-dlp'yi PATH'te arıyordu. yt-dlp artık uygulamanın kendi yorumlayıcısıyla `python -m yt_dlp` olarak çalışır.
 - **Atlama raporu tamamen İngilizceydi**, Türkçe kullanımda bile — üstelik çevirileri zaten mevcuttu. On beş mesajın tamamı artık çeviri katmanından geçiyor; komut başlığı ile başarı, iptal ve hata satırları da öyle.
 - `analyze_log_for_error` artık telif hakkı kaldırmalarını tanıyor; daha önce bunları genel "video kullanılamıyor" mesajıyla bildiriyordu.

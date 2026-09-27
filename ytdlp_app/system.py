@@ -40,6 +40,23 @@ def ytdlp_command() -> tuple[str, ...] | None:
     return (found,) if found else None
 
 
+def impersonation_available() -> bool | None:
+    """Check whether yt-dlp can impersonate a browser (the curl_cffi package).
+
+    yt-dlp requests every YouTube subtitle with impersonation; without it
+    YouTube answers those requests with HTTP 429, which is indistinguishable
+    from being rate limited.
+
+    Returns:
+        True or False when yt-dlp runs in this interpreter, None when it is a
+        separate executable whose packages cannot be inspected from here.
+    """
+    command = ytdlp_command()
+    if command is None or command[0] != sys.executable:
+        return None
+    return importlib.util.find_spec("curl_cffi") is not None
+
+
 def yt_dlp_available() -> bool:
     """Check if yt-dlp can be launched.
 

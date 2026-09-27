@@ -346,11 +346,31 @@ class TestEnsureYtdlp:
 
     def test_recent_install_is_left_alone(self, tmp_path: Path) -> None:
         runner = FakePip(installed=True)
-        state = {"ytdlp_updated_at": (NOW - timedelta(days=2)).isoformat()}
+        state = {
+            "ytdlp_updated_at": (NOW - timedelta(days=2)).isoformat(),
+            "ytdlp_requirement": portable.YTDLP_REQUIREMENT,
+        }
 
         ensure_ytdlp(self._layout(tmp_path), state, now=NOW, runner=runner)
 
         assert runner.pip_calls == 0
+
+    def test_changed_requirement_installs_right_away(self, tmp_path: Path) -> None:
+        """An install from before curl-cffi was added gets it on the next launch."""
+        runner = FakePip(installed=True)
+        state = {
+            "ytdlp_updated_at": (NOW - timedelta(days=1)).isoformat(),
+            "ytdlp_requirement": "yt-dlp[default]",
+        }
+
+        ensure_ytdlp(self._layout(tmp_path), state, now=NOW, runner=runner)
+
+        assert runner.pip_calls == 1
+        assert state["ytdlp_requirement"] == portable.YTDLP_REQUIREMENT
+
+    def test_requirement_includes_impersonation(self) -> None:
+        """Without curl-cffi YouTube rejects every subtitle request with HTTP 429."""
+        assert "curl-cffi" in portable.YTDLP_REQUIREMENT
 
     def test_stale_install_is_upgraded(self, tmp_path: Path) -> None:
         runner = FakePip(installed=True)

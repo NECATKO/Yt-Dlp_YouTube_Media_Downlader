@@ -28,9 +28,10 @@ Branch: `archive-mode`. Nothing is pushed, tagged or released.
 
 ## Real network test
 - [x] Offline: yt-dlp's own option parser accepts the full archive command (proxy + rate limit included)
-- [ ] Download ONE short video in archive mode, then check for mkv, .info.json, .description, a thumbnail and at least one .srt
-      BLOCKED: the video URL in the request is still the placeholder "[kanaldan kısa bir video URL'si]".
-      Also note: Deno is not installed on this machine (node is), so the app will not pass a JS runtime to yt-dlp.
+- [ ] Download ONE short video in archive mode (https://www.youtube.com/watch?v=izx6nkLpoOA), then check for mkv, .info.json, .description, a thumbnail and at least one .srt
+      Attempt 1: the ban guard stopped at the first subtitle ('tr') with HTTP 429. Cause found: curl_cffi (impersonation) missing → fixed.
+      Attempt 2 (with curl_cffi): 'tr' subtitle 429 again. The 'tr' track is YouTube's auto-translation of an English video.
+      Stopped on purpose (no more requests). NOT PASSED YET: retry after a few hours / waiting on the user's decision about translated_subs.
 
 ## Docs
 - [x] README (EN + TR)

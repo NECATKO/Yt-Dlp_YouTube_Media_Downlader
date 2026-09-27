@@ -40,7 +40,13 @@ from .playlist import (
 from .settings import AppSettings
 from .settings_menu import run_settings_menu
 from .skip_probe import probe_skip_reason
-from .system import deno_available, ffmpeg_available, refresh_tool_cache, yt_dlp_available
+from .system import (
+    deno_available,
+    ffmpeg_available,
+    impersonation_available,
+    refresh_tool_cache,
+    yt_dlp_available,
+)
 from .validators import validate_url
 from .yt_dlp import CommandBuilder, js_runtime_args
 
@@ -327,6 +333,16 @@ class InteractiveSession:
                 f"{paint(t('warn_deno_missing'), Colors.YELLOW)}\n"
                 f"{paint('- ' + t('warn_deno_detail'), Colors.WHITE)}\n"
                 f"{paint('- ' + t('warn_deno_fix'), Colors.CYAN)}\n"
+            )
+
+        if archive_mode and impersonation_available() is False:
+            # Without it every subtitle request fails with HTTP 429, which the
+            # ban guard cannot tell apart from a real block.
+            self.ui.print(
+                f"\n{paint(t('label_warning'), Colors.YELLOW, Colors.BOLD)} "
+                f"{paint(t('warn_impersonation_missing'), Colors.YELLOW)}\n"
+                f"{paint('- ' + t('warn_impersonation_detail'), Colors.WHITE)}\n"
+                f"{paint('- ' + t('warn_impersonation_fix'), Colors.CYAN)}\n"
             )
 
         # 4) Playlist vs single video

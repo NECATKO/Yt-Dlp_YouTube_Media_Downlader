@@ -93,6 +93,7 @@ def _session(
     monkeypatch.setattr(session_module, "yt_dlp_available", lambda: True)
     monkeypatch.setattr(session_module, "ffmpeg_available", lambda: True)
     monkeypatch.setattr(session_module, "deno_available", lambda: True)
+    monkeypatch.setattr(session_module, "impersonation_available", lambda: True)
     monkeypatch.setattr(session_module, "run_cmd_tee", runner)
     monkeypatch.setattr(session_module, "fetch_playlist_entries", _forbidden)
     monkeypatch.setattr(session_module, "probe_skip_reason", _forbidden)
@@ -246,3 +247,39 @@ class TestRegularModesUnchanged:
         (call,) = runner.calls
         assert call["stop_on_ban"] is False
         assert "--write-info-json" not in call["cmd"]
+
+
+class TestImpersonationWarning:
+    """A missing curl_cffi must not be mistaken for a ban: warn before starting."""
+
+    def test_archive_mode_warns_when_it_is_missing(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths
+    ) -> None:
+        ui = ScriptedUI([ARCHIVE, EXIT])
+        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, Recorder())
+        monkeypatch.setattr(session_module, "impersonation_available", lambda: False)
+
+        session._process_one_cycle()
+
+        assert t("warn_impersonation_missing") in ui.text()
+
+    @pytest.mark.parametrize("available", [True, None])
+    def test_no_warning_when_present_or_unknown(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths, available: bool | None
+    ) -> None:
+        ui = ScriptedUI([ARCHIVE, EXIT])
+        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, Recorder())
+        monkeypatch.setattr(session_module, "impersonation_available", lambda: available)
+
+        session._process_one_cycle()
+
+        assert t("warn_impersonation_missing") not in ui.text()
+
+    def test_regular_modes_do_not_warn(self, monkeypatch, tmp_path: Path, paths: AppPaths) -> None:
+        ui = ScriptedUI([int(ModeChoice.AUDIO), EXIT])
+        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, Recorder())
+        monkeypatch.setattr(session_module, "impersonation_available", lambda: False)
+
+        session._process_one_cycle()
+
+        assert t("warn_impersonation_missing") not in ui.text()
