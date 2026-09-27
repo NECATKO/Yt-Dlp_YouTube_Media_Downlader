@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from .ui import UI
 
 
-def normalize_user_path(s: str) -> Path:
+def normalize_user_path(s: str, base: Path | None = None) -> Path:
     """Normalize and expand a user-provided path string.
 
     Expands environment variables (e.g., %USERPROFILE% on Windows)
@@ -29,6 +29,8 @@ def normalize_user_path(s: str) -> Path:
 
     Args:
         s: The path string to normalize.
+        base: Folder that relative paths are resolved against, normally the
+            app folder. Without it they stay relative to the working directory.
 
     Returns:
         A Path object with all variables and references expanded.
@@ -40,15 +42,43 @@ def normalize_user_path(s: str) -> Path:
         WindowsPath('C:/Users/User/Videos')
     """
     expanded = os.path.expandvars(s)
-    return Path(expanded).expanduser()
+    path = Path(expanded).expanduser()
+    if base is not None and s and not path.is_absolute():
+        return base / path
+    return path
 
 
-def default_dirs() -> tuple[Path, Path]:
+def to_config_path(path: Path, base: Path) -> str:
+    """Render a folder for config.json, relative to base when it lies inside it.
+
+    A folder inside the app folder is stored relative (with forward slashes, so
+    the same config works on Windows and Linux) and therefore moves with it.
+    Anything else is stored as the absolute path it is.
+    """
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        return str(path)
+
+
+#: Where a portable install downloads to by default, relative to the app folder.
+PORTABLE_DOWNLOADS_DIR = "downloads"
+
+
+def default_dirs(portable_root: Path | None = None) -> tuple[Path, Path]:
     """Get the default download directories.
 
+    Args:
+        portable_root: The app folder of a portable install. Its downloads then
+            default to a folder next to the app, so they travel with it.
+
     Returns:
-        A tuple of (videos_dir, music_dir) using standard user directories.
+        A tuple of (videos_dir, music_dir): inside portable_root when given,
+        the standard user directories otherwise.
     """
+    if portable_root is not None:
+        downloads = portable_root / PORTABLE_DOWNLOADS_DIR
+        return downloads / "Videos", downloads / "Music"
     return Path.home() / "Videos", Path.home() / "Music"
 
 
@@ -169,19 +199,23 @@ def ensure_language_interactive(ui: UI, existing_cfg: dict, *, config_file: Path
 
 
 def ensure_dirs_interactive(
-    ui: UI, existing_cfg: dict, *, config_file: Path, app_name: str
+    ui: UI, existing_cfg: dict, *, config_file: Path, app_name: str, portable: bool = False
 ) -> tuple[Path, Path, dict]:
     """
     Ask for download folders on first run. On later runs, reuse config.json and
     remind the user it can be edited manually to change locations.
+
+    Relative folders in config.json are resolved against the folder holding it.
+    In a portable install the defaults point inside the app folder.
     """
-    def_videos, def_music = default_dirs()
+    base = config_file.parent
+    def_videos, def_music = default_dirs(base if portable else None)
 
     v_raw = (existing_cfg.get("videos_dir") or "").strip()
     m_raw = (existing_cfg.get("music_dir") or "").strip()
 
-    videos_dir = normalize_user_path(v_raw) if v_raw else None
-    music_dir = normalize_user_path(m_raw) if m_raw else None
+    videos_dir = normalize_user_path(v_raw, base) if v_raw else None
+    music_dir = normalize_user_path(m_raw, base) if m_raw else None
 
     def announce_paths(v_dir: Path, m_dir: Path) -> None:
         ui.print(paint(t("config_using"), Colors.CYAN))
@@ -204,7 +238,7 @@ def ensure_dirs_interactive(
         s = ui.ask_text(paint(t("config_path_prompt"), Colors.GREEN))
         if not s:
             return default
-        return normalize_user_path(s)
+        return normalize_user_path(s, base)
 
     videos_dir = ask_path(t("config_videos_prompt"), videos_dir or def_videos)
     music_dir = ask_path(t("config_music_prompt"), music_dir or def_music)
@@ -218,8 +252,8 @@ def ensure_dirs_interactive(
     new_cfg.update(
         {
             "app": app_name,
-            "videos_dir": str(videos_dir),
-            "music_dir": str(music_dir),
+            "videos_dir": to_config_path(videos_dir, base),
+            "music_dir": to_config_path(music_dir, base),
             "saved_at": datetime.now().isoformat(timespec="seconds"),
         }
     )

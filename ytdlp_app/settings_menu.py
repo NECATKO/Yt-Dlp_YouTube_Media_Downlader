@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .config import normalize_user_path, save_settings
+from .config import normalize_user_path, save_settings, to_config_path
 from .i18n import get_available_languages, get_language_name, set_language, t
 from .logging_utils import Colors, paint
 from .models import UserConfig
@@ -214,7 +214,7 @@ class SettingsMenu:
         if answer is None:
             return None
 
-        candidate = normalize_user_path(answer)
+        candidate = normalize_user_path(answer, self.config_file.parent)
         try:
             candidate.mkdir(parents=True, exist_ok=True)
         except OSError as ex:
@@ -235,7 +235,7 @@ class SettingsMenu:
             music_dir=self.config.music_dir,
             saved_at=self.config.saved_at,
         )
-        self.cfg["videos_dir"] = str(new_dir)
+        self.cfg["videos_dir"] = to_config_path(new_dir, self.config_file.parent)
         self._persist()
 
     def _edit_music_dir(self) -> None:
@@ -249,7 +249,7 @@ class SettingsMenu:
             music_dir=new_dir,
             saved_at=self.config.saved_at,
         )
-        self.cfg["music_dir"] = str(new_dir)
+        self.cfg["music_dir"] = to_config_path(new_dir, self.config_file.parent)
         self._persist()
 
     def _edit_download(self) -> None:

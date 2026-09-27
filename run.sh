@@ -1,5 +1,8 @@
 #!/bin/bash
-# run.sh - Cross-platform launcher for ytdlp-downloader
+# run.sh - launcher for ytdlp-downloader (Linux and macOS)
+#
+# Linux runs from the portable runtime in ./runtime, which install.sh downloads
+# on first launch. macOS uses the .venv created by install.sh.
 
 set -e
 
@@ -9,42 +12,30 @@ cd "$SCRIPT_DIR"
 
 # Colors for output
 RED='\033[0;31m'
-GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Check if virtual environment exists
-if [[ ! -d ".venv" ]]; then
-    echo -e "${YELLOW}Virtual environment not found. Running installer...${NC}"
-    
-    if [[ -f "install.sh" ]]; then
-        bash install.sh
-    else
-        echo -e "${RED}install.sh not found. Please run installation manually.${NC}"
-        exit 1
-    fi
-fi
+# Ignore packages from the user's own Python profile.
+export PYTHONNOUSERSITE=1
 
-# Determine Python executable
-if [[ -f ".venv/bin/python" ]]; then
-    PYTHON=".venv/bin/python"
-elif [[ -f ".venv/Scripts/python.exe" ]]; then
-    # Windows Git Bash or similar
-    PYTHON=".venv/Scripts/python.exe"
+if [[ "$(uname -s)" == "Linux" ]]; then
+    PYTHON="runtime/python/bin/python3"
+    if [[ ! -x "$PYTHON" ]]; then
+        echo -e "${YELLOW}First-time setup: downloading the portable runtime into this folder...${NC}"
+        echo -e "${YELLOW}(Python, yt-dlp, ffmpeg, Deno - nothing is installed on the system)${NC}"
+        bash install.sh || { echo -e "${RED}Setup failed.${NC}"; exit 1; }
+    elif ! bash install.sh --quiet; then
+        # Already set up once: an offline launch must still work.
+        echo -e "${YELLOW}WARNING: The runtime check did not finish; continuing with what is installed.${NC}"
+    fi
 else
-    echo -e "${RED}Python not found in virtual environment.${NC}"
-    echo -e "${YELLOW}Please run: ./install.sh${NC}"
-    exit 1
-fi
-
-# Check for updates (optional)
-check_updates() {
-    if [[ -f "update.sh" ]]; then
-        echo -e "${CYAN}Checking for updates...${NC}"
-        bash update.sh --check-only 2>/dev/null || true
+    PYTHON=".venv/bin/python"
+    if [[ ! -x "$PYTHON" ]]; then
+        echo -e "${YELLOW}Virtual environment not found. Running installer...${NC}"
+        bash install.sh
     fi
-}
+fi
 
 # Run the downloader
 echo -e "${CYAN}========================================${NC}"
@@ -52,8 +43,4 @@ echo -e "${CYAN}  ytdlp-downloader${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 
-# Optional: check for updates
-# check_updates
-
-# Run the application
-exec "$PYTHON" downloader.py "$@"
+exec "$PYTHON" -s downloader.py "$@"

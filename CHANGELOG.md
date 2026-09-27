@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Fully portable on Windows and Linux.** The first launch downloads a relocatable Python, ffmpeg and Deno into `runtime/` inside the program folder and installs yt-dlp into that Python. Nothing is installed system-wide, no administrator rights or sudo are needed, and the folder keeps working after being moved or copied to another machine or a USB stick.
+  - Every download is verified against the SHA-256 pinned in the new `runtime.lock`; a changed pin replaces just that component on the next launch.
+  - yt-dlp is upgraded automatically once a week at launch (failures are non-fatal, so offline launches work); `python -m ytdlp_app.portable update-ytdlp` upgrades it on demand and `status` shows what is installed.
+  - yt-dlp's and Deno's caches are kept in `cache/` instead of the user profile.
+  - New installs download into `downloads/` next to the program, and any folder inside the program folder is stored relative in `config.json`, so it follows the folder.
 - **Archive mode** — a third option next to MP4 and MP3, for preserving a channel that may be deleted. For every video it keeps the video (up to 1080p, merged into MKV with chapters and metadata), the description, the info JSON, the thumbnail, and uploaded plus auto-generated Turkish/English subtitles converted to SRT, each video in its own folder under `<Videos>/yt-dlp/<channel>/`.
   - A channel URL (`/@handle`, `/channel/UC…`, `/c/…`, `/user/…`, or one of its tabs) is archived whole: yt-dlp's nested Videos/Shorts/Live playlists are all downloaded, and the playlist-or-video question is skipped.
   - The download archive is `archives/channel_<channel_id>_archive.txt`, keyed by the real channel id (looked up with one flat request), so every URL form of a channel resumes the same archive.
@@ -21,10 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test coverage for `CommandBuilder`, the skip-reason prober, and the settings menu, none of which had any.
 
 ### Fixed
+- **yt-dlp was reported missing on machines without a global copy.** The launchers start the `.venv` Python directly, which does not put `.venv`'s `yt-dlp` on PATH, while the app looked yt-dlp up on PATH. yt-dlp now runs as `python -m yt_dlp` from the app's own interpreter.
 - **The skip report was entirely in English**, even in Turkish, despite the translations for it already existing. All fifteen messages now go through the translation layer, as do the command banner and the success, cancellation, and failure lines.
 - `analyze_log_for_error` now recognizes copyright takedowns, which it previously reported with the generic "video unavailable" message.
 
 ### Changed
+- `install.ps1` / `install.sh` no longer use winget or apt/dnf/pacman on Windows and Linux; they set up the portable runtime instead. macOS keeps the Homebrew + `.venv` installation. The updaters now also preserve `runtime/`, `cache/` and `downloads/`.
+- Existing installs keep their configured download folders. Their `.venv` and winget-installed Python/ffmpeg/Deno are no longer used and can be removed.
 - `AppSettings` gains an `archive` section and `OutputSettings` an `archive_template`. Configs without them load the defaults, so no migration is needed. MP4 and MP3 commands are unchanged.
 - `AppSettings` drops `use_deno`, `default_mode`, `default_mp4_profile`, and `language`: the first three are detected or asked for interactively, and the language lives at the top level of `config.json` because it must resolve before the settings load.
 - `DownloadPlan` drops four argument fields that were built every cycle and never read; its profile fields are typed as the enums they are compared against.
@@ -150,6 +158,11 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
 ## [Yayınlanmadı]
 
 ### Eklenenler
+- **Windows ve Linux'ta tamamen taşınabilir.** İlk açılış, taşınabilir bir Python, ffmpeg ve Deno'yu program klasöründeki `runtime/` içine indirir ve yt-dlp'yi o Python'a kurar. Sisteme hiçbir şey kurulmaz, yönetici izni veya sudo gerekmez; klasör başka bir yere, başka bir bilgisayara ya da USB belleğe taşındıktan sonra da çalışır.
+  - Her indirme yeni `runtime.lock` dosyasında sabitlenmiş SHA-256 ile doğrulanır; bir sürüm değişirse sonraki açılışta yalnızca o bileşen yenilenir.
+  - yt-dlp açılışta haftada bir otomatik güncellenir (başarısızlık engel değildir, internetsiz açılış çalışır); `python -m ytdlp_app.portable update-ytdlp` isteğe bağlı günceller, `status` neyin kurulu olduğunu gösterir.
+  - yt-dlp ve Deno önbellekleri kullanıcı profili yerine `cache/` içinde tutulur.
+  - Yeni kurulumlar programın yanındaki `downloads/` klasörüne indirir; program klasörünün içindeki her klasör `config.json`'a göreli yazılır, böylece klasörle birlikte taşınır.
 - **Arşiv modu** — silinme riski olan bir kanalı korumak için MP4 ve MP3'ün yanında üçüncü seçenek. Her video için videoyu (1080p'ye kadar, bölümler ve metadata gömülü MKV), açıklamayı, info JSON'u, kapak resmini ve Türkçe/İngilizce yüklenmiş + otomatik altyazıları (SRT'ye dönüştürülmüş) saklar; her video `<Videos>/yt-dlp/<kanal>/` altında kendi klasöründedir.
   - Kanal URL'si (`/@handle`, `/channel/UC…`, `/c/…`, `/user/…` ya da sekmelerinden biri) bütünüyle arşivlenir: yt-dlp'nin iç içe Videos/Shorts/Live playlist'lerinin hepsi indirilir ve "tüm liste mi bu video mu" sorusu atlanır.
   - İndirme arşivi `archives/channel_<channel_id>_archive.txt` dosyasıdır ve gerçek kanal kimliğiyle adlandırılır (tek bir düz istekle öğrenilir); böylece bir kanalın her URL biçimi aynı arşivden devam eder.
@@ -163,10 +176,13 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
 - `CommandBuilder`, atlama nedeni yoklayıcısı ve ayarlar menüsü için testler; hiçbirinin testi yoktu.
 
 ### Düzeltilenler
+- **Global bir yt-dlp olmayan makinelerde yt-dlp "bulunamadı" görünüyordu.** Başlatıcılar `.venv` Python'unu doğrudan çalıştırdığı için `.venv` içindeki `yt-dlp` PATH'te değildi, uygulama ise yt-dlp'yi PATH'te arıyordu. yt-dlp artık uygulamanın kendi yorumlayıcısıyla `python -m yt_dlp` olarak çalışır.
 - **Atlama raporu tamamen İngilizceydi**, Türkçe kullanımda bile — üstelik çevirileri zaten mevcuttu. On beş mesajın tamamı artık çeviri katmanından geçiyor; komut başlığı ile başarı, iptal ve hata satırları da öyle.
 - `analyze_log_for_error` artık telif hakkı kaldırmalarını tanıyor; daha önce bunları genel "video kullanılamıyor" mesajıyla bildiriyordu.
 
 ### Değişenler
+- `install.ps1` / `install.sh` Windows ve Linux'ta artık winget ya da apt/dnf/pacman kullanmıyor; bunun yerine taşınabilir çalışma ortamını kuruyor. macOS, Homebrew + `.venv` kurulumuyla devam ediyor. Güncelleyiciler artık `runtime/`, `cache/` ve `downloads/` klasörlerini de koruyor.
+- Mevcut kurulumlar ayarlı indirme klasörlerini korur. `.venv` ve winget ile kurulan Python/ffmpeg/Deno artık kullanılmaz, kaldırılabilir.
 - `AppSettings`'e `archive` bölümü, `OutputSettings`'e `archive_template` eklendi. Bunları içermeyen yapılandırmalar varsayılanları yükler, taşıma gerekmez. MP4 ve MP3 komutları değişmedi.
 - `AppSettings`'ten `use_deno`, `default_mode`, `default_mp4_profile` ve `language` kaldırıldı: ilk üçü otomatik algılanıyor veya kullanıcıya soruluyor, dil ise ayarlardan önce çözülmesi gerektiği için `config.json`'un üst seviyesinde duruyor.
 - `DownloadPlan`'dan her döngüde doldurulup hiç okunmayan dört argüman alanı kaldırıldı; profil alanları karşılaştırıldıkları enum türleriyle tiplendi.

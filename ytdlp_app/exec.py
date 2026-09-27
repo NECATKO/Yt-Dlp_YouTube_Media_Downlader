@@ -22,6 +22,7 @@ from .logging_utils import (
     log_error,
     paint,
 )
+from .system import ytdlp_command
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -68,6 +69,21 @@ def detect_ban_signal(line: str) -> BanSignal | None:
     return None
 
 
+def resolve_program(cmd: list[str]) -> list[str]:
+    """Replace the logical program name "yt-dlp" with how to actually run it.
+
+    Command builders keep writing "yt-dlp" so commands stay readable in the UI
+    and in tests; the real launcher (usually "<python> -m yt_dlp") is only
+    substituted here, right before execution. If yt-dlp cannot be found the
+    command is left as is and fails with a clear "not found" error.
+    """
+    if cmd and cmd[0] == "yt-dlp":
+        launcher = ytdlp_command()
+        if launcher:
+            return [*launcher, *cmd[1:]]
+    return cmd
+
+
 def find_ban_signal(text: str) -> BanSignal | None:
     """Scan multi-line output (such as a captured stderr) for a ban signal."""
     for line in text.splitlines():
@@ -103,7 +119,7 @@ def run_capture(cmd: list[str]) -> tuple[int, str, str]:
     """
     try:
         p = subprocess.run(
-            cmd,
+            resolve_program(cmd),
             check=False,
             shell=False,
             capture_output=True,
@@ -147,11 +163,14 @@ def run_cmd_tee(cmd: list[str], log_path: Path, *, stop_on_ban: bool = False) ->
     try:
         with log_path.open("a", encoding="utf-8", errors="ignore") as f:
             f.write("\n" + "=" * 80 + "\n")
-            f.write(f"[{datetime.now().isoformat(timespec='seconds')}] CMD: {' '.join(cmd)}\n")
+            # The log records what really ran, launcher included, for debugging;
+            # the console above shows the shorter logical command.
+            real_cmd = resolve_program(cmd)
+            f.write(f"[{datetime.now().isoformat(timespec='seconds')}] CMD: {' '.join(real_cmd)}\n")
             f.write("=" * 80 + "\n")
 
             p = subprocess.Popen(
-                cmd,
+                real_cmd,
                 shell=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

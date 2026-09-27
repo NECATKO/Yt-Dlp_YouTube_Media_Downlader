@@ -46,7 +46,9 @@ get_latest_version() {
 update_ytdlp() {
     echo -e "${YELLOW}Updating yt-dlp...${NC}"
     
-    if [[ -f ".venv/bin/pip" ]]; then
+    if [[ -x "runtime/python/bin/python3" ]]; then
+        PYTHONNOUSERSITE=1 runtime/python/bin/python3 -s -m ytdlp_app.portable update-ytdlp
+    elif [[ -f ".venv/bin/pip" ]]; then
         .venv/bin/pip install --upgrade yt-dlp
     elif [[ -f ".venv/Scripts/pip.exe" ]]; then
         .venv/Scripts/pip.exe install --upgrade yt-dlp
@@ -124,6 +126,10 @@ main() {
                 cp -r "$EXTRACT_DIR/ytdlp_app" .
                 cp "$EXTRACT_DIR/downloader.py" .
                 cp "$EXTRACT_DIR/pyproject.toml" .
+                # The runtime pins: run.sh reinstalls whatever they changed.
+                if [[ -f "$EXTRACT_DIR/runtime.lock" ]]; then
+                    cp "$EXTRACT_DIR/runtime.lock" .
+                fi
                 if [[ -f "$EXTRACT_DIR/app_version.txt" ]]; then
                     cp "$EXTRACT_DIR/app_version.txt" .
                 fi

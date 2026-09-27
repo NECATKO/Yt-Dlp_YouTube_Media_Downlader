@@ -1,183 +1,120 @@
-# install.ps1
-$ErrorActionPreference = "Stop"
+# install.ps1 - sets up the portable runtime in .\runtime
+#
+# Nothing is installed system-wide: no winget, no administrator rights, no PATH
+# changes. Everything lands next to this script, so the folder can be moved or
+# copied to a USB stick afterwards.
+#
+#   runtime\python   relocatable Python (python-build-standalone), with yt-dlp
+#   runtime\ffmpeg   ffmpeg + ffprobe
+#   runtime\deno     Deno, for YouTube's JavaScript challenges
+#
+# Every download is checked against the sha256 pinned in runtime.lock.
+# Safe to run repeatedly: it only fetches what is missing or re-pinned.
+param([switch]$Quiet)
 
-# Keep console output UTF-8 for PowerShell 5/7
+$ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+# Invoke-WebRequest is many times slower on Windows PowerShell 5.1 when it
+# draws its progress bar.
+$ProgressPreference = "SilentlyContinue"
+# Windows PowerShell 5.1 may default to TLS 1.0, which GitHub rejects.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$MinPythonVersion = [Version]"3.11"
+$AppDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $AppDir
 
-function Has-Command([string]$name) {
-  return [bool](Get-Command $name -ErrorAction SilentlyContinue)
+$RuntimeDir = Join-Path $AppDir "runtime"
+$PythonDir = Join-Path $RuntimeDir "python"
+$PythonExe = Join-Path $PythonDir "python.exe"
+# Records which runtime.lock pin the unpacked Python came from.
+$PythonMarker = Join-Path $PythonDir ".lock-sha256"
+
+function Say([string]$Message, [string]$Color = "Gray") {
+  if (-not $Quiet) { Write-Host $Message -ForegroundColor $Color }
 }
 
-function Refresh-Path {
-  $machine = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-  $user    = [System.Environment]::GetEnvironmentVariable("Path","User")
-  $env:Path = "$machine;$user"
+function Get-PlatformKey {
+  # A 32-bit PowerShell on 64-bit Windows reports x86 here, the real
+  # architecture in PROCESSOR_ARCHITEW6432.
+  $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+  if ($arch -eq "AMD64") { return "windows-x86_64" }
+  throw "The portable runtime needs 64-bit (x64) Windows; this machine reports '$arch'."
 }
 
-function Ensure-Winget {
-  if (-not (Has-Command "winget")) {
-    Write-Host "ERROR: winget not found. Windows App Installer (winget) is required." -ForegroundColor Red
-    throw "winget missing"
-  }
-}
-
-function Ensure-WingetPackage([string]$Id) {
-  $installed = $false
-  try {
-    $out = winget list -e --id $Id 2>$null | Out-String
-    if ($LASTEXITCODE -eq 0 -and ($out -match [regex]::Escape($Id))) { $installed = $true }
-  } catch { $installed = $false }
-
-  if ($installed) {
-    Write-Host "Already installed: $Id"
-    return
-  }
-
-  Write-Host "Installing: $Id"
-  winget install -e --id $Id --source winget --accept-package-agreements --accept-source-agreements
-  if ($LASTEXITCODE -ne 0) {
-    throw "winget install failed: $Id (exit $LASTEXITCODE)"
-  }
-}
-
-function Get-PythonInfo {
-  param(
-    [Parameter(Mandatory=$true)][string]$Command,
-    [Parameter(Mandatory=$false)][string[]]$PrefixArgs = @()
-  )
-
-  if (-not (Has-Command $Command)) { return $null }
-
-  $json = $null
-  try {
-    $json = & $Command @PrefixArgs -c "import sys, json; print(json.dumps({'version': '.'.join(map(str, sys.version_info[:3])), 'executable': sys.executable}))" 2>$null
-  } catch {
-    return $null
-  }
-
-  if (-not $json) { return $null }
-
-  try {
-    $obj = $json | ConvertFrom-Json
-    return [pscustomobject]@{
-      Command = $Command
-      PrefixArgs = $PrefixArgs
-      Version = [Version]$obj.version
-      Executable = [string]$obj.executable
-    }
-  } catch {
-    return $null
-  }
-}
-
-function Ensure-Python {
-  Refresh-Path
-
-  $candidates = @(
-    (Get-PythonInfo -Command "py" -PrefixArgs @("-3")),
-    (Get-PythonInfo -Command "python" -PrefixArgs @())
-  ) | Where-Object { $_ -ne $null }
-
-  $ok = $candidates | Where-Object { $_.Version -ge $MinPythonVersion } | Select-Object -First 1
-  if ($ok) {
-    Write-Host ("Python found: {0} ({1})" -f $ok.Version, $ok.Executable)
-    return $ok
-  }
-
-  if ($candidates.Count -gt 0) {
-    $found = ($candidates | Sort-Object Version -Descending | Select-Object -First 1)
-    Write-Host ("Python detected but too old: {0} ({1}). {2}+ is required." -f $found.Version, $found.Executable, $MinPythonVersion) -ForegroundColor Yellow
-  } else {
-    Write-Host "Python not found. Attempting installation via winget..." -ForegroundColor Yellow
-  }
-
-  Ensure-Winget
-
-  $pythonWingetIds = @(
-    "Python.Python.3",
-    "Python.Python.3.13",
-    "Python.Python.3.12",
-    "Python.Python.3.11"
-  )
-
-  $installed = $false
-  foreach ($id in $pythonWingetIds) {
-    try {
-      Ensure-WingetPackage $id
-      $installed = $true
-      break
-    } catch {
-      continue
+function Get-LockEntry([string]$Component, [string]$Platform) {
+  foreach ($line in Get-Content (Join-Path $AppDir "runtime.lock")) {
+    $text = $line.Trim()
+    if ($text -eq "" -or $text.StartsWith("#")) { continue }
+    $fields = $text -split "\s+"
+    if ($fields.Count -eq 4 -and $fields[0] -eq $Component -and $fields[1] -eq $Platform) {
+      return [pscustomobject]@{ Sha256 = $fields[2].ToLower(); Url = $fields[3] }
     }
   }
+  throw "runtime.lock has no $Component build for $Platform"
+}
 
-  if (-not $installed) {
-    throw ("Python installation via winget failed. Please install Python {0}+ and try again." -f $MinPythonVersion)
+function Install-Python($Entry) {
+  $tar = Join-Path $env:SystemRoot "System32\tar.exe"
+  if (-not (Test-Path $tar)) {
+    throw "tar.exe was not found. Windows 10 version 1803 or newer is required."
   }
 
-  Refresh-Path
-  $candidates = @(
-    (Get-PythonInfo -Command "py" -PrefixArgs @("-3")),
-    (Get-PythonInfo -Command "python" -PrefixArgs @())
-  ) | Where-Object { $_ -ne $null }
+  $downloads = Join-Path $RuntimeDir "downloads"
+  New-Item -ItemType Directory -Force -Path $downloads | Out-Null
+  $archive = Join-Path $downloads ($Entry.Url.Split("/")[-1])
+  $partial = "$archive.part"
 
-  $ok = $candidates | Where-Object { $_.Version -ge $MinPythonVersion } | Select-Object -First 1
-  if (-not $ok) {
-    $hint = if (Has-Command "py") { "py -3" } else { "python" }
-    throw "Python is still not usable. Open a new terminal and verify with `"$hint --version`"."
+  Write-Host "Downloading Python ($($Entry.Url.Split('/')[-1]))..." -ForegroundColor Cyan
+  try {
+    Invoke-WebRequest -Uri $Entry.Url -OutFile $partial -UseBasicParsing -TimeoutSec 600
+  } catch {
+    Remove-Item $partial -Force -ErrorAction SilentlyContinue
+    throw "Python download failed: $($_.Exception.Message)"
   }
 
-  Write-Host ("Python installed: {0} ({1})" -f $ok.Version, $ok.Executable)
-  return $ok
+  $actual = (Get-FileHash -Path $partial -Algorithm SHA256).Hash.ToLower()
+  if ($actual -ne $Entry.Sha256) {
+    Remove-Item $partial -Force -ErrorAction SilentlyContinue
+    throw "Checksum mismatch for Python: expected $($Entry.Sha256), got $actual. The file was discarded."
+  }
+  Move-Item -Force $partial $archive
+
+  # Unpack beside the old copy and swap at the end, so an interrupted run
+  # never leaves a half-unpacked Python behind.
+  $staging = Join-Path $RuntimeDir "python-staging"
+  if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path $staging | Out-Null
+  & $tar -xzf $archive -C $staging
+  if ($LASTEXITCODE -ne 0) { throw "Could not unpack $archive (tar exit $LASTEXITCODE)." }
+  $unpacked = Join-Path $staging "python"
+  if (-not (Test-Path (Join-Path $unpacked "python.exe"))) { throw "Unexpected archive layout: $archive" }
+
+  if (Test-Path $PythonDir) { Remove-Item $PythonDir -Recurse -Force }
+  Move-Item $unpacked $PythonDir
+  Remove-Item $staging -Recurse -Force
+  Remove-Item $archive -Force
+  Set-Content -Path $PythonMarker -Value $Entry.Sha256 -Encoding ASCII -NoNewline
+  Write-Host "Python installed: $PythonExe" -ForegroundColor Green
 }
 
 # --- 0) Sanity check ---
-if (-not (Test-Path ".\downloader.py")) {
-  throw "downloader.py not found. install.ps1 must be run from the project folder."
+if (-not (Test-Path (Join-Path $AppDir "downloader.py"))) {
+  throw "downloader.py not found. install.ps1 must be run from the program folder."
 }
 
-# --- 1) winget system dependencies ---
-Ensure-Winget
-Ensure-WingetPackage "Gyan.FFmpeg"
-Ensure-WingetPackage "DenoLand.Deno"
-
-$python = Ensure-Python
-
-# --- 2) Create venv ---
-if (-not (Test-Path ".\.venv")) {
-  Write-Host "Creating virtualenv (.venv)..."
-  & $python.Command @($python.PrefixArgs) -m venv .\.venv
-}
-
-# --- 3) venv python ---
-$venvPython = ".\.venv\Scripts\python.exe"
-if (-not (Test-Path $venvPython)) {
-  throw "venv python not found: $venvPython"
-}
-
-Write-Host "Upgrading pip..."
-& $venvPython -m pip install --upgrade pip
-
-# --- 4) Python packages (yt-dlp) ---
-Write-Host "Installing yt-dlp..."
-& $venvPython -m pip install "yt-dlp[default]"
-
-Refresh-Path
-
-# --- 5) Version checks ---
-Write-Host "`n--- Verification ---"
-try { & $venvPython -m yt_dlp --version } catch { Write-Host "yt-dlp did not run (it should be installed inside .venv)." -ForegroundColor Yellow }
-try { ffmpeg -version | Select-Object -First 1 } catch { Write-Host "ffmpeg did not run. You may need a new terminal." -ForegroundColor Yellow }
-try { deno --version } catch { Write-Host "deno did not run. You may need a new terminal." -ForegroundColor Yellow }
-
-# --- 6) Offer to launch ---
-Write-Host "`nSetup completed."
-$runNow = Read-Host "Launch downloader.py now? (Y/N)"
-if ($runNow -match '^(Y|y)$') {
-  & $venvPython .\downloader.py
+# --- 1) Python ---
+$entry = Get-LockEntry "python" (Get-PlatformKey)
+$current = if (Test-Path $PythonMarker) { (Get-Content $PythonMarker -Raw).Trim() } else { "" }
+if ((Test-Path $PythonExe) -and ($current -eq $entry.Sha256)) {
+  Say "Python is up to date."
 } else {
-  Write-Host "Run manually with: .\.venv\Scripts\python.exe .\downloader.py"
+  Install-Python $entry
 }
+
+# --- 2) yt-dlp, ffmpeg, Deno (and the weekly yt-dlp update) ---
+$env:PYTHONNOUSERSITE = "1"
+& $PythonExe -s -m ytdlp_app.portable ensure
+if ($LASTEXITCODE -ne 0) { throw "Setting up the portable runtime failed (exit $LASTEXITCODE)." }
+
+Say "Portable runtime ready." "Green"

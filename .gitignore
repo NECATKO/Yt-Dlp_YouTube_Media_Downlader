@@ -89,6 +89,11 @@ settings.json
 # Indirme arsivleri (kullaniciya ozel)
 archives/
 
+# Tasinabilir calisma ortami, onbellekler ve varsayilan indirme klasoru
+runtime/
+cache/
+downloads/
+
 # Oturum loglari
 logs/
 

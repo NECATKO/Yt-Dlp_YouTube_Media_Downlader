@@ -133,9 +133,36 @@ class TestDirectories:
 
         assert result.videos_dir == target
         assert target.is_dir()
-        assert cfg["videos_dir"] == str(target)
+        # Inside the app folder (where config.json lives), so stored relative:
+        # the setting keeps pointing at the right place when the folder moves.
+        assert cfg["videos_dir"] == "NewVideos"
         # The other folder must survive the rebuild untouched.
         assert result.music_dir == user_config.music_dir
+
+    def test_folder_outside_the_app_folder_is_stored_absolute(
+        self, tmp_path: Path, user_config: UserConfig
+    ) -> None:
+        config_file = tmp_path / "app" / "config.json"
+        config_file.parent.mkdir()
+        target = tmp_path / "elsewhere" / "Videos"
+        cfg: dict[str, Any] = {}
+        ui = FakeUI(picks=[2, BACK], texts=[str(target)])
+
+        _menu(ui, config_file, user_config, cfg=cfg).run()
+
+        assert cfg["videos_dir"] == str(target)
+
+    def test_relative_input_is_resolved_against_the_app_folder(
+        self, tmp_path: Path, config_file: Path, user_config: UserConfig
+    ) -> None:
+        cfg: dict[str, Any] = {}
+        ui = FakeUI(picks=[2, BACK], texts=["downloads/Clips"])
+
+        result = _menu(ui, config_file, user_config, cfg=cfg).run()
+
+        assert result.videos_dir == config_file.parent / "downloads" / "Clips"
+        assert result.videos_dir.is_dir()
+        assert cfg["videos_dir"] == "downloads/Clips"
 
     def test_music_dir_is_changed(
         self, tmp_path: Path, config_file: Path, user_config: UserConfig

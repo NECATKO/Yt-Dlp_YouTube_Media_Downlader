@@ -10,8 +10,10 @@ $ErrorActionPreference = "Stop"
 $AppDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $AppDir
 
-# Keep user data intact: config/logs/archives and .venv are preserved
-$Preserve = @("config.json", "logs", "archives", ".venv")
+# Keep user data intact. runtime/ (Python, ffmpeg, Deno) is managed by
+# install.ps1 against runtime.lock, downloads/ holds the user's files, and
+# .venv is kept for installs that predate the portable runtime.
+$Preserve = @("config.json", "logs", "archives", "runtime", "cache", "downloads", ".venv")
 $VersionFile = Join-Path $AppDir "app_version.txt"
 
 function Get-LocalVersion {
