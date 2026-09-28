@@ -1,64 +1,82 @@
-# Archive mode — task checklist
+# Durum — 28 Eylül 2026
 
-Branch: `archive-mode`. Nothing is pushed, tagged or released.
+Arşiv modu ve taşınabilir çalışma ortamı `main`'e birleşti (PR #2, `ce7ba12`).
+Henüz **tag ya da release yok**: otomatik güncelleyici release'leri çektiği için
+yayın kararı ayrıca verilecek.
 
-## Setup
-- [x] Create the `archive-mode` branch
-- [x] Create `.venv` (uv, Python 3.11) with the dev deps and upgrade yt-dlp (2026.08.19)
-- [x] Baseline: 188 tests pass, ruff and mypy are clean
-- [x] Check that yt-dlp recognizes every archive-mode flag
+## Neler değişti
 
-## Implementation
-- [x] models: `DownloadMode.ARCHIVE`, `ModeChoice.ARCHIVE`
-- [x] settings: `ArchiveSettings` (waits) under `settings.archive` in config.json, plus `output.archive_template`
-- [x] yt_dlp.py: `CommandBuilder.build_archive()` with the specified flags, rate limit and proxy
-- [x] playlist.py: channel URL detection and channel id resolution (tolerates nested tab playlists)
-- [x] exec.py: ban guard (HTTP 429 / "not a bot") that stops yt-dlp, logs the event and returns a dedicated code
-- [x] session.py: third mode option, channel archive path/template, ban message, no skip probe or playlist fetch in archive mode
-- [x] settings_menu.py: archive wait editor
-- [x] locales: EN + TR strings
+### Arşiv modu (yeni)
+MP4 ve MP3'ün yanında üçüncü mod; silinme riski olan bir kanalı korumak için.
 
-## Tests
-- [x] CommandBuilder archive argument list
-- [x] Channel URL detection and channel id resolution
-- [x] 429 / bot message detection and process termination
-- [x] Session: archive mode skips the skip probe and reports a ban
-- [x] Settings: archive section round trip and menu editor
-- [x] Full suite, ruff, ruff format, and mypy are green
+- **Her video kendi klasöründe:** `<Videos>/yt-dlp/<kanal>/<tarih> - <başlık> [<id>]/`
+  - video: 1080p'ye kadar, bölümler ve metadata gömülü MKV
+  - `.description`, `.info.json`, kapak resmi
+  - Türkçe/İngilizce altyazılar (`.srt`)
+- **Kanal adresi = kanalın tamamı:** Videos, Shorts ve Live sekmeleri iner; "tüm
+  liste mi bu video mu" sorusu sorulmaz.
+- **Kaldığı yerden devam:** arşiv dosyası kanalın gerçek kimliğiyle adlanır
+  (`archives/channel_<UC…>_archive.txt`). `@isim`, `/channel/` ya da sekme
+  adresi fark etmez; kanal adını değiştirse bile aynı arşivden devam eder.
+  Parçalarından biri (altyazı, kapak) inmeyen video tamamlandı sayılmaz,
+  sonraki çalıştırmada yeniden denenir.
+- **Yavaş tempo:** istekler arası 1,5 sn, videolar arası 15–45 sn (rastgele),
+  altyazı öncesi 5 sn, 10 yeniden deneme (sınırsız değil). Ayarlardan
+  (`s` → *Arşiv modu beklemeleri*) değiştirilebilir.
+- **Ban koruyucusu:** HTTP 429 ya da "bot olmadığını doğrula" görülünce indirme
+  hemen durur, loga `[BAN-GUARD]` yazılır, kullanıcıya "birkaç saat bekle, aynı
+  URL'yi tekrar gir" denir.
+- **Yalnızca gerçek altyazılar:** programla gelen yt-dlp eklentisi
+  (`ytdlp_app/plugins`) iki şeyi indirme başlamadan eler:
+  - YouTube'un makine çevirileri (İngilizce videoya Türkçe çeviri gibi). Dünkü
+    429 hatalarının sebebi bunlardı.
+  - Aynı altyazının ikinci kopyası: YouTube orijinal otomatik altyazıyı aynı
+    adresle hem `en` hem `en-orig` olarak listeliyor; yalnızca `en` kalır.
+    Böylece video başına bir altyazı isteği daha az gider.
 
-## Real network test
-- [x] Offline: yt-dlp's own option parser accepts the full archive command (proxy + rate limit included)
-- [ ] Download ONE short video in archive mode (https://www.youtube.com/watch?v=izx6nkLpoOA), then check for mkv, .info.json, .description, a thumbnail and at least one .srt
-      Attempt 1: the ban guard stopped at the first subtitle ('tr') with HTTP 429. Cause found: curl_cffi (impersonation) missing → fixed.
-      Attempt 2 (with curl_cffi): 'tr' subtitle 429 again. The 'tr' track is YouTube's auto-translation of an English video.
-      Stopped on purpose (no more requests). NOT PASSED YET: retry after a few hours / waiting on the user's decision about translated_subs.
+### Taşınabilir çalışma ortamı (Windows ve Linux)
+- İlk açılışta Python, ffmpeg ve Deno program klasöründeki `runtime/` içine
+  iner (her biri `runtime.lock`'taki SHA-256 ile doğrulanır). Yönetici izni,
+  winget/apt ya da PATH değişikliği gerekmez.
+- Klasör taşınabilir: USB belleğe ya da başka makineye kopyalanınca çalışmaya
+  devam eder. İndirmeler varsayılan olarak `downloads/` klasörüne gider.
+- yt-dlp haftada bir kendini günceller.
+- macOS eskisi gibi Homebrew + `.venv` kullanır.
 
-## Docs
-- [x] README (EN + TR)
-- [x] CHANGELOG
-- [x] settings.example.json
+### Düzeltilen hatalar
+- YouTube altyazıları hiç inmiyordu (`curl_cffi` eksikti → 429).
+- Global yt-dlp olmayan makinelerde "yt-dlp bulunamadı" hatası.
+- Windows'ta alt süreç çıktısı bozuk kodlanıyordu; ban koruyucusu YouTube'un
+  bot uyarısını kaçırabiliyordu.
+- Atlanan videolar raporu Türkçe arayüzde bile İngilizceydi.
 
-## Wrap-up
-- [x] Commit on `archive-mode` (9597784); 265 tests pass on that commit alone
-- [ ] Push / tag / release: waiting for the user (auto-update pulls releases)
+### Gereksinim
+- yt-dlp 2025.03.21 veya daha yenisi (altyazı eklentisi için). Taşınabilir
+  kurulum her zaman en yenisini kullanır.
 
----
+## Test durumu
+- 346 test geçiyor; ruff, format ve mypy temiz.
+- CI: Windows, macOS, Ubuntu × Python 3.11/3.12/3.13 yeşil.
+- **Gerçek indirme** (tek izinli test videosu:
+  https://www.youtube.com/watch?v=izx6nkLpoOA):
 
-# Portable mode: task checklist
+  | Deneme | Sonuç | Sebep → çözüm |
+  |---|---|---|
+  | 1 — 27 Eylül | ❌ `tr` altyazıda 429 | `curl_cffi` eksikti → eklendi |
+  | 2 — 27 Eylül | ❌ `tr` altyazıda 429 | `tr` makine çevirisiydi → eklentiyle elendi |
+  | 3 — 28 Eylül | ✅ Başarılı | Tüm dosyalar indi, arşive kaydedildi |
 
-Decisions (user): download runtimes on first launch · Windows + Linux · downloads next to the program.
-Branch `portable`, opened from `archive-mode`.
+  `en`/`en-orig` düzeltmesi 3. denemenin `info.json` verisiyle ağa çıkmadan
+  doğrulandı (iki adres aynı; eklenti yalnızca `en`'i bırakıyor).
 
-- [x] Pin Python 3.12.14 (stripped), ffmpeg (yt-dlp month-end build), and Deno 2.9.7 with SHA-256 in `runtime.lock`
-- [x] `ytdlp_app/portable.py`: verified download, safe extraction (no ffplay), state/pins, yt-dlp install plus weekly update, CLI
-- [x] yt-dlp runs as `python -m yt_dlp`; fixes the existing "yt-dlp not found" bug (`.venv` was never on PATH)
-- [x] Environment: bundled ffmpeg/Deno go first on PATH; yt-dlp and Deno caches go in `cache/`
-- [x] Relative paths in config.json; new installs default to `downloads/Videos` and `downloads/Music`
-- [x] install.ps1 / Run.bat (no winget, no admin), install.sh / run.sh (Linux portable, macOS unchanged)
-- [x] update.ps1 / update.sh keep runtime/cache/downloads; runtime.lock added to CI's portable ZIP
-- [x] Tests: 322 pass (55 new); ruff, format, and mypy clean
-- [x] Real Linux test: fresh setup, second run (0.3 s), re-pin upgrade, folder move, run.sh start and exit
-- [x] Real Windows 11 test: install.ps1, folder move, Run.bat start and exit
-- [x] README (EN + TR), CHANGELOG (EN + TR)
-- [x] Commit on the `portable` branch
-- [ ] Push / tag / release: waiting for the user (auto-update pulls releases)
+## Açık işler
+- [ ] `en`/`en-orig` düzeltmesini `main`'e almak (dal: `fix/duplicate-orig-subs`)
+- [ ] Windows'ta gerçek bir arşiv indirmesi (kurulum ve açılış test edildi,
+      arşiv indirmesi yalnızca Linux/WSL'de denendi)
+- [ ] **Sonraya bırakıldı:** otomatik güncelleyici ve ilk release kararı.
+      O zamana kadar tag ya da release yayınlanmayacak.
+
+## Kurallar
+- Testlerde yalnızca yukarıdaki video kullanılır; kanaldan başka hiçbir şey
+  indirilmez.
+- Tag ya da release yalnızca açık onayla yayınlanır.

@@ -62,7 +62,35 @@ class TestOriginalSubsOnlyPP:
         }
         files, result = plugin.OriginalSubsOnlyPP(None).run(info)
         assert files == []
+        assert set(result["requested_subtitles"]) == {"en"}
+
+    def test_orig_copy_of_the_same_track_is_dropped(self, plugin: Any) -> None:
+        """YouTube lists the original auto caption twice, as "en" and "en-orig"."""
+        info = {
+            "requested_subtitles": {
+                "en-orig": {"url": BASE, "ext": "vtt"},
+                "en": {"url": BASE, "ext": "vtt"},
+            }
+        }
+        _, result = plugin.OriginalSubsOnlyPP(None).run(info)
+        assert list(result["requested_subtitles"]) == ["en"]
+
+    def test_orig_is_kept_when_it_is_a_different_track(self, plugin: Any) -> None:
+        """An uploaded "en" subtitle and the auto caption "en-orig" are both originals."""
+        manual = "https://www.youtube.com/api/timedtext?v=x&lang=en&fmt=vtt"
+        info = {
+            "requested_subtitles": {
+                "en-orig": {"url": BASE, "ext": "vtt"},
+                "en": {"url": manual, "ext": "vtt"},
+            }
+        }
+        _, result = plugin.OriginalSubsOnlyPP(None).run(info)
         assert set(result["requested_subtitles"]) == {"en", "en-orig"}
+
+    def test_orig_is_kept_when_the_plain_code_was_not_requested(self, plugin: Any) -> None:
+        info = {"requested_subtitles": {"en-orig": {"url": BASE, "ext": "vtt"}}}
+        _, result = plugin.OriginalSubsOnlyPP(None).run(info)
+        assert set(result["requested_subtitles"]) == {"en-orig"}
 
     def test_uploaded_turkish_subtitles_are_kept(self, plugin: Any) -> None:
         manual = "https://www.youtube.com/api/timedtext?v=x&lang=tr&fmt=vtt"
