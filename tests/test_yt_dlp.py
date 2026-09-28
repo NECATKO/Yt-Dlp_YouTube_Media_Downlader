@@ -6,7 +6,7 @@ import pytest
 
 from ytdlp_app.models import DownloadMode
 from ytdlp_app.settings import AppSettings
-from ytdlp_app.yt_dlp import CommandBuilder
+from ytdlp_app.yt_dlp import PLUGINS_DIR, CommandBuilder
 
 URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
@@ -158,3 +158,129 @@ class TestSettingsAreApplied:
         settings.video.embed_thumbnail = False
         args = self._builder(tmp_path, settings).build_post_args(DownloadMode.VIDEO)
         assert "--embed-thumbnail" not in args
+
+
+# The exact command archive mode produces with default settings for a
+# single video when Deno is available. Any change here changes what gets
+# archived or how hard YouTube is hit, so it is pinned verbatim.
+ARCHIVE_DEFAULT_PREFIX = [
+    "yt-dlp",
+    "-f",
+    "bv*[height<=1080]+ba/b",
+    "--merge-output-format",
+    "mkv",
+    "--write-description",
+    "--write-info-json",
+    "--write-thumbnail",
+    "--write-subs",
+    "--write-auto-subs",
+    "--sub-langs",
+    "tr.*,en.*",
+    "--convert-subs",
+    "srt",
+    "--embed-metadata",
+    "--embed-chapters",
+    "--plugin-dirs",
+    str(PLUGINS_DIR),
+    "--use-postprocessor",
+    "OriginalSubsOnly:when=video",
+    "--sleep-requests",
+    "1.5",
+    "--sleep-interval",
+    "15",
+    "--max-sleep-interval",
+    "45",
+    "--sleep-subtitles",
+    "5",
+    "--retries",
+    "10",
+    "--fragment-retries",
+    "10",
+    "--js-runtime",
+    "deno",
+    "--remote-components",
+    "ejs:github",
+    "-o",
+    "%(title)s.%(ext)s",
+    "--download-archive",
+]
+
+
+class TestArchiveMode:
+    """Archive mode has its own flag set and must not inherit the MP4 policy."""
+
+    def _builder(
+        self, tmp_path: Path, settings: AppSettings | None = None, *, is_playlist: bool = False
+    ) -> CommandBuilder:
+        return CommandBuilder(
+            url=URL,
+            output_template="%(title)s.%(ext)s",
+            archive_path=tmp_path / "archive.txt",
+            is_playlist=is_playlist,
+            settings=settings,
+        )
+
+    def test_exact_default_argument_list(self, tmp_path: Path) -> None:
+        cmd = self._builder(tmp_path).build_archive()
+        assert cmd == [
+            *ARCHIVE_DEFAULT_PREFIX,
+            str(tmp_path / "archive.txt"),
+            "--progress",
+            "--no-playlist",
+            URL,
+        ]
+
+    def test_never_retries_forever(self, tmp_path: Path) -> None:
+        cmd = self._builder(tmp_path).build_archive()
+        assert "infinite" not in cmd
+        assert cmd[cmd.index("--retries") + 1] == "10"
+        assert cmd[cmd.index("--fragment-retries") + 1] == "10"
+
+    def test_does_not_inherit_the_regular_download_policy(self, tmp_path: Path) -> None:
+        """No duplicate sleep flags, no --ignore-errors, no parallel fragments."""
+        cmd = self._builder(tmp_path).build_archive()
+        assert cmd.count("--sleep-interval") == 1
+        assert cmd.count("--max-sleep-interval") == 1
+        assert "--ignore-errors" not in cmd
+        assert "--concurrent-fragments" not in cmd
+
+    def test_rate_limit_and_proxy_still_apply(self, tmp_path: Path) -> None:
+        settings = AppSettings()
+        settings.download.rate_limit = "2M"
+        settings.download.proxy = "socks5://127.0.0.1:9050"
+        cmd = self._builder(tmp_path, settings).build_archive()
+        assert cmd[cmd.index("--limit-rate") + 1] == "2M"
+        assert cmd[cmd.index("--proxy") + 1] == "socks5://127.0.0.1:9050"
+        assert cmd[-1] == URL
+
+    def test_waits_come_from_settings(self, tmp_path: Path) -> None:
+        settings = AppSettings()
+        settings.archive.sleep_requests = 3
+        settings.archive.sleep_interval = 20.5
+        settings.archive.max_sleep_interval = 60
+        settings.archive.sleep_subtitles = 8
+        cmd = self._builder(tmp_path, settings).build_archive()
+        assert cmd[cmd.index("--sleep-requests") + 1] == "3"
+        assert cmd[cmd.index("--sleep-interval") + 1] == "20.5"
+        assert cmd[cmd.index("--max-sleep-interval") + 1] == "60"
+        assert cmd[cmd.index("--sleep-subtitles") + 1] == "8"
+
+    def test_max_wait_below_min_is_raised(self, tmp_path: Path) -> None:
+        """A hand-edited config must not produce a window yt-dlp rejects."""
+        settings = AppSettings()
+        settings.archive.sleep_interval = 30
+        settings.archive.max_sleep_interval = 10
+        cmd = self._builder(tmp_path, settings).build_archive()
+        assert cmd[cmd.index("--max-sleep-interval") + 1] == "30"
+
+    def test_channel_download_enables_playlist(self, tmp_path: Path) -> None:
+        cmd = self._builder(tmp_path, is_playlist=True).build_archive()
+        assert "--yes-playlist" in cmd
+        assert "--no-playlist" not in cmd
+
+    def test_regular_modes_are_unchanged(self, builder: CommandBuilder) -> None:
+        """Adding archive mode must not leak into the MP4/MP3 commands."""
+        assert builder.stability_args == LEGACY_STABILITY_ARGS
+        for cmd in (builder.build_mp4_quality_mkv(), builder.build_mp3()):
+            assert "--sleep-requests" not in cmd
+            assert "--write-info-json" not in cmd

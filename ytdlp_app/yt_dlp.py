@@ -1,18 +1,62 @@
 """yt-dlp command builders for ytdlp_app.
 
 This module provides the CommandBuilder class to construct yt-dlp command-line
-arguments for various download modes (MP4, MP3) and quality profiles.
+arguments for various download modes (MP4, MP3, archive) and quality profiles.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from .models import DownloadMode
 from .settings import AppSettings
 
-if TYPE_CHECKING:
-    from pathlib import Path
+#: Archive mode keeps everything a channel publishes that could be lost with it:
+#: the video (capped at 1080p to bound disk use), its description, the raw
+#: metadata, the thumbnail, and both uploaded and auto-generated subtitles.
+ARCHIVE_CONTENT_ARGS = [
+    "-f",
+    "bv*[height<=1080]+ba/b",
+    "--merge-output-format",
+    "mkv",
+    "--write-description",
+    "--write-info-json",
+    "--write-thumbnail",
+    "--write-subs",
+    "--write-auto-subs",
+    "--sub-langs",
+    "tr.*,en.*",
+    "--convert-subs",
+    "srt",
+    "--embed-metadata",
+    "--embed-chapters",
+]
+
+#: Holds the yt-dlp plugin that drops YouTube's machine-translated subtitles.
+#: See plugins/original_subs for why --sub-langs alone cannot exclude them.
+PLUGINS_DIR = Path(__file__).parent / "plugins"
+
+
+def original_subs_args() -> list[str]:
+    """Build the arguments that restrict archive mode to original subtitles."""
+    return [
+        "--plugin-dirs",
+        str(PLUGINS_DIR),
+        "--use-postprocessor",
+        "OriginalSubsOnly:when=video",
+    ]
+
+
+def js_runtime_args(use_deno: bool) -> list[str]:
+    """Build JavaScript runtime arguments for yt-dlp.
+
+    Standalone so lookups that run before a CommandBuilder exists (the archive
+    mode channel lookup) can pass the same flags.
+    """
+    base = ["--remote-components", "ejs:github"]
+    if not use_deno:
+        return base
+    return ["--js-runtime", "deno", *base]
 
 
 class CommandBuilder:
@@ -52,10 +96,7 @@ class CommandBuilder:
     @property
     def js_args(self) -> list[str]:
         """Build JavaScript runtime arguments for yt-dlp."""
-        base = ["--remote-components", "ejs:github"]
-        if not self.use_deno:
-            return base
-        return ["--js-runtime", "deno", *base]
+        return js_runtime_args(self.use_deno)
 
     @property
     def stability_args(self) -> list[str]:
@@ -144,6 +185,26 @@ class CommandBuilder:
             ],
             DownloadMode.VIDEO,
         )
+
+    def build_archive(self) -> list[str]:
+        """Build the archive-mode command.
+
+        This deliberately does not go through _assemble: the regular stability
+        arguments retry forever, use short waits and add --ignore-errors, all of
+        which work against archiving a whole channel without being rate limited.
+        Without --ignore-errors an item whose subtitles or thumbnail fail is not
+        recorded in the download archive, so the next run retries it instead of
+        silently keeping an incomplete copy. The rate limit and proxy still apply.
+        """
+        return [
+            "yt-dlp",
+            *ARCHIVE_CONTENT_ARGS,
+            *original_subs_args(),
+            *self.settings.archive.to_args(),
+            *self.settings.download.network_args(),
+            *self.js_args,
+            *self.common_args,
+        ]
 
     def build_mp3(self) -> list[str]:
         """Build command for audio extraction.

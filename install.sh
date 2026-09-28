@@ -1,8 +1,26 @@
 #!/bin/bash
-# install.sh - Cross-platform installer for ytdlp-downloader
-# Supports: Linux (apt, dnf, pacman), macOS (brew)
+# install.sh - sets up ytdlp-downloader
+#
+# Linux: a portable runtime in ./runtime, with no sudo and no system packages.
+#   runtime/python   relocatable Python (python-build-standalone), with yt-dlp
+#   runtime/ffmpeg   ffmpeg + ffprobe
+#   runtime/deno     Deno, for YouTube's JavaScript challenges
+# Every download is checked against the sha256 pinned in runtime.lock. Safe to
+# run repeatedly: it only fetches what is missing or re-pinned.
+#
+# macOS: the system installation (Homebrew Python/ffmpeg + a .venv), as before.
+#
+# Usage: ./install.sh [--quiet]
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+QUIET=0
+if [[ "${1:-}" == "--quiet" ]]; then
+    QUIET=1
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -11,172 +29,186 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-echo -e "${CYAN}========================================${NC}"
-echo -e "${CYAN}  ytdlp-downloader Installer${NC}"
-echo -e "${CYAN}========================================${NC}"
-echo ""
-
-# Detect OS and package manager
-detect_os() {
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        echo "macos"
-    elif [[ -f /etc/debian_version ]]; then
-        echo "debian"
-    elif [[ -f /etc/redhat-release ]]; then
-        echo "redhat"
-    elif [[ -f /etc/arch-release ]]; then
-        echo "arch"
-    else
-        echo "unknown"
+say() {
+    if [[ $QUIET -eq 0 ]]; then
+        echo -e "$@"
     fi
 }
 
-OS=$(detect_os)
-echo -e "${YELLOW}Detected OS:${NC} $OS"
+die() {
+    echo -e "${RED}ERROR: $*${NC}" >&2
+    exit 1
+}
 
-# Check for Python 3.11+
+# ==============================================================================
+# Linux: portable runtime
+# ==============================================================================
+
+RUNTIME_DIR="$SCRIPT_DIR/runtime"
+PYTHON_DIR="$RUNTIME_DIR/python"
+PYTHON_EXE="$PYTHON_DIR/bin/python3"
+# Records which runtime.lock pin the unpacked Python came from.
+PYTHON_MARKER="$PYTHON_DIR/.lock-sha256"
+
+linux_platform_key() {
+    local arch
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64|amd64) arch="x86_64" ;;
+        aarch64|arm64) arch="aarch64" ;;
+        *) die "The portable runtime supports x86_64 and aarch64 Linux, not $arch." ;;
+    esac
+    # The pinned builds link against glibc; musl systems (Alpine) cannot run them.
+    if ldd --version 2>&1 | grep -qi musl; then
+        die "musl-based systems (such as Alpine) are not supported by the portable runtime."
+    fi
+    echo "linux-$arch"
+}
+
+# Prints "<sha256> <url>" for a component on a platform.
+lock_entry() {
+    local component="$1" platform="$2" found
+    found="$(awk -v c="$component" -v p="$platform" \
+        '$1 !~ /^#/ && NF == 4 && $1 == c && $2 == p { print $3, $4; exit }' runtime.lock)"
+    [[ -n "$found" ]] || die "runtime.lock has no $component build for $platform"
+    echo "$found"
+}
+
+fetch() {
+    local url="$1" out="$2"
+    if command -v curl &> /dev/null; then
+        curl -fL --retry 3 --progress-bar -o "$out" "$url"
+    elif command -v wget &> /dev/null; then
+        wget -q --show-progress -O "$out" "$url"
+    else
+        die "curl or wget is required to download the runtime."
+    fi
+}
+
+install_python() {
+    local sha="$1" url="$2" downloads archive partial actual staging
+    downloads="$RUNTIME_DIR/downloads"
+    mkdir -p "$downloads"
+    archive="$downloads/${url##*/}"
+    partial="$archive.part"
+
+    echo -e "${CYAN}Downloading Python (${url##*/})...${NC}"
+    if ! fetch "$url" "$partial"; then
+        rm -f "$partial"
+        die "Python download failed."
+    fi
+
+    actual="$(sha256sum "$partial" | awk '{ print $1 }')"
+    if [[ "$actual" != "$sha" ]]; then
+        rm -f "$partial"
+        die "Checksum mismatch for Python: expected $sha, got $actual. The file was discarded."
+    fi
+    mv -f "$partial" "$archive"
+
+    # Unpack beside the old copy and swap at the end, so an interrupted run
+    # never leaves a half-unpacked Python behind.
+    staging="$RUNTIME_DIR/python-staging"
+    rm -rf "$staging"
+    mkdir -p "$staging"
+    tar -xzf "$archive" -C "$staging"
+    [[ -x "$staging/python/bin/python3" ]] || die "Unexpected archive layout: $archive"
+
+    rm -rf "$PYTHON_DIR"
+    mv "$staging/python" "$PYTHON_DIR"
+    rm -rf "$staging" "$archive"
+    printf '%s' "$sha" > "$PYTHON_MARKER"
+    echo -e "${GREEN}Python installed: $PYTHON_EXE${NC}"
+}
+
+portable_install() {
+    [[ -f downloader.py ]] || die "install.sh must be run from the program folder."
+
+    local platform entry sha url current=""
+    platform="$(linux_platform_key)"
+    entry="$(lock_entry python "$platform")"
+    sha="${entry%% *}"
+    url="${entry#* }"
+
+    if [[ -f "$PYTHON_MARKER" ]]; then
+        current="$(cat "$PYTHON_MARKER")"
+    fi
+    if [[ -x "$PYTHON_EXE" && "$current" == "$sha" ]]; then
+        say "Python is up to date."
+    else
+        install_python "$sha" "$url"
+    fi
+
+    # yt-dlp, ffmpeg and Deno (and the weekly yt-dlp update).
+    PYTHONNOUSERSITE=1 "$PYTHON_EXE" -s -m ytdlp_app.portable ensure \
+        || die "Setting up the portable runtime failed."
+
+    say "${GREEN}Portable runtime ready.${NC} Run the downloader with: ${CYAN}./run.sh${NC}"
+}
+
+# ==============================================================================
+# macOS: system installation (unchanged behavior)
+# ==============================================================================
+
 check_python() {
     if command -v python3 &> /dev/null; then
-        PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-        MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-        MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-        
-        if [[ $MAJOR -ge 3 && $MINOR -ge 11 ]]; then
-            echo -e "${GREEN}Python $PYTHON_VERSION found${NC}"
+        local version major minor
+        version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        major=$(echo "$version" | cut -d. -f1)
+        minor=$(echo "$version" | cut -d. -f2)
+        if [[ $major -ge 3 && $minor -ge 11 ]]; then
+            echo -e "${GREEN}Python $version found${NC}"
             return 0
         fi
     fi
     return 1
 }
 
-# Install Python if needed
-install_python() {
-    echo -e "${YELLOW}Installing Python 3.11+...${NC}"
-    
-    case $OS in
-        macos)
-            if command -v brew &> /dev/null; then
-                brew install python@3.12
-            else
-                echo -e "${RED}Homebrew not found. Please install Homebrew first:${NC}"
-                echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-                exit 1
-            fi
-            ;;
-        debian)
-            sudo apt update
-            sudo apt install -y python3 python3-venv python3-pip
-            ;;
-        redhat)
-            sudo dnf install -y python3 python3-pip
-            ;;
-        arch)
-            sudo pacman -S --noconfirm python python-pip
-            ;;
-        *)
-            echo -e "${RED}Unknown OS. Please install Python 3.11+ manually.${NC}"
-            exit 1
-            ;;
-    esac
+require_brew() {
+    if ! command -v brew &> /dev/null; then
+        echo -e "${RED}Homebrew not found. Please install Homebrew first:${NC}"
+        echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        exit 1
+    fi
 }
 
-# Install ffmpeg
-install_ffmpeg() {
+macos_install() {
+    if ! check_python; then
+        echo -e "${YELLOW}Installing Python 3.11+...${NC}"
+        require_brew
+        brew install python@3.12
+        check_python || die "Failed to install Python 3.11+"
+    fi
+
     if command -v ffmpeg &> /dev/null; then
         echo -e "${GREEN}ffmpeg already installed${NC}"
-        return 0
-    fi
-    
-    echo -e "${YELLOW}Installing ffmpeg...${NC}"
-    
-    case $OS in
-        macos)
-            brew install ffmpeg
-            ;;
-        debian)
-            sudo apt install -y ffmpeg
-            ;;
-        redhat)
-            sudo dnf install -y ffmpeg
-            ;;
-        arch)
-            sudo pacman -S --noconfirm ffmpeg
-            ;;
-        *)
-            echo -e "${RED}Please install ffmpeg manually.${NC}"
-            ;;
-    esac
-}
-
-# Install Deno (optional, for JS challenges)
-install_deno() {
-    if command -v deno &> /dev/null; then
-        echo -e "${GREEN}Deno already installed${NC}"
-        return 0
-    fi
-    
-    echo -e "${YELLOW}Installing Deno (optional, for JS challenges)...${NC}"
-    curl -fsSL https://deno.land/install.sh | sh
-    
-    # Add to PATH for current session
-    export DENO_INSTALL="$HOME/.deno"
-    export PATH="$DENO_INSTALL/bin:$PATH"
-    
-    echo -e "${YELLOW}Note: Add the following to your shell profile (.bashrc, .zshrc, etc.):${NC}"
-    echo '  export DENO_INSTALL="$HOME/.deno"'
-    echo '  export PATH="$DENO_INSTALL/bin:$PATH"'
-}
-
-# Create virtual environment and install dependencies
-setup_venv() {
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    cd "$SCRIPT_DIR"
-    
-    echo -e "${YELLOW}Creating virtual environment...${NC}"
-    
-    if [[ -d ".venv" ]]; then
-        echo -e "${YELLOW}Virtual environment already exists, updating...${NC}"
     else
-        python3 -m venv .venv
+        echo -e "${YELLOW}Installing ffmpeg...${NC}"
+        require_brew
+        brew install ffmpeg
     fi
-    
-    echo -e "${YELLOW}Installing dependencies...${NC}"
-    .venv/bin/pip install --upgrade pip
-    .venv/bin/pip install -e .
-    
-    echo -e "${GREEN}Dependencies installed successfully!${NC}"
-}
 
-# Main installation flow
-main() {
-    # Check/install Python
-    if ! check_python; then
-        install_python
-        if ! check_python; then
-            echo -e "${RED}Failed to install Python 3.11+${NC}"
-            exit 1
+    if ! command -v deno &> /dev/null; then
+        read -r -p "Install Deno for JS challenge support? (y/N): " install_deno_choice
+        if [[ "$install_deno_choice" =~ ^[Yy]$ ]]; then
+            require_brew
+            brew install deno
         fi
     fi
-    
-    # Install ffmpeg
-    install_ffmpeg
-    
-    # Install Deno (optional)
-    read -p "Install Deno for JS challenge support? (y/N): " install_deno_choice
-    if [[ "$install_deno_choice" =~ ^[Yy]$ ]]; then
-        install_deno
+
+    echo -e "${YELLOW}Creating virtual environment...${NC}"
+    if [[ ! -d ".venv" ]]; then
+        python3 -m venv .venv
     fi
-    
-    # Setup virtual environment
-    setup_venv
-    
-    echo ""
-    echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}  Installation Complete!${NC}"
-    echo -e "${GREEN}========================================${NC}"
-    echo ""
-    echo -e "Run the downloader with: ${CYAN}./run.sh${NC}"
-    echo ""
+    .venv/bin/pip install --upgrade pip
+    .venv/bin/pip install -e .
+
+    echo -e "${GREEN}Installation complete!${NC} Run the downloader with: ${CYAN}./run.sh${NC}"
 }
 
-main "$@"
+# ==============================================================================
+
+case "$(uname -s)" in
+    Linux)  portable_install ;;
+    Darwin) macos_install ;;
+    *)      die "Unsupported operating system: $(uname -s). On Windows, use Run.bat." ;;
+esac

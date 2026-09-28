@@ -33,20 +33,35 @@ def _installed_data_dir() -> Path:
     return base / _APP_DIR_NAME
 
 
-def _resolve_app_dir() -> Path:
-    """Keep portable state beside downloader.py; installed state stays per-user."""
+def _portable_app_dir() -> Path | None:
+    """Return the app folder when launched as the portable app (downloader.py)."""
     try:
         argv0 = Path(sys.argv[0]) if sys.argv else None
         if argv0 and argv0.name.lower() == "downloader.py":
             return argv0.resolve().parent
     except (OSError, RuntimeError):
         pass
-    return _installed_data_dir()
+    return None
+
+
+def _resolve_app_dir() -> Path:
+    """Keep portable state beside downloader.py; installed state stays per-user."""
+    return _portable_app_dir() or _installed_data_dir()
 
 
 def run() -> int:
     app_name = "yt-dlp-downloader"
+    portable_dir = _portable_app_dir()
     app_dir = _resolve_app_dir()
+    if portable_dir is not None:
+        # Imported here, not at module level: the package __init__ imports this
+        # module, and "python -m ytdlp_app.portable" would otherwise find the
+        # module it is about to run already imported (runpy warns about that).
+        from .portable import configure_environment  # noqa: PLC0415
+
+        # Before anything looks for ffmpeg/Deno or launches yt-dlp: the bundled
+        # tools and the in-folder caches must be what every child process sees.
+        configure_environment(portable_dir)
     paths = AppPaths(
         app_dir=app_dir,
         config_file=app_dir / "config.json",
@@ -72,7 +87,11 @@ def run() -> int:
         )
 
         videos_base, music_base, _cfg = ensure_dirs_interactive(
-            ui, cfg, config_file=paths.config_file, app_name=app_name
+            ui,
+            cfg,
+            config_file=paths.config_file,
+            app_name=app_name,
+            portable=portable_dir is not None,
         )
         user_config = UserConfig(
             app=str(_cfg.get("app") or app_name),

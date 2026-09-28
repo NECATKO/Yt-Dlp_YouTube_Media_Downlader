@@ -1,0 +1,29 @@
+# Pinned downloads for the portable runtime (runtime/ next to downloader.py).
+#
+# Read by install.ps1 / install.sh (python) and by ytdlp_app/portable.py
+# (ffmpeg, deno). One entry per line:
+#
+#   <component> <platform> <sha256> <url>
+#
+# Every file is checked against its sha256 before anything is unpacked. When a
+# pin changes here, the next launch replaces that component automatically.
+# yt-dlp itself is not pinned: it is installed with pip and kept current,
+# because YouTube changes break older versions within weeks.
+
+# Python 3.12.14, relocatable builds with debug symbols stripped:
+# https://github.com/astral-sh/python-build-standalone
+python windows-x86_64 c5bf8edfe858c1df9891be498b5bbc8761d383df5b9790658b088fea4870433a https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.12.14+20260924-x86_64-pc-windows-msvc-install_only_stripped.tar.gz
+python linux-x86_64 269b2c99e4db15b242bf01832f4fea1e8f1a664f273cff519393f296e9820b41 https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.12.14+20260924-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
+python linux-aarch64 c8499b61252c433280f134df954464d19811527b31cb920c35fc6967c1222e35 https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.12.14+20260924-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz
+
+# FFmpeg, yt-dlp's patched builds (only ffmpeg and ffprobe are unpacked).
+# Month-end builds are kept long-term:
+# https://github.com/yt-dlp/FFmpeg-Builds
+ffmpeg windows-x86_64 ab6f0ed46fbce796fba3fe21be640c64a6a4609351847e91cd534cf9303e468a https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-08-31-20-15/ffmpeg-N-126374-g089a48eb36-win64-gpl-shared.zip
+ffmpeg linux-x86_64 62f0fc72453047f146179b1030cabda37170d971d7e38186c4139910d55a37e2 https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-08-31-20-15/ffmpeg-N-126374-g089a48eb36-linux64-gpl.tar.xz
+ffmpeg linux-aarch64 7c8cd1077e9854961f73b40da9a4a958ca9e0535cc814c42860f0e88dd59ea40 https://github.com/yt-dlp/FFmpeg-Builds/releases/download/autobuild-2026-08-31-20-15/ffmpeg-N-126374-g089a48eb36-linuxarm64-gpl.tar.xz
+
+# Deno 2.9.7, solves YouTube's JavaScript challenges: https://github.com/denoland/deno
+deno windows-x86_64 a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238 https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-pc-windows-msvc.zip
+deno linux-x86_64 c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490 https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip
+deno linux-aarch64 c832298b1ad4422481334855f6003e0f54145762c5a134f20a489511d2f65bbf https://github.com/denoland/deno/releases/download/v2.9.7/deno-aarch64-unknown-linux-gnu.zip

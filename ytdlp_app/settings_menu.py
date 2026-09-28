@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .config import normalize_user_path, save_settings
+from .config import normalize_user_path, save_settings, to_config_path
 from .i18n import get_available_languages, get_language_name, set_language, t
 from .logging_utils import Colors, paint
 from .models import UserConfig
@@ -30,6 +30,9 @@ _QUALITY_MIN, _QUALITY_MAX = 0, 9
 
 #: Typed by the user to clear an optional value rather than keep it.
 _CLEAR = "-"
+
+#: Upper bound for any archive-mode wait, in seconds.
+_MAX_WAIT_SECONDS = 3600
 
 
 class SettingsMenu:
@@ -121,6 +124,31 @@ class SettingsMenu:
                     return value
             self.ui.print(paint(t("settings_invalid_number", min=low, max=high), Colors.RED))
 
+    def _ask_seconds(self, label: str, current: float, high: float) -> float | None:
+        """Ask for a non-negative, possibly fractional, number of seconds.
+
+        Accepts a decimal comma as well, since that is what Turkish users type.
+
+        Returns:
+            The new value, or None if the user pressed Enter to keep it.
+        """
+        while True:
+            self._prompt_header(label, f"{current:g}", "")
+            self.ui.print(paint(t("settings_keep_hint"), Colors.WHITE))
+
+            answer = self.ui.ask_text(t("settings_value_prompt"))
+            if not answer:
+                return None
+            try:
+                value = float(answer.replace(",", "."))
+            except ValueError:
+                pass
+            else:
+                # float() also accepts "nan" and "inf", which the bounds reject.
+                if 0 <= value <= high:
+                    return value
+            self.ui.print(paint(t("settings_invalid_seconds", max=f"{high:g}"), Colors.RED))
+
     def _ask_bool(self, label: str, current: bool) -> bool:
         """Ask a yes/no question, showing the current value first."""
         self._prompt_header(label, t("label_yes") if current else t("label_no"), "")
@@ -137,6 +165,7 @@ class SettingsMenu:
             (t("settings_download"), self._edit_download),
             (t("settings_audio"), self._edit_audio),
             (t("settings_subtitles"), self._edit_subtitles),
+            (t("settings_archive"), self._edit_archive),
         ]
 
     def run(self) -> UserConfig:
@@ -185,7 +214,7 @@ class SettingsMenu:
         if answer is None:
             return None
 
-        candidate = normalize_user_path(answer)
+        candidate = normalize_user_path(answer, self.config_file.parent)
         try:
             candidate.mkdir(parents=True, exist_ok=True)
         except OSError as ex:
@@ -206,7 +235,7 @@ class SettingsMenu:
             music_dir=self.config.music_dir,
             saved_at=self.config.saved_at,
         )
-        self.cfg["videos_dir"] = str(new_dir)
+        self.cfg["videos_dir"] = to_config_path(new_dir, self.config_file.parent)
         self._persist()
 
     def _edit_music_dir(self) -> None:
@@ -220,7 +249,7 @@ class SettingsMenu:
             music_dir=new_dir,
             saved_at=self.config.saved_at,
         )
-        self.cfg["music_dir"] = str(new_dir)
+        self.cfg["music_dir"] = to_config_path(new_dir, self.config_file.parent)
         self._persist()
 
     def _edit_download(self) -> None:
@@ -291,6 +320,27 @@ class SettingsMenu:
             )
             if langs:
                 video.subtitle_languages = langs
+
+        self._persist()
+
+    def _edit_archive(self) -> None:
+        archive = self.settings.archive
+
+        prompts = (
+            ("sleep_requests", t("settings_archive_sleep_requests")),
+            ("sleep_interval", t("settings_archive_sleep_interval")),
+            ("max_sleep_interval", t("settings_archive_max_sleep")),
+            ("sleep_subtitles", t("settings_archive_sleep_subtitles")),
+        )
+        for attr, label in prompts:
+            value = self._ask_seconds(label, getattr(archive, attr), _MAX_WAIT_SECONDS)
+            if value is not None:
+                setattr(archive, attr, value)
+
+        # yt-dlp rejects a sleep window whose upper bound is below its lower one.
+        if archive.max_sleep_interval < archive.sleep_interval:
+            archive.max_sleep_interval = archive.sleep_interval
+            self.ui.print(paint(t("settings_sleep_adjusted"), Colors.YELLOW))
 
         self._persist()
 

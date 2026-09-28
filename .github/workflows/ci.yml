@@ -141,6 +141,8 @@ jobs:
           Copy-Item -Path "update.sh" -Destination $releaseDir
           # app_version.txt is what the updaters compare against the release tag.
           Copy-Item -Path "app_version.txt" -Destination $releaseDir
+          # The runtime pins: first launch downloads Python, ffmpeg and Deno from these.
+          Copy-Item -Path "runtime.lock" -Destination $releaseDir
           Copy-Item -Path "README.md" -Destination $releaseDir
           Copy-Item -Path "LICENSE" -Destination $releaseDir
           Copy-Item -Path "pyproject.toml" -Destination $releaseDir

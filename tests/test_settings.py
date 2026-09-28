@@ -1,9 +1,13 @@
 """Tests for ytdlp_app.settings module."""
 
+import pytest
+
 from ytdlp_app.settings import (
     AppSettings,
+    ArchiveSettings,
     AudioSettings,
     DownloadSettings,
+    OutputSettings,
     VideoSettings,
 )
 
@@ -127,7 +131,7 @@ class TestAppSettings:
         settings = AppSettings()
         data = settings.to_dict()
 
-        assert set(data) == {"download", "audio", "video", "output"}
+        assert set(data) == {"download", "audio", "video", "output", "archive"}
         assert data["download"]["concurrent_fragments"] == 4
 
     def test_roundtrip(self) -> None:
@@ -145,3 +149,52 @@ class TestAppSettings:
         assert result["download"]["rate_limit"] == "2M"
         assert result["audio"]["audio_quality"] == 5
         assert result["video"]["subtitle_languages"] == "en,tr"
+
+
+class TestArchiveSettings:
+    """Archive pacing is persisted and survives a bad hand edit."""
+
+    def test_defaults(self) -> None:
+        archive = ArchiveSettings()
+        assert archive.to_args() == [
+            "--sleep-requests",
+            "1.5",
+            "--sleep-interval",
+            "15",
+            "--max-sleep-interval",
+            "45",
+            "--sleep-subtitles",
+            "5",
+            "--retries",
+            "10",
+            "--fragment-retries",
+            "10",
+        ]
+
+    def test_roundtrip_through_app_settings(self) -> None:
+        settings = AppSettings()
+        settings.archive.sleep_requests = 2.5
+        settings.archive.sleep_subtitles = 9
+
+        restored = AppSettings.from_dict(settings.to_dict())
+
+        assert restored.archive == settings.archive
+
+    def test_configs_without_the_section_get_defaults(self) -> None:
+        """Configs written before archive mode existed need no migration."""
+        assert AppSettings.from_dict({"download": {}}).archive == ArchiveSettings()
+
+    @pytest.mark.parametrize("bad", ["fast", -3, None, True, [1]])
+    def test_unusable_values_fall_back(self, bad: object) -> None:
+        restored = ArchiveSettings.from_dict({"sleep_interval": bad, "sleep_requests": "4"})
+        assert restored.sleep_interval == 15
+        # A numeric string is still a usable number.
+        assert restored.sleep_requests == 4
+
+    def test_archive_template_is_configurable(self) -> None:
+        default = OutputSettings().archive_template
+        assert default == (
+            "%(channel)s/%(upload_date)s - %(title).80B [%(id)s]/%(title).80B.%(ext)s"
+        )
+        custom = AppSettings.from_dict({"output": {"archive_template": "%(id)s.%(ext)s"}})
+        assert custom.output.archive_template == "%(id)s.%(ext)s"

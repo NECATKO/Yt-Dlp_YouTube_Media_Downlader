@@ -7,11 +7,13 @@ from typing import Any
 from ytdlp_app.config import (
     default_dirs,
     delete_config,
+    ensure_dirs_interactive,
     load_config,
     load_settings,
     normalize_user_path,
     save_config,
     save_settings,
+    to_config_path,
 )
 from ytdlp_app.settings import AppSettings
 
@@ -172,3 +174,80 @@ class TestSettingsPersistence:
         assert stored["language"] == "tr"
         assert stored["videos_dir"] == "/videos"
         assert "settings" in stored
+
+
+class TestPortablePaths:
+    """Folders inside the app folder are stored relative so they move with it."""
+
+    def test_relative_input_resolves_against_base(self, tmp_path: Path) -> None:
+        assert normalize_user_path("downloads/Videos", tmp_path) == tmp_path / "downloads/Videos"
+
+    def test_absolute_input_ignores_base(self, tmp_path: Path) -> None:
+        other = tmp_path / "elsewhere"
+        assert normalize_user_path(str(other), tmp_path / "app") == other
+
+    def test_home_input_ignores_base(self, tmp_path: Path) -> None:
+        assert normalize_user_path("~/Videos", tmp_path) == Path.home() / "Videos"
+
+    def test_to_config_path_inside_is_relative_posix(self, tmp_path: Path) -> None:
+        assert to_config_path(tmp_path / "downloads" / "Videos", tmp_path) == "downloads/Videos"
+
+    def test_to_config_path_outside_is_absolute(self, tmp_path: Path) -> None:
+        other = tmp_path / "other"
+        assert to_config_path(other, tmp_path / "app") == str(other)
+
+    def test_portable_defaults_live_next_to_the_app(self, tmp_path: Path) -> None:
+        videos, music = default_dirs(tmp_path)
+        assert videos == tmp_path / "downloads" / "Videos"
+        assert music == tmp_path / "downloads" / "Music"
+
+
+class _AcceptDefaultsUI:
+    def __init__(self) -> None:
+        self.printed: list[str] = []
+
+    def print(self, text: str = "") -> None:
+        self.printed.append(text)
+
+    def ask_text(self, _prompt: str) -> str:
+        return ""
+
+
+class TestFirstRunFolders:
+    def test_portable_first_run_stores_relative_defaults(self, tmp_path: Path) -> None:
+        config_file = tmp_path / "config.json"
+        cfg: dict[str, Any] = {}
+
+        videos, music, new_cfg = ensure_dirs_interactive(
+            _AcceptDefaultsUI(), cfg, config_file=config_file, app_name="x", portable=True
+        )
+
+        assert videos == tmp_path / "downloads" / "Videos"
+        assert videos.is_dir() and music.is_dir()
+        stored = json.loads(config_file.read_text(encoding="utf-8"))
+        assert stored["videos_dir"] == "downloads/Videos"
+        assert stored["music_dir"] == "downloads/Music"
+        assert new_cfg["videos_dir"] == "downloads/Videos"
+
+    def test_moved_folder_still_finds_its_downloads(self, tmp_path: Path) -> None:
+        """The same relative config, read from a new location, follows the move."""
+        moved = tmp_path / "usb" / "app"
+        moved.mkdir(parents=True)
+        cfg = {"videos_dir": "downloads/Videos", "music_dir": "downloads/Music"}
+
+        videos, _music, _cfg = ensure_dirs_interactive(
+            _AcceptDefaultsUI(), cfg, config_file=moved / "config.json", app_name="x"
+        )
+
+        assert videos == moved / "downloads" / "Videos"
+
+    def test_installed_first_run_keeps_the_user_folders(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+        config_file = tmp_path / "data" / "config.json"
+        config_file.parent.mkdir()
+
+        videos, _music, _cfg = ensure_dirs_interactive(
+            _AcceptDefaultsUI(), {}, config_file=config_file, app_name="x"
+        )
+
+        assert videos == tmp_path / "home" / "Videos"

@@ -38,7 +38,11 @@ classifiers = [
 ]
 
 dependencies = [
-    "yt-dlp>=2024.1.0",
+    # curl-cffi: yt-dlp requests YouTube subtitles with browser impersonation,
+    # and without it YouTube answers them with HTTP 429.
+    # 2025.03.21 is the first release whose --plugin-dirs loads the bundled
+    # ytdlp_app/plugins layout archive mode relies on.
+    "yt-dlp[default,curl-cffi]>=2025.03.21",
 ]
 
 [project.optional-dependencies]
@@ -67,7 +71,7 @@ where = ["."]
 include = ["ytdlp_app*"]
 
 [tool.setuptools.package-data]
-ytdlp_app = ["py.typed", "locales/*.json"]
+ytdlp_app = ["py.typed", "locales/*.json", "plugins/**/*.py"]
 
 # ============================================================================
 # pytest configuration

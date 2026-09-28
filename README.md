@@ -1,20 +1,21 @@
 # yt-dlp Downloader (portable)
 
-A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs on Windows, Linux, and macOS. Features interactive folder setup, MP4/MP3 mode selection, playlist handling, download archives to prevent duplicates, colorized console output, and detailed logging.
+A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs on Windows, Linux, and macOS; on Windows and Linux it is fully portable (see [Portable runtime](#portable-runtime)). Features interactive folder setup, MP4/MP3/Archive mode selection, playlist handling, download archives to prevent duplicates, colorized console output, and detailed logging.
 
 ## Features
-- **One-click setup**: Automatically installs Python 3.11+, yt-dlp, ffmpeg, and Deno (winget on Windows; apt/dnf/pacman/brew elsewhere)
+- **Fully portable (Windows, Linux)**: On first launch Python, yt-dlp, ffmpeg and Deno are downloaded *into the program folder*. No administrator rights, nothing installed on the system; copy the folder to a USB stick or another PC and it keeps working
 - **Auto-update**: Silent update checks from GitHub releases on each launch
-- **Interactive prompts**: Choose MP4/MP3 mode, playlist vs single video, and quality profiles
+- **Interactive prompts**: Choose MP4/MP3/Archive mode, playlist vs single video, and quality profiles
+- **Archive mode**: Preserve a whole channel (or a single video) with its description, subtitles, thumbnail and metadata, paced to avoid rate limits and IP bans
 - **Settings menu**: Change the language, download folders, proxy, speed limit, audio format, and subtitles from inside the app — type `s` at the URL prompt
 - **Colorized output**: Syntax-highlighted console output (downloads in green, errors in red, warnings in yellow, etc.)
 - **Skip reporting**: Explains why playlist items were skipped (private, region-blocked, age-restricted, members-only, etc.)
 - **Session continuity**: Download multiple URLs in a single session without restarting
 
 ## How it works
-1. Launch `Run.bat` (Windows) or `./run.sh` (Linux/macOS). First run installs Python 3.11+, yt-dlp inside `.venv`, ffmpeg, and Deno through your platform's package manager.
-2. You are asked once for base download folders (defaults: `Videos` and `Music`). Choices are saved to `config.json`.
-3. Each session: enter a URL, choose Video (MP4) or Audio (MP3), decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
+1. Launch `Run.bat` (Windows) or `./run.sh` (Linux/macOS). On Windows and Linux the first launch downloads the portable runtime into `runtime/` (once, about 150 MB on Windows and 220 MB on Linux); macOS installs Python, ffmpeg and Deno with Homebrew and yt-dlp into `.venv`.
+2. You are asked once for base download folders (defaults: `downloads/Videos` and `downloads/Music` inside the program folder). Choices are saved to `config.json`.
+3. Each session: enter a URL, choose Video (MP4), Audio (MP3) or Archive (see [Archive mode](#archive-mode)), decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
 4. yt-dlp runs with resume/retry flags (`--continue`, `--retries infinite`, `--fragment-retries infinite`); archive files prevent duplicates; a log captures the full command output.
 5. When a playlist is used, skipped items are probed and reasons are printed (private, region blocked, age-restricted, members-only, copyright, etc.).
 6. After finishing, you can immediately start another download from the same session.
@@ -26,6 +27,9 @@ A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs
 | MP4 | Single | `<Videos>/Downloaded Videos/<title>.mp4` | `archives/single_videos_mp4.txt` |
 | MP3 | Playlist | `<Music>/yt-dlp/<playlist_title>/<index> - <title>.mp3` | `archives/playlist_<playlist_id>_mp3.txt` |
 | MP3 | Single | `<Music>/Downloaded Music/<title>.mp3` | `archives/single_audios_mp3.txt` |
+| Archive | Channel | `<Videos>/yt-dlp/<channel>/<upload_date> - <title> [<id>]/<title>.mkv` | `archives/channel_<channel_id>_archive.txt` |
+| Archive | Playlist | same as above | `archives/playlist_<playlist_id>_archive.txt` |
+| Archive | Single | same as above | `archives/single_videos_archive.txt` |
 
 - Logs: `logs/yt-dlp_<mode>_<playlist|single>_<timestamp>.log`
 
@@ -44,10 +48,38 @@ A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs
 - Converts to MP3 with highest quality (`--audio-quality 0`)
 - Embeds metadata, thumbnail (converted to JPG)
 
+## Archive mode
+For preserving a channel that may disappear. Pick **Archive** as the mode and enter a channel URL (`https://www.youtube.com/@name`, `/channel/UC...`, or a tab such as `/@name/videos`), a playlist, or a single video.
+
+- **What is kept, per video** (each in its own folder): the video (best quality up to 1080p, merged into MKV with chapters and metadata embedded), `.description`, `.info.json`, the thumbnail, and uploaded plus auto-generated subtitles in Turkish and English converted to `.srt`. YouTube's machine translations are skipped (an English video gets no Turkish subtitle unless the channel uploaded one), so only subtitles that actually exist on the video are kept.
+- **A channel URL archives the whole channel.** yt-dlp returns the Videos, Shorts and Live tabs as nested playlists; all of them are downloaded, and the "whole playlist or this video" question is skipped.
+- **The archive file is keyed by the real channel id** (`channel_UC..._archive.txt`), so the handle URL, the `/channel/` URL and any tab URL of the same channel all resume one archive, even if the handle changes. Looking the id up costs one request; if it fails for a reason other than a block, the id in the URL is used instead.
+- **Pacing** (defaults): 1.5 s between requests, 15–45 s (random) between videos, 5 s before each subtitle download, 10 retries instead of infinite. The waits can be changed with `s` → *Archive mode waits* and are stored under `settings.archive` in `config.json`. Your speed limit and proxy still apply.
+- **Ban protection**: if yt-dlp reports `HTTP Error 429` or YouTube's *"Sign in to confirm you're not a bot"*, the download is stopped immediately, the event is written to the log (`[BAN-GUARD]`), and you are told to **wait a few hours and enter the same URL again: it resumes where it left off.** Items only enter the archive file once every part of them was saved, so nothing half-finished is skipped on the next run.
+- To keep request volume low, archive mode does not fetch the playlist listing or probe skipped items afterwards (the skip report is MP4/MP3 only).
+
+## Portable runtime
+On Windows (x64) and Linux (x86_64, aarch64; glibc-based distributions) everything the app needs lives in its own folder:
+
+| Folder | Contents |
+|--------|----------|
+| `runtime/python` | A relocatable Python 3.12 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)) with yt-dlp installed into it |
+| `runtime/ffmpeg` | ffmpeg and ffprobe ([yt-dlp's FFmpeg builds](https://github.com/yt-dlp/FFmpeg-Builds)) |
+| `runtime/deno` | Deno, which yt-dlp uses to solve YouTube's JavaScript challenges |
+| `cache/` | yt-dlp's and Deno's caches (normally written to your user profile) |
+| `downloads/` | Default download location |
+
+- **Nothing touches the system**: no winget/apt, no administrator rights or sudo, no PATH changes. Deleting the folder removes everything.
+- **Verified downloads**: every file is checked against the SHA-256 pinned in `runtime.lock` before it is unpacked; a mismatch aborts the setup. When an app update changes a pin, the next launch replaces just that component.
+- **yt-dlp stays current**: it is upgraded automatically at launch once a week (YouTube changes break older versions). Offline launches simply keep the installed version. To upgrade now: `runtime/python/python -m ytdlp_app.portable update-ytdlp` (on Windows `runtime\python\python.exe`); `... status` shows what is installed.
+- **Moving the folder**: folders inside the program folder are stored relative in `config.json`, so downloads, archives and settings follow the folder.
+- Disk use after setup: about 360 MB on Windows, 530 MB on Linux (ffmpeg's Linux build is statically linked).
+- Upgrading from an older version: the new launcher no longer uses `.venv` or the winget-installed Python/ffmpeg/Deno. The `.venv` folder can be deleted; the system packages can be uninstalled if nothing else needs them. Existing download folders in `config.json` are kept as they are.
+
 ## Config and state
 | File | Description |
 |------|-------------|
-| `config.json` | Stores `app`, `videos_dir`, `music_dir`, `saved_at`. Delete to reconfigure. |
+| `config.json` | Stores `app`, `videos_dir`, `music_dir`, `saved_at`, `language` and the advanced `settings` (including `settings.archive`). Folders inside the program folder are stored relative. Delete to reconfigure. |
 | `archives/*.txt` | Download archives for `--download-archive`. Delete to force re-download. |
 | `logs/*.log` | Full command output with timestamps. Useful for troubleshooting. |
 | `app_version.txt` | Tracks current version for auto-update. |
@@ -55,9 +87,10 @@ A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs
 ## Files in this folder
 | File | Description |
 |------|-------------|
-| `Run.bat` | One-click start. Runs silent update check, installs deps if needed, launches app. |
-| `install.ps1` | Installs Python, ffmpeg, Deno via winget. Creates `.venv` with yt-dlp. |
-| `update.ps1` | Auto-updater. Downloads new releases from GitHub, preserves user data. |
+| `Run.bat` / `run.sh` | One-click start (Windows / Linux, macOS). Runs the update check, sets up or refreshes the portable runtime, launches the app. |
+| `install.ps1` / `install.sh` | Sets up the portable runtime in `runtime/` (macOS: Homebrew + `.venv`). Safe to rerun. |
+| `update.ps1` / `update.sh` | Auto-updater. Downloads new releases from GitHub; keeps `config.json`, `archives/`, `logs/`, `runtime/`, `cache/` and `downloads/`. |
+| `runtime.lock` | Pinned URLs and SHA-256 checksums of the portable Python, ffmpeg and Deno. |
 | `downloader.py` | Entry point that calls `ytdlp_app.app.run()`. |
 | `ytdlp_app/` | Python package with modular components (see below). |
 
@@ -69,28 +102,32 @@ A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs
 | `config.py` | Config loading/saving, interactive folder setup |
 | `ui.py` | Console UI with styled panels and menus (Protocol-based) |
 | `yt_dlp.py` | CommandBuilder class for constructing yt-dlp arguments |
-| `exec.py` | Command execution with output streaming and logging |
-
-| `playlist.py` | Playlist detection, entry fetching, archive reading |
+| `exec.py` | Command execution with output streaming, logging, and the 429/bot ban guard |
+| `playlist.py` | Playlist and channel detection, channel id lookup, entry fetching, archive reading |
 | `skip_probe.py` | Probes skipped items to determine skip reason |
 | `logging_utils.py` | Logging utilities with colorized output |
-| `system.py` | Checks for ffmpeg, yt-dlp, deno availability |
+| `system.py` | Locates yt-dlp, ffmpeg and Deno |
+| `portable.py` | Portable runtime setup (`python -m ytdlp_app.portable ensure / update-ytdlp / status`) |
 | `models.py` | Data classes for paths, config, entries, and download plans |
 
 ## Requirements
-- Python 3.11 or newer
-- Windows 10/11 with winget (Windows App Installer), or Linux/macOS with apt/dnf/pacman/brew
-- Internet connection for installation and downloads
+- **Windows**: 64-bit Windows 10 (version 1803 or newer) or Windows 11. Nothing else.
+- **Linux**: x86_64 or aarch64 with glibc (not Alpine/musl), plus `curl` or `wget`, `tar` and `sha256sum` (present on practically every distribution).
+- **macOS**: Homebrew; Python 3.11+ is installed through it if missing.
+- Internet connection for the first launch and for downloads
 
 ## Troubleshooting
 | Problem | Solution |
 |---------|----------|
-| Install fails | Run `Run.bat` as Administrator (Windows). Ensure your package manager and internet access work. |
-| yt-dlp/ffmpeg not found | Rerun `install.ps1` (Windows) or `install.sh` (Linux/macOS), or open a new terminal after installation. |
+| First-time setup fails | Check the internet connection and run `Run.bat` / `./run.sh` again; it resumes and only fetches what is missing. Administrator rights are not needed. |
+| "Checksum mismatch" | The download was corrupted or altered and was discarded. Try again; if it persists, report it. |
+| yt-dlp/ffmpeg not found | Run `install.ps1` (Windows) or `./install.sh` (Linux/macOS) again. |
+| A video stopped working after a YouTube change | Update yt-dlp: `runtime/python/python -m ytdlp_app.portable update-ytdlp`. |
 | Change download folders | Type `s` at the URL prompt and pick the folder to change. |
 | Change the interface language | Type `s` at the URL prompt and pick "Interface language". |
 | Force re-download | Delete the relevant archive file in `archives/`. |
-| Deno warning appears | Install Deno: `winget install DenoLand.Deno` or rerun `install.ps1`. |
+| Archive stopped with "YouTube is temporarily blocking requests" | Wait a few hours and enter the same URL again; it resumes. Consider raising the archive waits (`s` → *Archive mode waits*) or using a proxy. |
+| Deno warning appears | Run `install.ps1` / `./install.sh` again (macOS: `brew install deno`). |
 
 ## License
 See [LICENSE](LICENSE) for details.
@@ -99,21 +136,22 @@ See [LICENSE](LICENSE) for details.
 
 ## yt-dlp Downloader (taşınabilir) — Türkçe
 
-yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, Linux ve macOS üzerinde çalışır. İnteraktif klasör kurulumu, MP4/MP3 mod seçimi, playlist yönetimi, tekrarları engelleyen arşiv sistemi, renkli konsol çıktısı ve detaylı loglama özellikleri sunar.
+yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, Linux ve macOS üzerinde çalışır; Windows ve Linux'ta tamamen taşınabilirdir (bkz. *Taşınabilir çalışma ortamı*). İnteraktif klasör kurulumu, MP4/MP3/Arşiv mod seçimi, playlist yönetimi, tekrarları engelleyen arşiv sistemi, renkli konsol çıktısı ve detaylı loglama özellikleri sunar.
 
 ## Özellikler
-- **Tek tıkla kurulum**: Python 3.11+, yt-dlp, ffmpeg ve Deno otomatik kurulur (Windows'ta winget; diğer sistemlerde apt/dnf/pacman/brew)
+- **Tamamen taşınabilir (Windows, Linux)**: İlk açılışta Python, yt-dlp, ffmpeg ve Deno *program klasörünün içine* indirilir. Yönetici izni gerekmez, sisteme hiçbir şey kurulmaz; klasörü USB belleğe veya başka bir bilgisayara kopyala, çalışmaya devam eder
 - **Otomatik güncelleme**: Her açılışta GitHub'dan sessiz güncelleme kontrolü
-- **İnteraktif menüler**: MP4/MP3 modu, playlist/tek video seçimi ve kalite profilleri
+- **İnteraktif menüler**: MP4/MP3/Arşiv modu, playlist/tek video seçimi ve kalite profilleri
+- **Arşiv modu**: Bir kanalın tamamını (veya tek bir videoyu) açıklama, altyazı, kapak resmi ve metadata ile birlikte, hız sınırına ve IP ban'ına takılmayacak tempoda arşivler
 - **Ayarlar menüsü**: Dil, indirme klasörleri, vekil sunucu, hız sınırı, ses formatı ve altyazıları uygulama içinden değiştir — URL isteminde `s` yaz
 - **Renkli çıktı**: Söz dizimi vurgulu konsol çıktısı (indirmeler yeşil, hatalar kırmızı, uyarılar sarı, vb.)
 - **Atlama raporu**: Playlist öğelerinin neden atlandığını açıklar (özel, bölge kısıtı, yaş kısıtı, üyelik gerekli, vb.)
 - **Oturum sürekliliği**: Tek oturumda yeniden başlatmadan birden fazla URL indir
 
 ### Nasıl çalışır
-1. `Run.bat` (Windows) veya `./run.sh` (Linux/macOS) ile başlat. İlk çalıştırmada sisteminin paket yöneticisiyle Python 3.11+, `.venv` içinde yt-dlp, ffmpeg ve Deno kurulur.
-2. İlk seferde video/müzik klasörlerini sorar (varsayılan: `Videos`, `Music`). Tercihler `config.json` içine kaydedilir.
-3. Her oturumda: URL gir, Video (MP4) veya Ses (MP3) seç, playlist URL'si için tüm liste mi tek video mu karar ver, MP4 ise profil seç.
+1. `Run.bat` (Windows) veya `./run.sh` (Linux/macOS) ile başlat. Windows ve Linux'ta ilk açılış taşınabilir çalışma ortamını `runtime/` içine indirir (bir kereye mahsus; Windows'ta yaklaşık 150 MB, Linux'ta 220 MB); macOS'ta Python, ffmpeg ve Deno Homebrew ile, yt-dlp `.venv` içine kurulur.
+2. İlk seferde video/müzik klasörlerini sorar (varsayılan: program klasöründeki `downloads/Videos` ve `downloads/Music`). Tercihler `config.json` içine kaydedilir.
+3. Her oturumda: URL gir, Video (MP4), Ses (MP3) veya Arşiv (bkz. *Arşiv modu*) seç, playlist URL'si için tüm liste mi tek video mu karar ver, MP4 ise profil seç.
 4. yt-dlp devam/tekrar dene bayraklarıyla (`--continue`, `--retries infinite`, `--fragment-retries infinite`) çalışır; arşiv dosyaları tekrar indirmeyi engeller; konsol çıktısı log'a yazılır.
 5. Playlist indirirken atlananlar için sebep yoklama (özel, bölge kısıtı, yaş kısıtı, üyelik gerekli, telif hakkı, vb.) yapılır ve ekrana yazılır.
 6. İndirme bitince aynı oturumda hemen yeni URL indirebilirsin.
@@ -125,6 +163,9 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, 
 | MP4 | Tek video | `<Videos>/Downloaded Videos/<title>.mp4` | `archives/single_videos_mp4.txt` |
 | MP3 | Playlist | `<Music>/yt-dlp/<playlist_title>/<index> - <title>.mp3` | `archives/playlist_<playlist_id>_mp3.txt` |
 | MP3 | Tek parça | `<Music>/Downloaded Music/<title>.mp3` | `archives/single_audios_mp3.txt` |
+| Arşiv | Kanal | `<Videos>/yt-dlp/<channel>/<upload_date> - <title> [<id>]/<title>.mkv` | `archives/channel_<channel_id>_archive.txt` |
+| Arşiv | Playlist | yukarıdakiyle aynı | `archives/playlist_<playlist_id>_archive.txt` |
+| Arşiv | Tek video | yukarıdakiyle aynı | `archives/single_videos_archive.txt` |
 
 - Loglar: `logs/yt-dlp_<mode>_<playlist|single>_<timestamp>.log`
 
@@ -143,10 +184,38 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, 
 - En yüksek kalitede MP3'e dönüştürür (`--audio-quality 0`)
 - Metadata ve thumbnail (JPG'ye dönüştürülmüş) gömer
 
+### Arşiv modu
+Silinme riski olan bir kanalı korumak için. Mod olarak **Arşiv**'i seç ve bir kanal URL'si (`https://www.youtube.com/@isim`, `/channel/UC...` ya da `/@isim/videos` gibi bir sekme), bir playlist veya tek bir video gir.
+
+- **Her video için saklananlar** (her biri kendi klasöründe): video (1080p'ye kadar en iyi kalite, bölümler ve metadata gömülü MKV), `.description`, `.info.json`, kapak resmi ve Türkçe/İngilizce yüklenmiş + otomatik altyazılar (`.srt`'ye dönüştürülmüş). YouTube'un makine çevirileri atlanır (kanal yüklemediyse İngilizce bir videoya Türkçe altyazı gelmez); yalnızca videoda gerçekten var olan altyazılar saklanır.
+- **Kanal URL'si kanalın tamamını arşivler.** yt-dlp Videos, Shorts ve Live sekmelerini iç içe playlist olarak döndürür; hepsi indirilir ve "tüm liste mi bu video mu" sorusu sorulmaz.
+- **Arşiv dosyası gerçek kanal kimliğine göre adlandırılır** (`channel_UC..._archive.txt`). Böylece aynı kanalın handle URL'si, `/channel/` URL'si ve sekme URL'leri, handle değişse bile aynı arşivden devam eder. Kimliği öğrenmek tek istek gerektirir; engel dışı bir sebeple başarısız olursa URL'deki kimlik kullanılır.
+- **Tempo** (varsayılanlar): istekler arası 1.5 sn, videolar arası 15–45 sn (rastgele), her altyazıdan önce 5 sn, sonsuz yerine 10 deneme. Bekleme süreleri `s` → *Arsiv modu bekleme sureleri* ile değiştirilir ve `config.json` içinde `settings.archive` altında saklanır. Hız sınırın ve proxy ayarın bu modda da geçerlidir.
+- **Ban koruması**: yt-dlp `HTTP Error 429` ya da YouTube'un *"Sign in to confirm you're not a bot"* mesajını bildirirse indirme hemen durdurulur, olay log'a (`[BAN-GUARD]`) yazılır ve **birkaç saat bekleyip aynı URL'yi tekrar vermen, indirmenin kaldığı yerden devam edeceği** söylenir. Bir öğe ancak tüm parçaları kaydedildiğinde arşiv dosyasına girer; yarım kalan hiçbir şey sonraki çalıştırmada atlanmaz.
+- İstek sayısını düşük tutmak için arşiv modu playlist listesini çekmez ve sonrasında atlanan öğeleri yoklamaz (atlama raporu yalnızca MP4/MP3'te).
+
+### Taşınabilir çalışma ortamı
+Windows (x64) ve Linux'ta (x86_64, aarch64; glibc tabanlı dağıtımlar) uygulamanın ihtiyaç duyduğu her şey kendi klasöründe durur:
+
+| Klasör | İçerik |
+|--------|--------|
+| `runtime/python` | Taşınabilir Python 3.12 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)), yt-dlp bunun içine kurulur |
+| `runtime/ffmpeg` | ffmpeg ve ffprobe ([yt-dlp'nin FFmpeg derlemeleri](https://github.com/yt-dlp/FFmpeg-Builds)) |
+| `runtime/deno` | yt-dlp'nin YouTube JavaScript doğrulamalarını çözmek için kullandığı Deno |
+| `cache/` | yt-dlp ve Deno önbellekleri (normalde kullanıcı profiline yazılırlar) |
+| `downloads/` | Varsayılan indirme konumu |
+
+- **Sisteme dokunulmaz**: winget/apt yok, yönetici izni veya sudo yok, PATH değişikliği yok. Klasörü silmek her şeyi kaldırır.
+- **Doğrulanmış indirmeler**: her dosya açılmadan önce `runtime.lock` içinde sabitlenmiş SHA-256 ile karşılaştırılır; uyuşmazsa kurulum durur. Bir uygulama güncellemesi bir sürümü değiştirirse, sonraki açılış yalnızca o bileşeni yeniler.
+- **yt-dlp güncel kalır**: açılışta haftada bir otomatik güncellenir (YouTube değişiklikleri eski sürümleri bozar). İnternet yoksa kurulu sürümle devam edilir. Hemen güncellemek için: `runtime/python/python -m ytdlp_app.portable update-ytdlp` (Windows'ta `runtime\python\python.exe`); `... status` neyin kurulu olduğunu gösterir.
+- **Klasörü taşımak**: program klasörünün içindeki klasörler `config.json`'a göreli yazılır; indirmeler, arşivler ve ayarlar klasörle birlikte taşınır.
+- Kurulum sonrası disk kullanımı: Windows'ta yaklaşık 360 MB, Linux'ta 530 MB (Linux ffmpeg derlemesi statik bağlıdır).
+- Eski sürümden yükseltme: yeni başlatıcı artık `.venv`'i ve winget ile kurulan Python/ffmpeg/Deno'yu kullanmaz. `.venv` klasörü silinebilir; sistem paketleri başka bir şey kullanmıyorsa kaldırılabilir. `config.json`'daki mevcut indirme klasörleri olduğu gibi korunur.
+
 ### Ayarlar ve durum
 | Dosya | Açıklama |
 |-------|----------|
-| `config.json` | `app`, `videos_dir`, `music_dir`, `saved_at` değerlerini saklar. Yeniden yapılandırmak için sil. |
+| `config.json` | `app`, `videos_dir`, `music_dir`, `saved_at`, `language` ve gelişmiş `settings` (`settings.archive` dahil) değerlerini saklar. Program klasörünün içindeki klasörler göreli saklanır. Yeniden yapılandırmak için sil. |
 | `archives/*.txt` | `--download-archive` için indirme arşivleri. Yeniden indirmeyi zorlamak için sil. |
 | `logs/*.log` | Zaman damgalı tam komut çıktısı. Sorun giderme için kullanışlı. |
 | `app_version.txt` | Otomatik güncelleme için mevcut sürümü takip eder. |
@@ -154,9 +223,10 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, 
 ### Bu klasördeki dosyalar
 | Dosya | Açıklama |
 |-------|----------|
-| `Run.bat` | Tek tıkla başlatma. Sessiz güncelleme kontrolü, gerekirse bağımlılık kurulumu, uygulamayı başlatır. |
-| `install.ps1` | Python, ffmpeg, Deno'yu winget ile kurar. yt-dlp ile `.venv` oluşturur. |
-| `update.ps1` | Otomatik güncelleyici. GitHub'dan yeni sürümleri indirir, kullanıcı verilerini korur. |
+| `Run.bat` / `run.sh` | Tek tıkla başlatma (Windows / Linux, macOS). Güncelleme kontrolü yapar, taşınabilir çalışma ortamını kurar veya yeniler, uygulamayı başlatır. |
+| `install.ps1` / `install.sh` | Taşınabilir çalışma ortamını `runtime/` içine kurar (macOS: Homebrew + `.venv`). Tekrar çalıştırmak güvenlidir. |
+| `update.ps1` / `update.sh` | Otomatik güncelleyici. GitHub'dan yeni sürümleri indirir; `config.json`, `archives/`, `logs/`, `runtime/`, `cache/` ve `downloads/` korunur. |
+| `runtime.lock` | Taşınabilir Python, ffmpeg ve Deno için sabitlenmiş adresler ve SHA-256 değerleri. |
 | `downloader.py` | `ytdlp_app.app.run()` fonksiyonunu çağıran giriş noktası. |
 | `ytdlp_app/` | Modüler bileşenli Python paketi (aşağıya bakın). |
 
@@ -168,28 +238,32 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, 
 | `config.py` | Yapılandırma yükleme/kaydetme, interaktif klasör kurulumu |
 | `ui.py` | Stilize paneller ve menüler sunan konsol arayüzü |
 | `yt_dlp.py` | yt-dlp argümanlarını oluşturan CommandBuilder sınıfı |
-| `exec.py` | Çıktı akışı ve loglama ile komut yürütme |
-
-| `playlist.py` | Playlist algılama, öğe çekme, arşiv okuma |
+| `exec.py` | Çıktı akışı, loglama ve 429/bot ban koruması ile komut yürütme |
+| `playlist.py` | Playlist ve kanal algılama, kanal kimliği sorgulama, öğe çekme, arşiv okuma |
 | `skip_probe.py` | Atlanan öğeleri atlama nedenini belirlemek için sorgular |
 | `logging_utils.py` | Renkli çıktı ile loglama yardımcıları |
-| `system.py` | ffmpeg, yt-dlp, deno kullanılabilirliğini kontrol eder |
+| `system.py` | yt-dlp, ffmpeg ve Deno'nun yerini bulur |
+| `portable.py` | Taşınabilir çalışma ortamı kurulumu (`python -m ytdlp_app.portable ensure / update-ytdlp / status`) |
 | `models.py` | Yollar, yapılandırma, girdiler ve indirme planları için veri sınıfları |
 
 ### Gereksinimler
-- Python 3.11 veya üzeri
-- Winget (Windows Uygulama Yükleyicisi) ile Windows 10/11, veya apt/dnf/pacman/brew ile Linux/macOS
-- Kurulum ve indirmeler için internet bağlantısı
+- **Windows**: 64 bit Windows 10 (1803 veya üzeri) ya da Windows 11. Başka bir şey gerekmez.
+- **Linux**: glibc'li x86_64 veya aarch64 (Alpine/musl değil), ayrıca `curl` veya `wget`, `tar` ve `sha256sum` (hemen her dağıtımda bulunur).
+- **macOS**: Homebrew; Python 3.11+ yoksa onunla kurulur.
+- İlk açılış ve indirmeler için internet bağlantısı
 
 ### Sorun giderme
 | Sorun | Çözüm |
 |-------|-------|
-| Kurulum başarısız | `Run.bat`'i Yönetici olarak çalıştır (Windows). Paket yöneticisi ve internet erişimini doğrula. |
-| yt-dlp/ffmpeg bulunamıyor | `install.ps1` (Windows) veya `install.sh` (Linux/macOS) dosyasını tekrar çalıştır, ya da kurulumdan sonra yeni bir terminal aç. |
+| İlk kurulum başarısız | İnternet bağlantısını kontrol edip `Run.bat` / `./run.sh`'i yeniden çalıştır; kaldığı yerden devam eder, yalnızca eksikleri indirir. Yönetici izni gerekmez. |
+| "Checksum mismatch" | İndirilen dosya bozulmuş ya da değiştirilmiş ve silindi. Tekrar dene; sürerse bildir. |
+| yt-dlp/ffmpeg bulunamıyor | `install.ps1` (Windows) veya `./install.sh` (Linux/macOS) dosyasını tekrar çalıştır. |
+| YouTube değişikliğinden sonra video inmiyor | yt-dlp'yi güncelle: `runtime/python/python -m ytdlp_app.portable update-ytdlp`. |
 | İndirme klasörlerini değiştir | URL isteminde `s` yaz ve değiştirmek istediğin klasörü seç. |
 | Arayüz dilini değiştir | URL isteminde `s` yaz ve "Arayuz dili" seçeneğini seç. |
 | Yeniden indirmeyi zorla | `archives/` içindeki ilgili arşiv dosyasını sil. |
-| Deno uyarısı görünüyor | Deno kur: `winget install DenoLand.Deno` veya `install.ps1`'i yeniden çalıştır. |
+| Arşiv "YouTube istekleri gecici olarak engelliyor" ile durdu | Birkaç saat bekle ve aynı URL'yi tekrar gir; kaldığı yerden devam eder. Arşiv bekleme sürelerini artırmayı (`s` → *Arsiv modu bekleme sureleri*) veya proxy kullanmayı düşün. |
+| Deno uyarısı görünüyor | `install.ps1` / `./install.sh`'i yeniden çalıştır (macOS: `brew install deno`). |
 
 ### Lisans
 Detaylar için [LICENSE](LICENSE) dosyasına bakın.

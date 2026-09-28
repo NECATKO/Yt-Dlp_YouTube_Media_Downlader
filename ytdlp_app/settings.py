@@ -55,6 +55,16 @@ class DownloadSettings:
             "--max-sleep-interval",
             str(self.max_sleep_interval),
         ]
+        args.extend(self.network_args())
+        return args
+
+    def network_args(self) -> list[str]:
+        """Return only the rate limit and proxy arguments.
+
+        Archive mode has its own retry and pacing policy but must still honor
+        these two, so they are exposed separately.
+        """
+        args: list[str] = []
 
         if self.rate_limit:
             args.extend(["--limit-rate", self.rate_limit])
@@ -150,6 +160,93 @@ class VideoSettings:
         return args
 
 
+def _as_number(value: Any, default: float) -> float:
+    """Coerce a config value to a non-negative number, or fall back.
+
+    config.json is hand-editable, and a string or negative value here would
+    otherwise reach yt-dlp as an argument it rejects.
+    """
+    if isinstance(value, bool):
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number >= 0 else default
+
+
+def _format_seconds(value: float) -> str:
+    """Render seconds without a trailing ".0", so 15.0 reaches yt-dlp as "15"."""
+    return f"{value:g}"
+
+
+@dataclass
+class ArchiveSettings:
+    """Pacing for archive mode, tuned to stay under YouTube's rate limits.
+
+    Archive mode walks an entire channel and requests several extra files per
+    video (description, info JSON, thumbnail, subtitles), so it waits far longer
+    than the regular modes. Only the waits are configurable; the retry count is
+    fixed on purpose, because retrying forever against a rate limit is what
+    turns a temporary block into a longer one.
+
+    Attributes:
+        sleep_requests: Seconds to wait between metadata/API requests.
+        sleep_interval: Minimum seconds to wait before each video download.
+        max_sleep_interval: Maximum seconds to wait before each video download.
+        sleep_subtitles: Seconds to wait before each subtitle download.
+    """
+
+    #: Retries per download and per fragment. Deliberately not "infinite".
+    RETRIES = 10
+
+    sleep_requests: float = 1.5
+    sleep_interval: float = 15
+    max_sleep_interval: float = 45
+    sleep_subtitles: float = 5
+
+    def to_args(self) -> list[str]:
+        """Convert the pacing and retry policy to yt-dlp arguments."""
+        # yt-dlp rejects a sleep window whose upper bound is below its lower one.
+        max_sleep = max(self.max_sleep_interval, self.sleep_interval)
+        return [
+            "--sleep-requests",
+            _format_seconds(self.sleep_requests),
+            "--sleep-interval",
+            _format_seconds(self.sleep_interval),
+            "--max-sleep-interval",
+            _format_seconds(max_sleep),
+            "--sleep-subtitles",
+            _format_seconds(self.sleep_subtitles),
+            "--retries",
+            str(self.RETRIES),
+            "--fragment-retries",
+            str(self.RETRIES),
+        ]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ArchiveSettings:
+        """Create archive settings, replacing unusable values with defaults."""
+        defaults = cls()
+        return cls(
+            sleep_requests=_as_number(data.get("sleep_requests"), defaults.sleep_requests),
+            sleep_interval=_as_number(data.get("sleep_interval"), defaults.sleep_interval),
+            max_sleep_interval=_as_number(
+                data.get("max_sleep_interval"), defaults.max_sleep_interval
+            ),
+            sleep_subtitles=_as_number(data.get("sleep_subtitles"), defaults.sleep_subtitles),
+        )
+
+    def to_dict(self) -> dict[str, float]:
+        """Convert archive settings to a dictionary."""
+        return {
+            "sleep_requests": self.sleep_requests,
+            "sleep_interval": self.sleep_interval,
+            "max_sleep_interval": self.max_sleep_interval,
+            "sleep_subtitles": self.sleep_subtitles,
+        }
+
+
 @dataclass
 class OutputSettings:
     """Settings for output file naming and organization.
@@ -159,12 +256,18 @@ class OutputSettings:
         single_audio_template: Output template for single audio downloads.
         playlist_video_template: Output template for playlist video downloads.
         playlist_audio_template: Output template for playlist audio downloads.
+        archive_template: Output template for archive mode, relative to the
+            videos folder's yt-dlp directory. Every video gets its own folder
+            so its description, info JSON, thumbnail and subtitles stay together.
     """
 
     single_video_template: str = "%(title)s.%(ext)s"
     single_audio_template: str = "%(title)s.%(ext)s"
     playlist_video_template: str = "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s"
     playlist_audio_template: str = "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s"
+    archive_template: str = (
+        "%(channel)s/%(upload_date)s - %(title).80B [%(id)s]/%(title).80B.%(ext)s"
+    )
 
 
 @dataclass
@@ -180,12 +283,14 @@ class AppSettings:
         audio: Audio extraction settings.
         video: Video download settings.
         output: Output template settings.
+        archive: Archive mode pacing.
     """
 
     download: DownloadSettings = field(default_factory=DownloadSettings)
     audio: AudioSettings = field(default_factory=AudioSettings)
     video: VideoSettings = field(default_factory=VideoSettings)
     output: OutputSettings = field(default_factory=OutputSettings)
+    archive: ArchiveSettings = field(default_factory=ArchiveSettings)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppSettings:
@@ -237,6 +342,7 @@ class AppSettings:
         # Output settings
         if "output" in data:
             ou = data["output"]
+            defaults = OutputSettings()
             settings.output = OutputSettings(
                 single_video_template=ou.get("single_video_template", "%(title)s.%(ext)s"),
                 single_audio_template=ou.get("single_audio_template", "%(title)s.%(ext)s"),
@@ -248,7 +354,12 @@ class AppSettings:
                     "playlist_audio_template",
                     "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s",
                 ),
+                archive_template=ou.get("archive_template", defaults.archive_template),
             )
+
+        # Archive settings
+        if isinstance(data.get("archive"), dict):
+            settings.archive = ArchiveSettings.from_dict(data["archive"])
 
         return settings
 
@@ -287,5 +398,7 @@ class AppSettings:
                 "single_audio_template": self.output.single_audio_template,
                 "playlist_video_template": self.output.playlist_video_template,
                 "playlist_audio_template": self.output.playlist_audio_template,
+                "archive_template": self.output.archive_template,
             },
+            "archive": self.archive.to_dict(),
         }

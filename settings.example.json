@@ -28,7 +28,14 @@
       "single_video_template": "%(title)s.%(ext)s",
       "single_audio_template": "%(title)s.%(ext)s",
       "playlist_video_template": "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s",
-      "playlist_audio_template": "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s"
+      "playlist_audio_template": "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s",
+      "archive_template": "%(channel)s/%(upload_date)s - %(title).80B [%(id)s]/%(title).80B.%(ext)s"
+    },
+    "archive": {
+      "sleep_requests": 1.5,
+      "sleep_interval": 15,
+      "max_sleep_interval": 45,
+      "sleep_subtitles": 5
     }
   }
 }
