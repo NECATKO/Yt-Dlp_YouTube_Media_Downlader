@@ -6,7 +6,7 @@ import pytest
 
 from ytdlp_app.models import DownloadMode
 from ytdlp_app.settings import AppSettings
-from ytdlp_app.yt_dlp import CommandBuilder
+from ytdlp_app.yt_dlp import PLUGINS_DIR, CommandBuilder
 
 URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
@@ -180,6 +180,10 @@ ARCHIVE_DEFAULT_PREFIX = [
     "srt",
     "--embed-metadata",
     "--embed-chapters",
+    "--plugin-dirs",
+    str(PLUGINS_DIR),
+    "--use-postprocessor",
+    "OriginalSubsOnly:when=video",
     "--sleep-requests",
     "1.5",
     "--sleep-interval",

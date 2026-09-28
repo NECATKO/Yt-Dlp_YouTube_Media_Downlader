@@ -6,13 +6,10 @@ arguments for various download modes (MP4, MP3, archive) and quality profiles.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from .models import DownloadMode
 from .settings import AppSettings
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 #: Archive mode keeps everything a channel publishes that could be lost with it:
 #: the video (capped at 1080p to bound disk use), its description, the raw
@@ -34,6 +31,20 @@ ARCHIVE_CONTENT_ARGS = [
     "--embed-metadata",
     "--embed-chapters",
 ]
+
+#: Holds the yt-dlp plugin that drops YouTube's machine-translated subtitles.
+#: See plugins/original_subs for why --sub-langs alone cannot exclude them.
+PLUGINS_DIR = Path(__file__).parent / "plugins"
+
+
+def original_subs_args() -> list[str]:
+    """Build the arguments that restrict archive mode to original subtitles."""
+    return [
+        "--plugin-dirs",
+        str(PLUGINS_DIR),
+        "--use-postprocessor",
+        "OriginalSubsOnly:when=video",
+    ]
 
 
 def js_runtime_args(use_deno: bool) -> list[str]:
@@ -188,6 +199,7 @@ class CommandBuilder:
         return [
             "yt-dlp",
             *ARCHIVE_CONTENT_ARGS,
+            *original_subs_args(),
             *self.settings.archive.to_args(),
             *self.settings.download.network_args(),
             *self.js_args,

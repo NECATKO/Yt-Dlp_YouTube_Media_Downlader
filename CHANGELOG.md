@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - yt-dlp's and Deno's caches are kept in `cache/` instead of the user profile.
   - New installs download into `downloads/` next to the program, and any folder inside the program folder is stored relative in `config.json`, so it follows the folder.
 - **Archive mode** — a third option next to MP4 and MP3, for preserving a channel that may be deleted. For every video it keeps the video (up to 1080p, merged into MKV with chapters and metadata), the description, the info JSON, the thumbnail, and uploaded plus auto-generated Turkish/English subtitles converted to SRT, each video in its own folder under `<Videos>/yt-dlp/<channel>/`.
+  - Only subtitles that exist on YouTube are kept. YouTube machine-translates every auto-generated subtitle on request, and `--sub-langs tr.*` on an English video would otherwise also fetch that Turkish translation; a bundled yt-dlp plugin (`ytdlp_app/plugins`) drops those entries before anything is downloaded. These translations were also the first requests YouTube rate limited.
   - A channel URL (`/@handle`, `/channel/UC…`, `/c/…`, `/user/…`, or one of its tabs) is archived whole: yt-dlp's nested Videos/Shorts/Live playlists are all downloaded, and the playlist-or-video question is skipped.
   - The download archive is `archives/channel_<channel_id>_archive.txt`, keyed by the real channel id (looked up with one flat request), so every URL form of a channel resumes the same archive.
   - Paced to stay under YouTube's limits: `--sleep-requests 1.5`, `--sleep-interval 15`, `--max-sleep-interval 45`, `--sleep-subtitles 5`, and 10 retries instead of infinite. The waits are editable from the settings menu (*Archive mode waits*) and stored under `settings.archive` in `config.json`; the speed limit and proxy still apply.
@@ -38,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AppSettings` drops `use_deno`, `default_mode`, `default_mp4_profile`, and `language`: the first three are detected or asked for interactively, and the language lives at the top level of `config.json` because it must resolve before the settings load.
 - `DownloadPlan` drops four argument fields that were built every cycle and never read; its profile fields are typed as the enums they are compared against.
 - Removed `is_supported_url`, which computed a hostname and then unconditionally returned `True`, and eleven locale keys describing a status UI that was never built.
+- yt-dlp 2025.03.21 or newer is now required, for the `--plugin-dirs` behavior archive mode's subtitle plugin relies on.
 
 ## [0.3.1] - 2026-07-28
 
@@ -165,6 +167,7 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
   - yt-dlp ve Deno önbellekleri kullanıcı profili yerine `cache/` içinde tutulur.
   - Yeni kurulumlar programın yanındaki `downloads/` klasörüne indirir; program klasörünün içindeki her klasör `config.json`'a göreli yazılır, böylece klasörle birlikte taşınır.
 - **Arşiv modu** — silinme riski olan bir kanalı korumak için MP4 ve MP3'ün yanında üçüncü seçenek. Her video için videoyu (1080p'ye kadar, bölümler ve metadata gömülü MKV), açıklamayı, info JSON'u, kapak resmini ve Türkçe/İngilizce yüklenmiş + otomatik altyazıları (SRT'ye dönüştürülmüş) saklar; her video `<Videos>/yt-dlp/<kanal>/` altında kendi klasöründedir.
+  - Yalnızca YouTube'da gerçekten var olan altyazılar saklanır. YouTube her otomatik altyazıyı istek üzerine makineyle çevirir; `--sub-langs tr.*` İngilizce bir videoda bu Türkçe çeviriyi de indirirdi. Programla gelen bir yt-dlp eklentisi (`ytdlp_app/plugins`) bu girdileri indirme başlamadan çıkarır. YouTube'un ilk hız sınırına takılan istekler de bu çevirilerdi.
   - Kanal URL'si (`/@handle`, `/channel/UC…`, `/c/…`, `/user/…` ya da sekmelerinden biri) bütünüyle arşivlenir: yt-dlp'nin iç içe Videos/Shorts/Live playlist'lerinin hepsi indirilir ve "tüm liste mi bu video mu" sorusu atlanır.
   - İndirme arşivi `archives/channel_<channel_id>_archive.txt` dosyasıdır ve gerçek kanal kimliğiyle adlandırılır (tek bir düz istekle öğrenilir); böylece bir kanalın her URL biçimi aynı arşivden devam eder.
   - YouTube sınırlarının altında kalacak tempo: `--sleep-requests 1.5`, `--sleep-interval 15`, `--max-sleep-interval 45`, `--sleep-subtitles 5` ve sonsuz yerine 10 deneme. Bekleme süreleri ayarlar menüsünden (*Arsiv modu bekleme sureleri*) değiştirilebilir ve `config.json` içinde `settings.archive` altında saklanır; hız sınırı ve proxy bu modda da geçerlidir.
@@ -189,6 +192,7 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
 - `AppSettings`'ten `use_deno`, `default_mode`, `default_mp4_profile` ve `language` kaldırıldı: ilk üçü otomatik algılanıyor veya kullanıcıya soruluyor, dil ise ayarlardan önce çözülmesi gerektiği için `config.json`'un üst seviyesinde duruyor.
 - `DownloadPlan`'dan her döngüde doldurulup hiç okunmayan dört argüman alanı kaldırıldı; profil alanları karşılaştırıldıkları enum türleriyle tiplendi.
 - Bir alan adı hesaplayıp koşulsuz `True` dönen `is_supported_url` ve hiç yapılmamış bir durum arayüzünü tarif eden on bir çeviri anahtarı silindi.
+- Arşiv modunun altyazı eklentisinin dayandığı `--plugin-dirs` davranışı için artık yt-dlp 2025.03.21 veya daha yenisi gerekiyor.
 
 ## [0.3.1] - 2026-07-28
 
