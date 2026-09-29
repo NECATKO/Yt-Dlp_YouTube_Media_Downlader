@@ -312,7 +312,7 @@ Beklenen: FAIL, `assert ['videos-tab', 'shorts-tab'] == ['vid1', 'vid2', 'sh1']`
 
 `ytdlp_app/models.py` içinde `PlaylistEntry`:
 
-```python
+```text
     Attributes:
         playlist_index: 1-based position in the playlist.
         id: Video/audio identifier (e.g., YouTube video ID).
@@ -1521,7 +1521,7 @@ def _as_max_height(value: Any, default: int | None) -> int | None:
 - Alan: `max_height: int | None = 1080` (`sleep_subtitles: float = 5` altına).
 - Yeni metot (`to_args`'ın altına):
 
-```python
+```text
     def listing_args(self) -> list[str]:
         """Arguments for the playlist listing: only the wait between requests.
 
@@ -1533,15 +1533,15 @@ def _as_max_height(value: Any, default: int | None) -> int | None:
 
 - `from_dict` içinde `return cls(...)`'a ekle:
 
-```python
-max_height = (_as_max_height(data.get("max_height", defaults.max_height), defaults.max_height),)
+```text
+            max_height=_as_max_height(data.get("max_height", defaults.max_height), defaults.max_height),
 ```
 - `to_dict` dönüş tipini `dict[str, float | None]` yap ve sözlüğe `"max_height": self.max_height,` ekle.
 
 `AppSettings.from_dict` video bloğuna (`write_subtitles=...` satırının altına):
 
-```python
-max_height = (_as_max_height(vi.get("max_height"), None),)
+```text
+                max_height=_as_max_height(vi.get("max_height"), None),
 ```
 `AppSettings.to_dict` `"video"` sözlüğüne: `"max_height": self.video.max_height,`.
 
@@ -1556,40 +1556,37 @@ _HEIGHT_CHOICES: tuple[int | None, ...] = (1080, 1440, 2160, None)
 
 `_entries` listesine `settings_archive` girişinin altına ekle:
 
-```python
-((t("settings_video_height"), self._edit_video_height),)
-((t("settings_archive_height"), self._edit_archive_height),)
+```text
+            (t("settings_video_height"), self._edit_video_height),
+            (t("settings_archive_height"), self._edit_archive_height),
 ```
 
 Yeni metotlar (`_edit_archive`'in altına, sınıf içinde):
 
-```python
-def _height_label(self, height: int | None, current: int | None) -> str:
-    label = t("resolution_unlimited") if height is None else t("resolution_option", height=height)
-    return t("resolution_default_mark", label=label) if height == current else label
+```text
+    def _height_label(self, height: int | None, current: int | None) -> str:
+        label = t("resolution_unlimited") if height is None else t("resolution_option", height=height)
+        return t("resolution_default_mark", label=label) if height == current else label
 
+    def _pick_height(self, label: str, current: int | None) -> int | None:
+        """Ask for a resolution cap; the current one is marked as the default."""
+        self._prompt_header(
+            label,
+            t("resolution_unlimited") if current is None else t("resolution_option", height=current),
+            "",
+        )
+        options = [self._height_label(h, current) for h in _HEIGHT_CHOICES]
+        return _HEIGHT_CHOICES[self.ui.pick(label, options) - 1]
 
-def _pick_height(self, label: str, current: int | None) -> int | None:
-    """Ask for a resolution cap; the current one is marked as the default."""
-    self._prompt_header(
-        label,
-        t("resolution_unlimited") if current is None else t("resolution_option", height=current),
-        "",
-    )
-    options = [self._height_label(h, current) for h in _HEIGHT_CHOICES]
-    return _HEIGHT_CHOICES[self.ui.pick(label, options) - 1]
+    def _edit_video_height(self) -> None:
+        video = self.settings.video
+        video.max_height = self._pick_height(t("settings_video_height"), video.max_height)
+        self._persist()
 
-
-def _edit_video_height(self) -> None:
-    video = self.settings.video
-    video.max_height = self._pick_height(t("settings_video_height"), video.max_height)
-    self._persist()
-
-
-def _edit_archive_height(self) -> None:
-    archive = self.settings.archive
-    archive.max_height = self._pick_height(t("settings_archive_height"), archive.max_height)
-    self._persist()
+    def _edit_archive_height(self) -> None:
+        archive = self.settings.archive
+        archive.max_height = self._pick_height(t("settings_archive_height"), archive.max_height)
+        self._persist()
 ```
 
 `_pick_height` içindeki `_prompt_header` FakeUI'da `ui.print` kullanır (pick değil), test sırasını bozmaz.
@@ -1629,8 +1626,8 @@ git commit -m "feat: add the max_height resolution cap to the settings" -m "Co-A
 
 `tests/test_yt_dlp.py` içinde sabit `ARCHIVE_DEFAULT_PREFIX`'teki seçiciyi güncelle (bilinçli değişiklik: sınır artık yedeğe de uygulanıyor):
 
-```python
-("bv*[height<=1080]+ba/b[height<=1080]",)
+```text
+    "bv*[height<=1080]+ba/b[height<=1080]",
 ```
 
 İmport bloğunu genişlet: `from ytdlp_app.yt_dlp import PLUGINS_DIR, CommandBuilder, compat_stage1_format, video_format`. Dosyanın sonuna ekle:
@@ -1788,7 +1785,7 @@ Beklenen: `ImportError` (`video_format`, `compat_stage1_format`).
 
 `ARCHIVE_CONTENT_ARGS`'tan `"-f",` ve `"bv*[height<=1080]+ba/b",` satırlarını sil; docstring'i güncelle:
 
-```python
+```text
 #: Archive mode keeps everything a channel publishes that could be lost with it:
 #: the video (capped by the archive resolution limit, 1080p by default, to bound
 #: disk use), its description, the raw metadata, the thumbnail, and both uploaded
@@ -1826,7 +1823,7 @@ def compat_stage1_format(max_height: int | None) -> str:
 
 `CommandBuilder.__init__` sonuna (`self.settings = ...` altına):
 
-```python
+```text
         # The cap chosen for this download, once the user has been asked. Until
         # then each mode uses the default saved in the settings.
         self._max_height: int | None = None
@@ -1835,18 +1832,17 @@ def compat_stage1_format(max_height: int | None) -> str:
 
 Yeni metotlar (`js_args` özelliğinin üstüne):
 
-```python
-def set_max_height(self, max_height: int | None) -> None:
-    """Apply the resolution cap chosen for this download (None = no cap).
+```text
+    def set_max_height(self, max_height: int | None) -> None:
+        """Apply the resolution cap chosen for this download (None = no cap).
 
-    Overrides the default saved in the settings for this builder only.
-    """
-    self._max_height = max_height
-    self._has_max_height = True
+        Overrides the default saved in the settings for this builder only.
+        """
+        self._max_height = max_height
+        self._has_max_height = True
 
-
-def _cap(self, saved: int | None) -> int | None:
-    return self._max_height if self._has_max_height else saved
+    def _cap(self, saved: int | None) -> int | None:
+        return self._max_height if self._has_max_height else saved
 ```
 
 Komut metotlarında:
@@ -1854,7 +1850,7 @@ Komut metotlarında:
 - `build_mp4_compatibility_stage2`, `build_mp4_quality_mkv`, `build_mp4_quality_remux`: `"bv*+ba/b"` yerine `video_format(self._cap(self.settings.video.max_height))`.
 - `build_archive`: listeyi şöyle başlat:
 
-```python
+```text
         return [
             "yt-dlp",
             "-f",
@@ -3136,34 +3132,32 @@ class TestArchive:
 2. `test_single_video`: `resolve_channel_id` monkeypatch satırını sil; `ScriptedUI([ARCHIVE, EXIT])` → `ScriptedUI([ARCHIVE, 1, EXIT])` (arşiv tek videoda çözünürlük sorusu 1080p = varsayılan, ikinci soru yok).
 3. `test_channel_uses_the_resolved_channel_id` → adı `test_channel_uses_the_channel_id_from_the_listing`; gövde:
 
-```python
-ui = ScriptedUI([ARCHIVE, 1, EXIT])
-runner = Recorder()
-lookups: list[tuple[str, list[str]]] = []
+```text
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
+        runner = Recorder()
+        lookups: list[tuple[str, list[str]]] = []
 
+        def fake_listing(url: str, extra_args: list[str], _runner: Any) -> PlaylistListing:
+            lookups.append((url, extra_args))
+            return PlaylistListing(entries=[], channel_id=CHANNEL_ID)
 
-def fake_listing(url: str, extra_args: list[str], _runner: Any) -> PlaylistListing:
-    lookups.append((url, extra_args))
-    return PlaylistListing(entries=[], channel_id=CHANNEL_ID)
+        monkeypatch.setattr(session_module, "fetch_listing", fake_listing)
+        session = _session(monkeypatch, tmp_path, paths, ui, CHANNEL_URL, runner)
+        session.settings.download.proxy = "http://proxy:3128"
 
+        assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
 
-monkeypatch.setattr(session_module, "fetch_listing", fake_listing)
-session = _session(monkeypatch, tmp_path, paths, ui, CHANNEL_URL, runner)
-session.settings.download.proxy = "http://proxy:3128"
-
-assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
-
-cmd = runner.calls[0]["cmd"]
-assert "--yes-playlist" in cmd
-assert cmd[cmd.index("--download-archive") + 1] == str(
-    paths.archives_dir / f"channel_{CHANNEL_ID}_archive.txt"
-)
-# The listing goes through the same proxy as the download, with the archive's request wait.
-((url, extra_args),) = lookups
-assert url == CHANNEL_URL
-assert "http://proxy:3128" in extra_args
-assert extra_args[extra_args.index("--sleep-requests") + 1] == "1.5"
-assert t("prompt_playlist") not in ui.prompts
+        cmd = runner.calls[0]["cmd"]
+        assert "--yes-playlist" in cmd
+        assert cmd[cmd.index("--download-archive") + 1] == str(
+            paths.archives_dir / f"channel_{CHANNEL_ID}_archive.txt"
+        )
+        # The listing goes through the same proxy as the download, with the archive's request wait.
+        ((url, extra_args),) = lookups
+        assert url == CHANNEL_URL
+        assert "http://proxy:3128" in extra_args
+        assert extra_args[extra_args.index("--sleep-requests") + 1] == "1.5"
+        assert t("prompt_playlist") not in ui.prompts
 ```
 4. `test_lookup_failure_falls_back_to_the_handle`: `failing_resolve` → `failing_listing` (`def failing_listing(*_args: Any) -> PlaylistListing: raise PlaylistError(...)`), `monkeypatch.setattr(session_module, "fetch_listing", failing_listing)`, picks `[ARCHIVE, 1, EXIT]`; ek assert: `assert t("estimate_unavailable") in ui.text()`.
 5. `TestBanProtection.test_ban_during_download_explains_how_to_resume` ve `test_ban_can_return_to_the_prompt`: `ScriptedUI([ARCHIVE])` → `ScriptedUI([ARCHIVE, 1])` (indirmeden önce çözünürlük sorusu sorulur).
@@ -3173,7 +3167,7 @@ assert t("prompt_playlist") not in ui.prompts
 
 `tests/test_playlist.py`: `TestResolveChannelId` sınıfının **tamamını** sil ve `resolve_channel_id` import'unu kaldır; eşdeğer davranış Görev 2'de `TestFetchListing` (`test_channel_id_is_read_from_the_listing`, `test_channel_id_in_the_url_wins`) ile kapsanıyor. `_nested_channel_json` yardımcısı `TestFetchListing` tarafından kullanılıyor, kalır. Ek olarak ekle (eski "iç içe sekmeden kimlik" testinin karşılığı):
 
-```python
+```text
     def test_channel_id_falls_back_to_the_nested_entries(self) -> None:
         data = _nested_channel_json(top_level_id=False)
         listing = fetch_listing(
@@ -3196,7 +3190,7 @@ Import'lar (`ruff check --fix` ile sırala; kullanılmayanları ruff raporlar):
 
 `_archive_file_name`'i tamamen değiştir:
 
-```python
+```text
     def _archive_file_name(
         self,
         url: str,
@@ -3230,38 +3224,38 @@ Import'lar (`ruff check --fix` ile sırala; kullanılmayanları ruff raporlar):
 
 Yeni yardımcılar (`report_ban`'ın altına):
 
-```python
-def _stop_after_ban(self) -> CycleOutcome:
-    """Report a ban and let the user choose between exiting and a new URL."""
-    self.report_ban()
-    if self.ui.prompt_exit_on_failure():
-        return CycleOutcome.EXIT_FAILURE
-    return CycleOutcome.CONTINUE
+```text
+    def _stop_after_ban(self) -> CycleOutcome:
+        """Report a ban and let the user choose between exiting and a new URL."""
+        self.report_ban()
+        if self.ui.prompt_exit_on_failure():
+            return CycleOutcome.EXIT_FAILURE
+        return CycleOutcome.CONTINUE
 
+    def _list_playlist(
+        self, fetch: Callable[[], _T], *, archive_mode: bool
+    ) -> GuardedListing[_T]:
+        """Warn that reading a big listing is slow, then run the request."""
+        warning = t("preflight_listing_warning")
+        if archive_mode:
+            wait = f"{self.settings.archive.sleep_requests:g}"
+            warning += t("preflight_listing_warning_wait", seconds=wait)
+        self.ui.print(paint(warning, Colors.CYAN))
+        return guarded_listing(fetch, self.log_path)
 
-def _list_playlist(self, fetch: Callable[[], _T], *, archive_mode: bool) -> GuardedListing[_T]:
-    """Warn that reading a big listing is slow, then run the request."""
-    warning = t("preflight_listing_warning")
-    if archive_mode:
-        wait = f"{self.settings.archive.sleep_requests:g}"
-        warning += t("preflight_listing_warning_wait", seconds=wait)
-    self.ui.print(paint(warning, Colors.CYAN))
-    return guarded_listing(fetch, self.log_path)
-
-
-def _persist_default_height(self, mode: DownloadMode, height: int | None) -> None:
-    """Save a resolution cap as the default for its mode."""
-    if mode == DownloadMode.ARCHIVE:
-        self.settings.archive.max_height = height
-    else:
-        self.settings.video.max_height = height
-    save_settings(self.paths.config_file, self.cfg, self.settings)
+    def _persist_default_height(self, mode: DownloadMode, height: int | None) -> None:
+        """Save a resolution cap as the default for its mode."""
+        if mode == DownloadMode.ARCHIVE:
+            self.settings.archive.max_height = height
+        else:
+            self.settings.video.max_height = height
+        save_settings(self.paths.config_file, self.cfg, self.settings)
 ```
 
 `_process_one_cycle` adım 6, arşiv dalı (eski blok → yeni blok):
 
 eski:
-```python
+```text
         templates = self.settings.output
         if archive_mode:
             base_dir = self.config.videos_dir / "yt-dlp"
@@ -3275,7 +3269,7 @@ eski:
             archive_path = self.paths.archives_dir / archive_name
 ```
 yeni:
-```python
+```text
         templates = self.settings.output
         listing: PlaylistListing | None = None
         if archive_mode:
@@ -3305,7 +3299,7 @@ yeni:
 Adım 8 ve 9 (eski blok → yeni blok):
 
 eski:
-```python
+```text
         # 8) Playlist mapping. Archive mode skips it: the listing exists only for
         # the skip report, whose per-item probes are exactly the kind of extra
         # traffic archive mode avoids.
@@ -3330,60 +3324,62 @@ eski:
             return CycleOutcome.CONTINUE
 ```
 yeni:
-```python
-# 8) Playlist listing. Archive mode already listed in step 6, and never
-# runs the skip report, whose per-item probes are exactly the kind of
-# extra traffic archive mode avoids.
-entries: list[PlaylistEntry] = []
-estimate_entries: list[PlaylistEntry] | None = None
-if archive_mode:
-    estimate_entries = listing.entries if listing is not None else None
-elif plan.is_playlist:
-    guarded_entries = self._list_playlist(
-        lambda: fetch_playlist_entries(plan.url, plan.js_args, run_capture),
-        archive_mode=False,
-    )
-    if guarded_entries.status is ListingStatus.INTERRUPTED:
-        return CycleOutcome.INTERRUPTED
-    if guarded_entries.status is ListingStatus.BAN:
-        return self._stop_after_ban()
-    if guarded_entries.status is ListingStatus.FAILED:
-        self.ui.print(f"{t('playlist_fetch_failed')}\n{guarded_entries.error}\n")
-        if self.ui.prompt_exit_on_failure():
-            return CycleOutcome.EXIT_FAILURE
-    else:
-        entries = guarded_entries.value or []
-        estimate_entries = entries
+```text
+        # 8) Playlist listing. Archive mode already listed in step 6, and never
+        # runs the skip report, whose per-item probes are exactly the kind of
+        # extra traffic archive mode avoids.
+        entries: list[PlaylistEntry] = []
+        estimate_entries: list[PlaylistEntry] | None = None
+        if archive_mode:
+            estimate_entries = listing.entries if listing is not None else None
+        elif plan.is_playlist:
+            guarded_entries = self._list_playlist(
+                lambda: fetch_playlist_entries(plan.url, plan.js_args, run_capture),
+                archive_mode=False,
+            )
+            if guarded_entries.status is ListingStatus.INTERRUPTED:
+                return CycleOutcome.INTERRUPTED
+            if guarded_entries.status is ListingStatus.BAN:
+                return self._stop_after_ban()
+            if guarded_entries.status is ListingStatus.FAILED:
+                self.ui.print(f"{t('playlist_fetch_failed')}\n{guarded_entries.error}\n")
+                if self.ui.prompt_exit_on_failure():
+                    return CycleOutcome.EXIT_FAILURE
+            else:
+                entries = guarded_entries.value or []
+                estimate_entries = entries
 
-# 8b) Size estimate, resolution cap and free-space check.
-preflight = run_preflight(
-    PreflightRequest(
-        mode=mode,
-        is_playlist=plan.is_playlist,
-        entries=estimate_entries,
-        archived_ids=(
-            frozenset(read_archive_ids(archive_path)) if plan.is_playlist else frozenset()
-        ),
-        mp4_profile=mp4_profile,
-        base_dir=base_dir,
-        log_path=log_path,
-    ),
-    ui=self.ui,
-    settings=self.settings,
-    persist_default=lambda height: self._persist_default_height(mode, height),
-    measure=measure_speed,
-    disk_free=free_bytes,
-)
-if preflight.action is PreflightAction.CANCEL:
-    return CycleOutcome.CONTINUE
-cmd_builder.set_max_height(preflight.max_height)
+        # 8b) Size estimate, resolution cap and free-space check.
+        preflight = run_preflight(
+            PreflightRequest(
+                mode=mode,
+                is_playlist=plan.is_playlist,
+                entries=estimate_entries,
+                archived_ids=(
+                    frozenset(read_archive_ids(archive_path))
+                    if plan.is_playlist
+                    else frozenset()
+                ),
+                mp4_profile=mp4_profile,
+                base_dir=base_dir,
+                log_path=log_path,
+            ),
+            ui=self.ui,
+            settings=self.settings,
+            persist_default=lambda height: self._persist_default_height(mode, height),
+            measure=measure_speed,
+            disk_free=free_bytes,
+        )
+        if preflight.action is PreflightAction.CANCEL:
+            return CycleOutcome.CONTINUE
+        cmd_builder.set_max_height(preflight.max_height)
 
-# 9) DOWNLOAD
-final_rc = self._execute_download(plan, cmd_builder)
-if final_rc == 130:
-    return CycleOutcome.INTERRUPTED
-if final_rc == BAN_RETURN_CODE:
-    return self._stop_after_ban()
+        # 9) DOWNLOAD
+        final_rc = self._execute_download(plan, cmd_builder)
+        if final_rc == 130:
+            return CycleOutcome.INTERRUPTED
+        if final_rc == BAN_RETURN_CODE:
+            return self._stop_after_ban()
 ```
 
 `playlist.py`: `resolve_channel_id` fonksiyonunu sil (`json`, `PlaylistError`, `t` başka yerde kullanılıyor; ruff kullanılmayanı bildirir). `locales`: `en.json` ve `tr.json`'dan `"archive_resolving_channel": ...` satırını sil (başka yerde kullanılmıyor: `grep -rn archive_resolving_channel ytdlp_app tests` boş dönmeli). `tests/conftest.py`'daki `raising=False`'u kaldır.
