@@ -90,7 +90,7 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [x] Kanal düzleştirme hatası: önce test, sonra düzeltme (`playlist.py`)
 - [x] `estimate.py` (hesap ve biçimlendirme)
 - [x] `speedtest.py` (ağ hızı ölçümü)
-- [ ] `max_height` ayarı, `s` menüsü, `settings.example.json`
+- [x] `max_height` ayarı, `s` menüsü, `settings.example.json`
 - [ ] Format seçicileri ve `CommandBuilder.set_max_height`
 - [ ] `preflight.py` (liste sarmalayıcı, tablo, çözünürlük sorusu, disk kontrolü)
 - [ ] `session.py` entegrasyonu; `resolve_channel_id` kalktı

@@ -405,3 +405,65 @@ class TestArchiveSettingsMenu:
 
         assert settings.download.sleep_interval == 1
         assert settings.download.max_sleep_interval == 3
+
+
+class TestResolutionLimitMenu:
+    """Entries 8 and 9 edit the MP4 and archive resolution caps."""
+
+    VIDEO_ENTRY = 8
+    ARCHIVE_ENTRY = 9
+
+    def _run(
+        self,
+        entry: int,
+        answer: int,
+        config_file: Path,
+        user_config: UserConfig,
+        settings: AppSettings,
+    ) -> FakeUI:
+        ui = FakeUI(picks=[entry, answer, BACK])
+        _menu(ui, config_file, user_config, settings=settings).run()
+        return ui
+
+    @pytest.mark.parametrize(("answer", "expected"), [(1, 1080), (2, 1440), (3, 2160), (4, None)])
+    def test_video_limit_is_stored_and_persisted(
+        self,
+        answer: int,
+        expected: int | None,
+        config_file: Path,
+        user_config: UserConfig,
+    ) -> None:
+        settings = AppSettings()
+        settings.video.max_height = 1080  # so that "unlimited" is a real change
+
+        self._run(self.VIDEO_ENTRY, answer, config_file, user_config, settings)
+
+        assert settings.video.max_height == expected
+        stored = load_settings(json.loads(config_file.read_text(encoding="utf-8")))
+        assert stored.video.max_height == expected
+
+    def test_archive_limit_is_stored_and_the_video_limit_is_untouched(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        settings = AppSettings()
+
+        self._run(self.ARCHIVE_ENTRY, 3, config_file, user_config, settings)
+
+        assert settings.archive.max_height == 2160
+        assert settings.video.max_height is None
+
+    def test_the_current_value_is_marked_in_the_options(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        seen: list[list[str]] = []
+
+        class Recording(FakeUI):
+            def pick(self, prompt: str, options: list[str]) -> int:
+                seen.append(options)
+                return super().pick(prompt, options)
+
+        ui = Recording(picks=[self.ARCHIVE_ENTRY, 1, BACK])
+        _menu(ui, config_file, user_config).run()
+
+        # seen[0] is the top menu; seen[1] is the resolution list.
+        assert seen[1] == ["1080p (default)", "1440p", "2160p", "Unlimited"]

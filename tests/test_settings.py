@@ -198,3 +198,48 @@ class TestArchiveSettings:
         )
         custom = AppSettings.from_dict({"output": {"archive_template": "%(id)s.%(ext)s"}})
         assert custom.output.archive_template == "%(id)s.%(ext)s"
+
+
+class TestMaxHeight:
+    def test_defaults_keep_todays_behaviour(self) -> None:
+        settings = AppSettings()
+        assert settings.video.max_height is None
+        assert settings.archive.max_height == 1080
+
+    @pytest.mark.parametrize("value", [1080, 1440, 2160, None])
+    def test_the_offered_caps_are_accepted(self, value: int | None) -> None:
+        settings = AppSettings.from_dict(
+            {"video": {"max_height": value}, "archive": {"max_height": value}}
+        )
+        assert settings.video.max_height == value
+        assert settings.archive.max_height == value
+
+    @pytest.mark.parametrize("bad", [720, "1080", True, 1080.5, [], 0, -1080])
+    def test_anything_else_falls_back_to_the_default(self, bad: object) -> None:
+        settings = AppSettings.from_dict(
+            {"video": {"max_height": bad}, "archive": {"max_height": bad}}
+        )
+        assert settings.video.max_height is None
+        assert settings.archive.max_height == 1080
+
+    def test_archive_without_the_key_keeps_1080(self) -> None:
+        settings = AppSettings.from_dict({"archive": {"sleep_requests": 2}})
+        assert settings.archive.max_height == 1080
+
+    def test_video_without_the_key_stays_unlimited(self) -> None:
+        settings = AppSettings.from_dict({"video": {"embed_thumbnail": False}})
+        assert settings.video.max_height is None
+
+    def test_round_trip(self) -> None:
+        settings = AppSettings()
+        settings.video.max_height = 1440
+        settings.archive.max_height = None
+
+        restored = AppSettings.from_dict(settings.to_dict())
+
+        assert restored.video.max_height == 1440
+        assert restored.archive.max_height is None
+
+    def test_listing_args_carry_only_the_request_wait(self) -> None:
+        assert ArchiveSettings(sleep_requests=2.5).listing_args() == ["--sleep-requests", "2.5"]
+        assert ArchiveSettings().listing_args() == ["--sleep-requests", "1.5"]
