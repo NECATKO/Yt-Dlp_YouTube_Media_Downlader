@@ -88,7 +88,7 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [x] Plan yazıldı
 - [x] Yeni metinler (`en.json`, `tr.json`)
 - [x] Kanal düzleştirme hatası: önce test, sonra düzeltme (`playlist.py`)
-- [ ] `estimate.py` (hesap ve biçimlendirme)
+- [x] `estimate.py` (hesap ve biçimlendirme)
 - [ ] `speedtest.py` (ağ hızı ölçümü)
 - [ ] `max_height` ayarı, `s` menüsü, `settings.example.json`
 - [ ] Format seçicileri ve `CommandBuilder.set_max_height`
