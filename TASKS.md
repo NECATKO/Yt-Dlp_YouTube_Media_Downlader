@@ -87,7 +87,7 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [x] Spec yazıldı ve onaylandı
 - [x] Plan yazıldı
 - [x] Yeni metinler (`en.json`, `tr.json`)
-- [ ] Kanal düzleştirme hatası: önce test, sonra düzeltme (`playlist.py`)
+- [x] Kanal düzleştirme hatası: önce test, sonra düzeltme (`playlist.py`)
 - [ ] `estimate.py` (hesap ve biçimlendirme)
 - [ ] `speedtest.py` (ağ hızı ölçümü)
 - [ ] `max_height` ayarı, `s` menüsü, `settings.example.json`
@@ -100,4 +100,5 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [ ] PR açıldı (merge kullanıcıda)
 
 ### Bu işte bulunanlar
+- Kanal düzleştirme hatası doğrulandı: çıplak kanal adresinde `fetch_playlist_entries` 3 video yerine 2 sekme sayıyordu (`['videos-tab', 'shorts-tab']`). `fetch_listing` özyinelemeli düzleştiriyor; açılmamış `YoutubeTab` kalıntıları sayılmıyor.
 - (uygulama sırasında eklenir)

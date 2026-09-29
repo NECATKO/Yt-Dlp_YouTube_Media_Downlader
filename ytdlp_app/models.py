@@ -133,12 +133,17 @@ class PlaylistEntry:
         id: Video/audio identifier (e.g., YouTube video ID).
         title: Display title of the entry.
         watch_url: Direct URL to watch/play this entry.
+        duration: Length in seconds, or None when the listing did not carry one
+            (Shorts and live/upcoming items).
+        is_short: Whether the listing gave a /shorts/ address for the entry.
     """
 
     playlist_index: int
     id: str
     title: str
     watch_url: str
+    duration: float | None = None
+    is_short: bool = False
 
 
 @dataclass(frozen=True, slots=True)

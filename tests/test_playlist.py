@@ -9,6 +9,8 @@ import pytest
 from ytdlp_app.exceptions import PlaylistError
 from ytdlp_app.playlist import (
     channel_id_from_url,
+    fetch_listing,
+    fetch_playlist_entries,
     get_playlist_id,
     is_channel_url,
     is_playlist_url,
@@ -283,3 +285,150 @@ class TestSafeArchiveToken:
     )
     def test_sanitizes(self, value: str, expected: str) -> None:
         assert safe_archive_token(value) == expected
+
+
+def _video(vid: str, *, duration: Any = None, short: bool = False) -> dict[str, Any]:
+    """One flat-listing video entry, as yt-dlp emits it."""
+    path = f"shorts/{vid}" if short else f"watch?v={vid}"
+    raw: dict[str, Any] = {
+        "_type": "url",
+        "ie_key": "Youtube",
+        "id": vid,
+        "url": f"https://www.youtube.com/{path}",
+        "title": f"Title {vid}",
+    }
+    if duration is not None:
+        raw["duration"] = duration
+    return raw
+
+
+def _filled_channel_json() -> dict[str, Any]:
+    """What yt-dlp really returns for a bare channel URL: the tabs come back as
+    nested playlists whose entries are already filled in (extractor/youtube/_tab.py
+    runs _real_extract on each extra tab)."""
+    return {
+        "_type": "playlist",
+        "id": CHANNEL_ID,
+        "channel_id": CHANNEL_ID,
+        "title": "Channel",
+        "entries": [
+            {
+                "_type": "playlist",
+                "id": "videos-tab",
+                "title": "Channel - Videos",
+                "entries": [_video("vid1", duration=600), _video("vid2", duration=300)],
+            },
+            {
+                "_type": "playlist",
+                "id": "shorts-tab",
+                "title": "Channel - Shorts",
+                "entries": [_video("sh1", short=True)],
+            },
+        ],
+    }
+
+
+class TestFlatListing:
+    def test_channel_tabs_are_flattened_into_their_videos(self) -> None:
+        runner = FakeRunner(out=json.dumps(_filled_channel_json()))
+
+        entries = fetch_playlist_entries("https://www.youtube.com/@ChannelHandle", [], runner)
+
+        assert [e.id for e in entries] == ["vid1", "vid2", "sh1"]
+        assert [e.playlist_index for e in entries] == [1, 2, 3]
+
+
+class TestFetchListing:
+    URL = "https://www.youtube.com/@ChannelHandle"
+
+    def test_unexpanded_tab_stubs_contribute_no_videos(self) -> None:
+        runner = FakeRunner(out=json.dumps(_nested_channel_json()))
+        assert fetch_listing(self.URL, [], runner).entries == []
+
+    def test_expanded_and_stub_tabs_can_be_mixed(self) -> None:
+        data = _filled_channel_json()
+        data["entries"].append(
+            {
+                "_type": "url",
+                "ie_key": "YoutubeTab",
+                "url": "https://www.youtube.com/@ChannelHandle/streams",
+                "title": "Channel - Live",
+            }
+        )
+        entries = fetch_listing(self.URL, [], FakeRunner(out=json.dumps(data))).entries
+        assert [e.id for e in entries] == ["vid1", "vid2", "sh1"]
+
+    def test_duration_and_shorts_are_carried(self) -> None:
+        entries = fetch_listing(
+            self.URL, [], FakeRunner(out=json.dumps(_filled_channel_json()))
+        ).entries
+        vid1, _vid2, short = entries
+
+        assert vid1.duration == 600.0
+        assert vid1.is_short is False
+        assert short.duration is None
+        assert short.is_short is True
+        # The watch URL stays a plain watch URL, which is what the skip probe wants.
+        assert short.watch_url == "https://www.youtube.com/watch?v=sh1"
+
+    @pytest.mark.parametrize("bad", ["abc", True, 0, -5])
+    def test_unusable_durations_are_dropped(self, bad: Any) -> None:
+        data = {"_type": "playlist", "entries": [{**_video("v1"), "duration": bad}]}
+        (entry,) = fetch_listing(self.URL, [], FakeRunner(out=json.dumps(data))).entries
+        assert entry.duration is None
+
+    def test_channel_id_is_read_from_the_listing(self) -> None:
+        listing = fetch_listing(self.URL, [], FakeRunner(out=json.dumps(_filled_channel_json())))
+        assert listing.channel_id == CHANNEL_ID
+
+    def test_channel_id_in_the_url_wins(self) -> None:
+        data = {"_type": "playlist", "entries": [_video("v1")]}
+        url = f"https://www.youtube.com/channel/{CHANNEL_ID}"
+        listing = fetch_listing(url, [], FakeRunner(out=json.dumps(data)))
+        assert listing.channel_id == CHANNEL_ID
+
+    def test_plain_playlist_has_no_channel_id(self, sample_playlist_json: dict[str, Any]) -> None:
+        listing = fetch_listing(
+            "https://www.youtube.com/playlist?list=PLtest123",
+            [],
+            FakeRunner(out=json.dumps(sample_playlist_json)),
+        )
+        assert listing.channel_id is None
+
+    def test_extra_args_follow_the_url_and_nothing_limits_the_listing(self) -> None:
+        runner = FakeRunner(out=json.dumps(_filled_channel_json()))
+        extra = ["--sleep-requests", "1.5", "--proxy", "http://p:1"]
+
+        fetch_listing(self.URL, extra, runner)
+
+        (cmd,) = runner.calls
+        assert cmd == ["yt-dlp", "--flat-playlist", "-J", "--yes-playlist", self.URL, *extra]
+
+    def test_interrupt_is_raised(self) -> None:
+        with pytest.raises(KeyboardInterrupt):
+            fetch_listing(self.URL, [], FakeRunner(rc=130))
+
+    def test_failure_raises_with_stderr(self) -> None:
+        with pytest.raises(PlaylistError, match="boom"):
+            fetch_listing(self.URL, [], FakeRunner(rc=1, err="boom"))
+
+    @pytest.mark.parametrize("out", ["not json", "[]", "   "])
+    def test_unusable_output_raises(self, out: str) -> None:
+        with pytest.raises(PlaylistError):
+            fetch_listing(self.URL, [], FakeRunner(out=out))
+
+    def test_channel_id_falls_back_to_the_nested_entries(self) -> None:
+        data = _nested_channel_json(top_level_id=False)
+        listing = fetch_listing(self.URL, [], FakeRunner(out=json.dumps(data)))
+        assert listing.channel_id == CHANNEL_ID
+
+    def test_fetch_playlist_entries_still_lists_a_plain_playlist(
+        self, sample_playlist_json: dict[str, Any]
+    ) -> None:
+        entries = fetch_playlist_entries(
+            "https://www.youtube.com/playlist?list=PLtest123",
+            [],
+            FakeRunner(out=json.dumps(sample_playlist_json)),
+        )
+        assert [e.id for e in entries] == ["vid1", "vid2", "vid3"]
+        assert entries[0].watch_url == "https://www.youtube.com/watch?v=vid1"
