@@ -97,7 +97,7 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [x] README, CHANGELOG
 - [x] pytest / ruff / mypy temiz (346'nın altına düşmeden)
 - [x] Gerçek deneme (izinli video): MP4, MP3, arşiv tek video
-- [ ] PR açıldı (merge kullanıcıda)
+- [x] PR açıldı: #5 (merge kullanıcıda)
 
 ### Bu işte bulunanlar
 - Kanal düzleştirme hatası doğrulandı: çıplak kanal adresinde `fetch_playlist_entries` 3 video yerine 2 sekme sayıyordu (`['videos-tab', 'shorts-tab']`). `fetch_listing` özyinelemeli düzleştiriyor; açılmamış `YoutubeTab` kalıntıları sayılmıyor.
