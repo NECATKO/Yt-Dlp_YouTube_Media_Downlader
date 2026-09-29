@@ -80,3 +80,24 @@ MP4 ve MP3'ün yanında üçüncü mod; silinme riski olan bir kanalı korumak i
 - Testlerde yalnızca yukarıdaki video kullanılır; kanaldan başka hiçbir şey
   indirilmez.
 - Tag ya da release yalnızca açık onayla yayınlanır.
+
+## Boyut tahmini, disk kontrolü ve çözünürlük sınırı
+Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-29-disk-space-and-resolution-design.md` · Plan: `docs/superpowers/plans/2026-09-29-disk-space-and-resolution.md`
+
+- [x] Spec yazıldı ve onaylandı
+- [x] Plan yazıldı
+- [x] Yeni metinler (`en.json`, `tr.json`)
+- [ ] Kanal düzleştirme hatası: önce test, sonra düzeltme (`playlist.py`)
+- [ ] `estimate.py` (hesap ve biçimlendirme)
+- [ ] `speedtest.py` (ağ hızı ölçümü)
+- [ ] `max_height` ayarı, `s` menüsü, `settings.example.json`
+- [ ] Format seçicileri ve `CommandBuilder.set_max_height`
+- [ ] `preflight.py` (liste sarmalayıcı, tablo, çözünürlük sorusu, disk kontrolü)
+- [ ] `session.py` entegrasyonu; `resolve_channel_id` kalktı
+- [ ] README, CHANGELOG
+- [ ] pytest / ruff / mypy temiz (346'nın altına düşmeden)
+- [ ] Gerçek deneme (izinli video): MP4, MP3, arşiv tek video
+- [ ] PR açıldı (merge kullanıcıda)
+
+### Bu işte bulunanlar
+- (uygulama sırasında eklenir)
