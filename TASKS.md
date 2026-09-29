@@ -1,6 +1,7 @@
-# Durum — 28 Eylül 2026
+# Durum — 29 Eylül 2026
 
 Arşiv modu ve taşınabilir çalışma ortamı `main`'e birleşti (PR #2, `ce7ba12`).
+`en`/`en-orig` düzeltmesi de birleşti (PR #3, `8c9a90a`).
 Henüz **tag ya da release yok**: otomatik güncelleyici release'leri çektiği için
 yayın kararı ayrıca verilecek.
 
@@ -49,6 +50,8 @@ MP4 ve MP3'ün yanında üçüncü mod; silinme riski olan bir kanalı korumak i
 - Windows'ta alt süreç çıktısı bozuk kodlanıyordu; ban koruyucusu YouTube'un
   bot uyarısını kaçırabiliyordu.
 - Atlanan videolar raporu Türkçe arayüzde bile İngilizceydi.
+- Yeni bir klonda `./run.sh` "Permission denied" veriyordu: `.sh` dosyaları
+  çalıştırma izni olmadan commit'lenmişti.
 
 ### Gereksinim
 - yt-dlp 2025.03.21 veya daha yenisi (altyazı eklentisi için). Taşınabilir
@@ -70,7 +73,13 @@ MP4 ve MP3'ün yanında üçüncü mod; silinme riski olan bir kanalı korumak i
   doğrulandı (iki adres aynı; eklenti yalnızca `en`'i bırakıyor).
 
 ## Açık işler
-- [ ] `en`/`en-orig` düzeltmesini `main`'e almak (dal: `fix/duplicate-orig-subs`)
+- [x] `en`/`en-orig` düzeltmesini `main`'e almak (PR #3)
+- [x] `.sh` dosyalarına çalıştırma izni
+- [ ] Disk alanı kontrolü + çözünürlük sınırı: tasarımı konuşuldu, spec ve
+      uygulama yeni bir oturumda yapılacak
+- [ ] Release ZIP'i Windows'ta `Compress-Archive` ile paketleniyor; ZIP'ten
+      çıkan `.sh` dosyalarının çalıştırma izni yine kaybolabilir (README'de
+      `chmod +x *.sh` notu var). Release kararıyla birlikte ele alınacak.
 - [ ] Windows'ta gerçek bir arşiv indirmesi (kurulum ve açılış test edildi,
       arşiv indirmesi yalnızca Linux/WSL'de denendi)
 - [ ] **Sonraya bırakıldı:** otomatik güncelleyici ve ilk release kararı.
