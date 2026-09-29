@@ -94,7 +94,7 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [x] Format seçicileri ve `CommandBuilder.set_max_height`
 - [x] `preflight.py` (liste sarmalayıcı, tablo, çözünürlük sorusu, disk kontrolü)
 - [x] `session.py` entegrasyonu; `resolve_channel_id` kalktı
-- [ ] README, CHANGELOG
+- [x] README, CHANGELOG
 - [ ] pytest / ruff / mypy temiz (346'nın altına düşmeden)
 - [ ] Gerçek deneme (izinli video): MP4, MP3, arşiv tek video
 - [ ] PR açıldı (merge kullanıcıda)
