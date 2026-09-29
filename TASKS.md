@@ -95,11 +95,16 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [x] `preflight.py` (liste sarmalayıcı, tablo, çözünürlük sorusu, disk kontrolü)
 - [x] `session.py` entegrasyonu; `resolve_channel_id` kalktı
 - [x] README, CHANGELOG
-- [ ] pytest / ruff / mypy temiz (346'nın altına düşmeden)
-- [ ] Gerçek deneme (izinli video): MP4, MP3, arşiv tek video
+- [x] pytest / ruff / mypy temiz (346'nın altına düşmeden)
+- [x] Gerçek deneme (izinli video): MP4, MP3, arşiv tek video
 - [ ] PR açıldı (merge kullanıcıda)
 
 ### Bu işte bulunanlar
 - Kanal düzleştirme hatası doğrulandı: çıplak kanal adresinde `fetch_playlist_entries` 3 video yerine 2 sekme sayıyordu (`['videos-tab', 'shorts-tab']`). `fetch_listing` özyinelemeli düzleştiriyor; açılmamış `YoutubeTab` kalıntıları sayılmıyor.
 - Format seçici motoru (ağsız, yt-dlp'nin kendi `build_format_selector`'ı ile) doğruladı: `/b` yedeğine de sınır koymak sınırı tutuyor (yalnızca 2160p birleşik akışı olan videoda eski seçici 2160p indirirdi, yenisi hiçbir şey indirmez). Yüksekliği bilinmeyen video-only akışlar eskiden de yeni seçicide de "format yok" verir. Arşivin sabitlenmiş komut testindeki seçici metni bilinçli olarak `bv*[height<=1080]+ba/b[height<=1080]` oldu.
-- (uygulama sırasında eklenir)
+- **Gerçek deneme (izinli video, izole `XDG_DATA_HOME`, 29 Eylül):** MP4 Kalite/MKV 1440p (yalnızca bu indirme; ayara yazılmadı) ✅ · MP4 Uyumluluk (soru yok, iki aşamada `[height<=1080]`; Aşama 1'de YouTube'dan `HTTP 403`, Aşama 2 devreye girip MP4'ü üretti — Deno'suz ortam, değişiklikten bağımsız) ✅ · MP3 ✅ · Arşiv tek video (çözünürlük sorusu, komutta `[height<=1080]`) ✅ · "Varsayılan olarak kaydet" (`settings.video.max_height: 1440` config'e yazıldı) ✅.
+- **Gerçek ortamda doğrulanmadı** (yalnızca fixture/mock): tahmin tablosu, disk kontrolü, süre uyarıları, liste ve kanal akışı, hız testi. İzinli tek video tek video olduğu için tabloya hiç girmiyor.
+- **Bit hızı tablosu yüksek — yaklaşık 3,5–4× (tek örnek, izinli video):** gerçek `tbr`: 1080p avc1 1756 / vp9 1516, 1440p vp9 3151, 2160p vp9 6912 kbit/sn; ses opus ~112–126, m4a 129. Tablo (6000/12000/30000 + 160) yalnızca YouTube'un "premium" akışlarıyla (312/617 ≈ 5,8 Mbit/sn; 628 ≈ 30 Mbit/sn) örtüşüyor. Spec'e sadık kalındı; değer kararı kullanıcıda.
+- `ruff format` artık Markdown içindeki Python bloklarını da biçimlendiriyor; plandaki kısmi kod parçaları bozuluyordu, `text` bloğuna çevrildi.
+- Arşiv başlık satırındaki sabit "en fazla 1080p" metni sınırdan bağımsız hale getirildi (`archive_desc`).
+- `mypy ytdlp_app` bayraksız çalıştırılınca eklentideki eksik yt-dlp stub'u yüzünden 1 hata veriyor; CI komutu `--ignore-missing-imports` ile temiz (değişiklikten bağımsız).

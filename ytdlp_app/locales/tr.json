@@ -56,7 +56,7 @@
   "mp3_title": "MP3:",
   "mp3_desc": "En iyi ses indiriliyor ve MP3'e donusturuluyor...",
   "archive_title": "ARSIV:",
-  "archive_desc": "Video (en fazla 1080p, MKV), aciklama, info JSON, kapak resmi ve altyazilar. Hiz sinirina takilmamak icin istekler arasinda bekleniyor...",
+  "archive_desc": "Video (cozunurluk sinirina kadar, MKV), aciklama, info JSON, kapak resmi ve altyazilar. Hiz sinirina takilmamak icin istekler arasinda bekleniyor...",
   "archive_channel_id_fallback": "Kanal kimligi alinamadi; arsiv dosyasi icin URL'deki \"{id}\" kullaniliyor. Devam etmek icin ayni URL'yi kullanin.",
   "ban_detected_title": "YouTube istekleri gecici olarak engelliyor - indirme durduruldu.",
   "ban_detected_detail": "HTTP 429 (Cok Fazla Istek) ya da \"Sign in to confirm you're not a bot\" yaniti verdi. Simdi istek gondermeye devam etmek engeli yalnizca uzatir.",
