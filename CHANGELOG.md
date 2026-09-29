@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **yt-dlp was reported missing on machines without a global copy.** The launchers start the `.venv` Python directly, which does not put `.venv`'s `yt-dlp` on PATH, while the app looked yt-dlp up on PATH. yt-dlp now runs as `python -m yt_dlp` from the app's own interpreter.
 - **The skip report was entirely in English**, even in Turkish, despite the translations for it already existing. All fifteen messages now go through the translation layer, as do the command banner and the success, cancellation, and failure lines.
 - `analyze_log_for_error` now recognizes copyright takedowns, which it previously reported with the generic "video unavailable" message.
+- **`./run.sh` failed with "Permission denied" in a fresh clone.** `run.sh`, `install.sh` and `update.sh` were committed without the executable bit; they are now executable.
 
 ### Changed
 - `install.ps1` / `install.sh` no longer use winget or apt/dnf/pacman on Windows and Linux; they set up the portable runtime instead. macOS keeps the Homebrew + `.venv` installation. The updaters now also preserve `runtime/`, `cache/` and `downloads/`.
@@ -186,6 +187,7 @@ Patch release that repairs the broken v0.3.0 artifact. **Anyone running v0.3.0 s
 - **Global bir yt-dlp olmayan makinelerde yt-dlp "bulunamadı" görünüyordu.** Başlatıcılar `.venv` Python'unu doğrudan çalıştırdığı için `.venv` içindeki `yt-dlp` PATH'te değildi, uygulama ise yt-dlp'yi PATH'te arıyordu. yt-dlp artık uygulamanın kendi yorumlayıcısıyla `python -m yt_dlp` olarak çalışır.
 - **Atlama raporu tamamen İngilizceydi**, Türkçe kullanımda bile — üstelik çevirileri zaten mevcuttu. On beş mesajın tamamı artık çeviri katmanından geçiyor; komut başlığı ile başarı, iptal ve hata satırları da öyle.
 - `analyze_log_for_error` artık telif hakkı kaldırmalarını tanıyor; daha önce bunları genel "video kullanılamıyor" mesajıyla bildiriyordu.
+- **Yeni bir klonda `./run.sh` "Permission denied" hatası veriyordu.** `run.sh`, `install.sh` ve `update.sh` çalıştırma izni olmadan commit'lenmişti; artık çalıştırılabilir.
 
 ### Değişenler
 - `install.ps1` / `install.sh` Windows ve Linux'ta artık winget ya da apt/dnf/pacman kullanmıyor; bunun yerine taşınabilir çalışma ortamını kuruyor. macOS, Homebrew + `.venv` kurulumuyla devam ediyor. Güncelleyiciler artık `runtime/`, `cache/` ve `downloads/` klasörlerini de koruyor.
