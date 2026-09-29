@@ -91,7 +91,7 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [x] `estimate.py` (hesap ve biçimlendirme)
 - [x] `speedtest.py` (ağ hızı ölçümü)
 - [x] `max_height` ayarı, `s` menüsü, `settings.example.json`
-- [ ] Format seçicileri ve `CommandBuilder.set_max_height`
+- [x] Format seçicileri ve `CommandBuilder.set_max_height`
 - [ ] `preflight.py` (liste sarmalayıcı, tablo, çözünürlük sorusu, disk kontrolü)
 - [ ] `session.py` entegrasyonu; `resolve_channel_id` kalktı
 - [ ] README, CHANGELOG
@@ -101,4 +101,5 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 
 ### Bu işte bulunanlar
 - Kanal düzleştirme hatası doğrulandı: çıplak kanal adresinde `fetch_playlist_entries` 3 video yerine 2 sekme sayıyordu (`['videos-tab', 'shorts-tab']`). `fetch_listing` özyinelemeli düzleştiriyor; açılmamış `YoutubeTab` kalıntıları sayılmıyor.
+- Format seçici motoru (ağsız, yt-dlp'nin kendi `build_format_selector`'ı ile) doğruladı: `/b` yedeğine de sınır koymak sınırı tutuyor (yalnızca 2160p birleşik akışı olan videoda eski seçici 2160p indirirdi, yenisi hiçbir şey indirmez). Yüksekliği bilinmeyen video-only akışlar eskiden de yeni seçicide de "format yok" verir. Arşivin sabitlenmiş komut testindeki seçici metni bilinçli olarak `bv*[height<=1080]+ba/b[height<=1080]` oldu.
 - (uygulama sırasında eklenir)
