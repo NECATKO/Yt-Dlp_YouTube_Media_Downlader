@@ -120,6 +120,7 @@ On Windows (x64) and Linux (x86_64, aarch64; glibc-based distributions) everythi
 | Problem | Solution |
 |---------|----------|
 | First-time setup fails | Check the internet connection and run `Run.bat` / `./run.sh` again; it resumes and only fetches what is missing. Administrator rights are not needed. |
+| `./run.sh`: "Permission denied" | The file lost its executable bit (for example when extracted from a ZIP). Run `chmod +x *.sh` once, or start it with `bash run.sh`. `sudo` does not help. |
 | "Checksum mismatch" | The download was corrupted or altered and was discarded. Try again; if it persists, report it. |
 | yt-dlp/ffmpeg not found | Run `install.ps1` (Windows) or `./install.sh` (Linux/macOS) again. |
 | A video stopped working after a YouTube change | Update yt-dlp: `runtime/python/python -m ytdlp_app.portable update-ytdlp`. |
@@ -256,6 +257,7 @@ Windows (x64) ve Linux'ta (x86_64, aarch64; glibc tabanlı dağıtımlar) uygula
 | Sorun | Çözüm |
 |-------|-------|
 | İlk kurulum başarısız | İnternet bağlantısını kontrol edip `Run.bat` / `./run.sh`'i yeniden çalıştır; kaldığı yerden devam eder, yalnızca eksikleri indirir. Yönetici izni gerekmez. |
+| `./run.sh`: "Permission denied" | Dosyanın çalıştırma izni kaybolmuş (örneğin ZIP'ten çıkarılınca). Bir kez `chmod +x *.sh` çalıştır ya da `bash run.sh` ile başlat. `sudo` işe yaramaz. |
 | "Checksum mismatch" | İndirilen dosya bozulmuş ya da değiştirilmiş ve silindi. Tekrar dene; sürerse bildir. |
 | yt-dlp/ffmpeg bulunamıyor | `install.ps1` (Windows) veya `./install.sh` (Linux/macOS) dosyasını tekrar çalıştır. |
 | YouTube değişikliğinden sonra video inmiyor | yt-dlp'yi güncelle: `runtime/python/python -m ytdlp_app.portable update-ytdlp`. |
