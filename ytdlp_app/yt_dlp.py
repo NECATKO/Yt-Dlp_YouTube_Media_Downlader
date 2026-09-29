@@ -12,11 +12,11 @@ from .models import DownloadMode
 from .settings import AppSettings
 
 #: Archive mode keeps everything a channel publishes that could be lost with it:
-#: the video (capped at 1080p to bound disk use), its description, the raw
-#: metadata, the thumbnail, and both uploaded and auto-generated subtitles.
+#: the video (capped by the archive resolution limit, 1080p by default, to bound
+#: disk use), its description, the raw metadata, the thumbnail, and both uploaded
+#: and auto-generated subtitles. The format selector is built per run by
+#: video_format(), because the cap can change.
 ARCHIVE_CONTENT_ARGS = [
-    "-f",
-    "bv*[height<=1080]+ba/b",
     "--merge-output-format",
     "mkv",
     "--write-description",
@@ -45,6 +45,26 @@ def original_subs_args() -> list[str]:
         "--use-postprocessor",
         "OriginalSubsOnly:when=video",
     ]
+
+
+def _height_filter(max_height: int | None) -> str:
+    return "" if max_height is None else f"[height<={max_height}]"
+
+
+def video_format(max_height: int | None) -> str:
+    """Build the video+audio format selector, capped at max_height (None = no cap).
+
+    The cap is on both alternatives: without it on the "/b" fallback a video with
+    only a combined stream above the cap would be downloaded anyway.
+    """
+    cap = _height_filter(max_height)
+    return f"bv*{cap}+ba/b{cap}"
+
+
+def compat_stage1_format(max_height: int | None) -> str:
+    """Build the H.264 + AAC selector of the compatibility profile's first stage."""
+    cap = _height_filter(max_height)
+    return f"bestvideo[vcodec^=avc1]{cap}+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]{cap}"
 
 
 def js_runtime_args(use_deno: bool) -> list[str]:
@@ -92,6 +112,21 @@ class CommandBuilder:
         self.is_playlist = is_playlist
         self.use_deno = use_deno
         self.settings = settings if settings is not None else AppSettings()
+        # The cap chosen for this download, once the user has been asked. Until
+        # then each mode uses the default saved in the settings.
+        self._max_height: int | None = None
+        self._has_max_height = False
+
+    def set_max_height(self, max_height: int | None) -> None:
+        """Apply the resolution cap chosen for this download (None = no cap).
+
+        Overrides the default saved in the settings for this builder only.
+        """
+        self._max_height = max_height
+        self._has_max_height = True
+
+    def _cap(self, saved: int | None) -> int | None:
+        return self._max_height if self._has_max_height else saved
 
     @property
     def js_args(self) -> list[str]:
@@ -150,7 +185,7 @@ class CommandBuilder:
             [
                 "yt-dlp",
                 "-f",
-                "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]",
+                compat_stage1_format(self._cap(self.settings.video.max_height)),
                 "--merge-output-format",
                 "mp4",
             ],
@@ -160,14 +195,26 @@ class CommandBuilder:
     def build_mp4_compatibility_stage2(self) -> list[str]:
         """Build Stage 2 command for MP4 compatibility mode."""
         return self._assemble(
-            ["yt-dlp", "-f", "bv*+ba/b", "--recode-video", "mp4"],
+            [
+                "yt-dlp",
+                "-f",
+                video_format(self._cap(self.settings.video.max_height)),
+                "--recode-video",
+                "mp4",
+            ],
             DownloadMode.VIDEO,
         )
 
     def build_mp4_quality_mkv(self) -> list[str]:
         """Build command for MP4 quality mode with MKV container."""
         return self._assemble(
-            ["yt-dlp", "-f", "bv*+ba/b", "--merge-output-format", "mkv"],
+            [
+                "yt-dlp",
+                "-f",
+                video_format(self._cap(self.settings.video.max_height)),
+                "--merge-output-format",
+                "mkv",
+            ],
             DownloadMode.VIDEO,
         )
 
@@ -177,7 +224,7 @@ class CommandBuilder:
             [
                 "yt-dlp",
                 "-f",
-                "bv*+ba/b",
+                video_format(self._cap(self.settings.video.max_height)),
                 "--merge-output-format",
                 "mp4",
                 "--remux-video",
@@ -198,6 +245,8 @@ class CommandBuilder:
         """
         return [
             "yt-dlp",
+            "-f",
+            video_format(self._cap(self.settings.archive.max_height)),
             *ARCHIVE_CONTENT_ARGS,
             *original_subs_args(),
             *self.settings.archive.to_args(),

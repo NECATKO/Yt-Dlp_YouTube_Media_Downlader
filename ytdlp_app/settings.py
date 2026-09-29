@@ -7,7 +7,7 @@ to customize download behavior, performance settings, and output formats.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 
 @dataclass
@@ -128,6 +128,7 @@ class VideoSettings:
         embed_subtitles: Whether to embed subtitles.
         subtitle_languages: Comma-separated list of subtitle languages.
         write_subtitles: Whether to download subtitles as separate files.
+        max_height: Resolution cap for MP4 downloads (1080, 1440, 2160), or None for no cap.
     """
 
     embed_thumbnail: bool = True
@@ -135,6 +136,7 @@ class VideoSettings:
     embed_subtitles: bool = False
     subtitle_languages: str = "en"
     write_subtitles: bool = False
+    max_height: int | None = None
 
     def to_args(self) -> list[str]:
         """Convert settings to yt-dlp command-line arguments.
@@ -158,6 +160,19 @@ class VideoSettings:
                 args.append("--embed-subs")
 
         return args
+
+
+#: The resolution caps the app offers. None (no cap) is always allowed.
+ALLOWED_MAX_HEIGHTS: Final[tuple[int, ...]] = (1080, 1440, 2160)
+
+
+def _as_max_height(value: Any, default: int | None) -> int | None:
+    """Return a usable resolution cap: an offered height, None (no cap) or the default."""
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool) and value in ALLOWED_MAX_HEIGHTS:
+        return value
+    return default
 
 
 def _as_number(value: Any, default: float) -> float:
@@ -195,6 +210,7 @@ class ArchiveSettings:
         sleep_interval: Minimum seconds to wait before each video download.
         max_sleep_interval: Maximum seconds to wait before each video download.
         sleep_subtitles: Seconds to wait before each subtitle download.
+        max_height: Resolution cap for archive downloads (1080, 1440, 2160), or None for no cap.
     """
 
     #: Retries per download and per fragment. Deliberately not "infinite".
@@ -204,6 +220,7 @@ class ArchiveSettings:
     sleep_interval: float = 15
     max_sleep_interval: float = 45
     sleep_subtitles: float = 5
+    max_height: int | None = 1080
 
     def to_args(self) -> list[str]:
         """Convert the pacing and retry policy to yt-dlp arguments."""
@@ -224,6 +241,14 @@ class ArchiveSettings:
             str(self.RETRIES),
         ]
 
+    def listing_args(self) -> list[str]:
+        """Arguments for the playlist listing: only the wait between requests.
+
+        The listing is a few requests, not a download, so the per-video waits and
+        the retry policy of to_args do not apply.
+        """
+        return ["--sleep-requests", _format_seconds(self.sleep_requests)]
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ArchiveSettings:
         """Create archive settings, replacing unusable values with defaults."""
@@ -235,15 +260,19 @@ class ArchiveSettings:
                 data.get("max_sleep_interval"), defaults.max_sleep_interval
             ),
             sleep_subtitles=_as_number(data.get("sleep_subtitles"), defaults.sleep_subtitles),
+            max_height=_as_max_height(
+                data.get("max_height", defaults.max_height), defaults.max_height
+            ),
         )
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, float | None]:
         """Convert archive settings to a dictionary."""
         return {
             "sleep_requests": self.sleep_requests,
             "sleep_interval": self.sleep_interval,
             "max_sleep_interval": self.max_sleep_interval,
             "sleep_subtitles": self.sleep_subtitles,
+            "max_height": self.max_height,
         }
 
 
@@ -337,6 +366,7 @@ class AppSettings:
                 embed_subtitles=vi.get("embed_subtitles", False),
                 subtitle_languages=vi.get("subtitle_languages", "en"),
                 write_subtitles=vi.get("write_subtitles", False),
+                max_height=_as_max_height(vi.get("max_height"), None),
             )
 
         # Output settings
@@ -392,6 +422,7 @@ class AppSettings:
                 "embed_subtitles": self.video.embed_subtitles,
                 "subtitle_languages": self.video.subtitle_languages,
                 "write_subtitles": self.video.write_subtitles,
+                "max_height": self.video.max_height,
             },
             "output": {
                 "single_video_template": self.output.single_video_template,

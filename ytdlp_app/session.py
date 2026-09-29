@@ -10,10 +10,11 @@ import re
 from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from .exceptions import PlaylistError, ValidationError
-from .exec import BAN_RETURN_CODE, find_ban_signal, run_capture, run_cmd_tee
+from .config import save_settings
+from .exceptions import ValidationError
+from .exec import BAN_RETURN_CODE, run_capture, run_cmd_tee
 from .i18n import t
 from .logging_utils import Colors, append_log, log_error, now_stamp, paint
 from .models import (
@@ -29,17 +30,28 @@ from .models import (
     UserConfig,
 )
 from .playlist import (
+    PlaylistListing,
+    channel_id_from_url,
+    fetch_listing,
     fetch_playlist_entries,
     get_playlist_id,
     is_channel_url,
     is_playlist_url,
     read_archive_ids,
-    resolve_channel_id,
     safe_archive_token,
+)
+from .preflight import (
+    ListingStatus,
+    PreflightAction,
+    PreflightRequest,
+    free_bytes,
+    guarded_listing,
+    run_preflight,
 )
 from .settings import AppSettings
 from .settings_menu import run_settings_menu
 from .skip_probe import probe_skip_reason
+from .speedtest import measure_speed
 from .system import (
     deno_available,
     ffmpeg_available,
@@ -51,7 +63,12 @@ from .validators import validate_url
 from .yt_dlp import CommandBuilder, js_runtime_args
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .preflight import GuardedListing
     from .ui import ConsoleUI
+
+_T = TypeVar("_T")
 
 #: Typed at the URL prompt to open the settings menu instead of downloading.
 SETTINGS_SHORTCUT = "s"
@@ -182,42 +199,51 @@ class InteractiveSession:
             self.ui.print(f"\n{Colors.WHITE}{t('error_log_hint')}{Colors.RESET}")
             self.ui.print(f"{Colors.WHITE}{self.log_path}{Colors.RESET}")
 
+    def _stop_after_ban(self) -> CycleOutcome:
+        """Report a ban and let the user choose between exiting and a new URL."""
+        self.report_ban()
+        if self.ui.prompt_exit_on_failure():
+            return CycleOutcome.EXIT_FAILURE
+        return CycleOutcome.CONTINUE
+
+    def _list_playlist(self, fetch: Callable[[], _T], *, archive_mode: bool) -> GuardedListing[_T]:
+        """Warn that reading a big listing is slow, then run the request."""
+        warning = t("preflight_listing_warning")
+        if archive_mode:
+            wait = f"{self.settings.archive.sleep_requests:g}"
+            warning += t("preflight_listing_warning_wait", seconds=wait)
+        self.ui.print(paint(warning, Colors.CYAN))
+        return guarded_listing(fetch, self.log_path)
+
+    def _persist_default_height(self, mode: DownloadMode, height: int | None) -> None:
+        """Save a resolution cap as the default for its mode."""
+        if mode == DownloadMode.ARCHIVE:
+            self.settings.archive.max_height = height
+        else:
+            self.settings.video.max_height = height
+        save_settings(self.paths.config_file, self.cfg, self.settings)
+
     def _archive_file_name(
-        self, url: str, channel_archive: bool, playlist_id: str | None, deno_ok: bool
-    ) -> str | None:
+        self,
+        url: str,
+        channel_archive: bool,
+        playlist_id: str | None,
+        listing: PlaylistListing | None,
+    ) -> str:
         """Pick the download archive file for an archive-mode run.
 
         A channel is keyed by its real channel id, so the handle URL, the
-        /channel/ URL and any tab URL of one channel all resume one archive.
-
-        Returns:
-            The file name, or None if YouTube blocked the channel lookup (the
-            user has already been told).
+        /channel/ URL and any tab URL of one channel all resume one archive. The
+        id comes from the URL when it carries one, otherwise from the listing
+        that also feeds the size estimate.
         """
         if not channel_archive:
             if playlist_id:
                 return f"playlist_{safe_archive_token(playlist_id)}_archive.txt"
             return "single_videos_archive.txt"
 
-        self.ui.print(paint(t("archive_resolving_channel"), Colors.CYAN))
-        extra_args = [*js_runtime_args(deno_ok), *self.settings.download.network_args()]
-        try:
-            channel_id = resolve_channel_id(url, extra_args, run_capture)
-        except PlaylistError as ex:
-            append_log(
-                self.log_path,
-                f"\n[WARN {datetime.now().isoformat(timespec='seconds')}] "
-                f"Channel id lookup failed: {ex}\n",
-            )
-            signal = find_ban_signal(str(ex))
-            if signal is not None:
-                append_log(
-                    self.log_path,
-                    f"[BAN-GUARD {datetime.now().isoformat(timespec='seconds')}] "
-                    f"Not starting the download: {signal.value} during the channel id lookup\n",
-                )
-                self.report_ban()
-                return None
+        channel_id = channel_id_from_url(url) or (listing.channel_id if listing else None)
+        if channel_id is None:
             # Not fatal: fall back to the identifier in the URL, which still
             # resumes correctly as long as the same URL is used again.
             channel_id = get_playlist_id(url)
@@ -400,15 +426,28 @@ class InteractiveSession:
         self.log_path = log_path
 
         templates = self.settings.output
+        listing: PlaylistListing | None = None
         if archive_mode:
             base_dir = self.config.videos_dir / "yt-dlp"
             output_template = str(base_dir / templates.archive_template)
-            archive_name = self._archive_file_name(url, channel_archive, playlist_id, deno_ok)
-            if archive_name is None:
-                # YouTube is already blocking us; report_ban has told the user.
-                if self.ui.prompt_exit_on_failure():
-                    return CycleOutcome.EXIT_FAILURE
-                return CycleOutcome.CONTINUE
+            if is_playlist:
+                # One flat listing feeds the size estimate and, for a channel, the
+                # archive file name, so there is no separate channel id request.
+                listing_args = [
+                    *js_runtime_args(deno_ok),
+                    *self.settings.archive.listing_args(),
+                    *self.settings.download.network_args(),
+                ]
+                guarded = self._list_playlist(
+                    lambda: fetch_listing(url, listing_args, run_capture), archive_mode=True
+                )
+                if guarded.status is ListingStatus.INTERRUPTED:
+                    return CycleOutcome.INTERRUPTED
+                if guarded.status is ListingStatus.BAN:
+                    # YouTube is already blocking us; the guard has logged it.
+                    return self._stop_after_ban()
+                listing = guarded.value
+            archive_name = self._archive_file_name(url, channel_archive, playlist_id, listing)
             archive_path = self.paths.archives_dir / archive_name
         elif mode == DownloadMode.VIDEO:
             if is_playlist:
@@ -480,28 +519,59 @@ class InteractiveSession:
             js_args=cmd_builder.js_args,
         )
 
-        # 8) Playlist mapping. Archive mode skips it: the listing exists only for
-        # the skip report, whose per-item probes are exactly the kind of extra
-        # traffic archive mode avoids.
-        entries = []
-        if plan.is_playlist and not archive_mode:
-            try:
-                entries = fetch_playlist_entries(plan.url, plan.js_args, run_capture)
-            except Exception as ex:
-                log_error(log_path, t("playlist_fetch_failed_log"), ex)
-                self.ui.print(f"{t('playlist_fetch_failed')}\n{ex}\n")
+        # 8) Playlist listing. Archive mode already listed in step 6, and never
+        # runs the skip report, whose per-item probes are exactly the kind of
+        # extra traffic archive mode avoids.
+        entries: list[PlaylistEntry] = []
+        estimate_entries: list[PlaylistEntry] | None = None
+        if archive_mode:
+            estimate_entries = listing.entries if listing is not None else None
+        elif plan.is_playlist:
+            guarded_entries = self._list_playlist(
+                lambda: fetch_playlist_entries(plan.url, plan.js_args, run_capture),
+                archive_mode=False,
+            )
+            if guarded_entries.status is ListingStatus.INTERRUPTED:
+                return CycleOutcome.INTERRUPTED
+            if guarded_entries.status is ListingStatus.BAN:
+                return self._stop_after_ban()
+            if guarded_entries.status is ListingStatus.FAILED:
+                self.ui.print(f"{t('playlist_fetch_failed')}\n{guarded_entries.error}\n")
                 if self.ui.prompt_exit_on_failure():
                     return CycleOutcome.EXIT_FAILURE
+            else:
+                entries = guarded_entries.value or []
+                estimate_entries = entries
+
+        # 8b) Size estimate, resolution cap and free-space check.
+        preflight = run_preflight(
+            PreflightRequest(
+                mode=mode,
+                is_playlist=plan.is_playlist,
+                entries=estimate_entries,
+                archived_ids=(
+                    frozenset(read_archive_ids(archive_path)) if plan.is_playlist else frozenset()
+                ),
+                mp4_profile=mp4_profile,
+                base_dir=base_dir,
+                log_path=log_path,
+            ),
+            ui=self.ui,
+            settings=self.settings,
+            persist_default=lambda height: self._persist_default_height(mode, height),
+            measure=measure_speed,
+            disk_free=free_bytes,
+        )
+        if preflight.action is PreflightAction.CANCEL:
+            return CycleOutcome.CONTINUE
+        cmd_builder.set_max_height(preflight.max_height)
 
         # 9) DOWNLOAD
         final_rc = self._execute_download(plan, cmd_builder)
         if final_rc == 130:
             return CycleOutcome.INTERRUPTED
         if final_rc == BAN_RETURN_CODE:
-            self.report_ban()
-            if self.ui.prompt_exit_on_failure():
-                return CycleOutcome.EXIT_FAILURE
-            return CycleOutcome.CONTINUE
+            return self._stop_after_ban()
         if final_rc != 0:
             if self.handle_error(log_path):
                 return CycleOutcome.EXIT_FAILURE

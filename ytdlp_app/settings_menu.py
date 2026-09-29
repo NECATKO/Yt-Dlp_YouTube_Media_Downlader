@@ -34,6 +34,9 @@ _CLEAR = "-"
 #: Upper bound for any archive-mode wait, in seconds.
 _MAX_WAIT_SECONDS = 3600
 
+#: The resolution caps offered in the menu, in the order shown; None is "unlimited".
+_HEIGHT_CHOICES: tuple[int | None, ...] = (1080, 1440, 2160, None)
+
 
 class SettingsMenu:
     """Interactive editor for the persisted configuration."""
@@ -166,6 +169,8 @@ class SettingsMenu:
             (t("settings_audio"), self._edit_audio),
             (t("settings_subtitles"), self._edit_subtitles),
             (t("settings_archive"), self._edit_archive),
+            (t("settings_video_height"), self._edit_video_height),
+            (t("settings_archive_height"), self._edit_archive_height),
         ]
 
     def run(self) -> UserConfig:
@@ -342,6 +347,31 @@ class SettingsMenu:
             archive.max_sleep_interval = archive.sleep_interval
             self.ui.print(paint(t("settings_sleep_adjusted"), Colors.YELLOW))
 
+        self._persist()
+
+    def _height_label(self, height: int | None, current: int | None) -> str:
+        label = (
+            t("resolution_unlimited") if height is None else t("resolution_option", height=height)
+        )
+        return t("resolution_default_mark", label=label) if height == current else label
+
+    def _pick_height(self, label: str, current: int | None) -> int | None:
+        """Ask for a resolution cap; the current one is marked as the default."""
+        shown = (
+            t("resolution_unlimited") if current is None else t("resolution_option", height=current)
+        )
+        self._prompt_header(label, shown, "")
+        options = [self._height_label(h, current) for h in _HEIGHT_CHOICES]
+        return _HEIGHT_CHOICES[self.ui.pick(label, options) - 1]
+
+    def _edit_video_height(self) -> None:
+        video = self.settings.video
+        video.max_height = self._pick_height(t("settings_video_height"), video.max_height)
+        self._persist()
+
+    def _edit_archive_height(self) -> None:
+        archive = self.settings.archive
+        archive.max_height = self._pick_height(t("settings_archive_height"), archive.max_height)
         self._persist()
 
 

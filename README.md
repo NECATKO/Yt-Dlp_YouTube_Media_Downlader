@@ -51,12 +51,32 @@ A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs
 ## Archive mode
 For preserving a channel that may disappear. Pick **Archive** as the mode and enter a channel URL (`https://www.youtube.com/@name`, `/channel/UC...`, or a tab such as `/@name/videos`), a playlist, or a single video.
 
-- **What is kept, per video** (each in its own folder): the video (best quality up to 1080p, merged into MKV with chapters and metadata embedded), `.description`, `.info.json`, the thumbnail, and uploaded plus auto-generated subtitles in Turkish and English converted to `.srt`. YouTube's machine translations are skipped (an English video gets no Turkish subtitle unless the channel uploaded one), so only subtitles that actually exist on the video are kept.
+- **What is kept, per video** (each in its own folder): the video (best quality up to your resolution limit, 1080p by default, merged into MKV with chapters and metadata embedded), `.description`, `.info.json`, the thumbnail, and uploaded plus auto-generated subtitles in Turkish and English converted to `.srt`. YouTube's machine translations are skipped (an English video gets no Turkish subtitle unless the channel uploaded one), so only subtitles that actually exist on the video are kept.
 - **A channel URL archives the whole channel.** yt-dlp returns the Videos, Shorts and Live tabs as nested playlists; all of them are downloaded, and the "whole playlist or this video" question is skipped.
-- **The archive file is keyed by the real channel id** (`channel_UC..._archive.txt`), so the handle URL, the `/channel/` URL and any tab URL of the same channel all resume one archive, even if the handle changes. Looking the id up costs one request; if it fails for a reason other than a block, the id in the URL is used instead.
+- **The archive file is keyed by the real channel id** (`channel_UC..._archive.txt`), so the handle URL, the `/channel/` URL and any tab URL of the same channel all resume one archive, even if the handle changes. The id comes from the same listing that feeds the size estimate, so there is no separate lookup; if the listing fails for a reason other than a block, the id in the URL is used instead.
 - **Pacing** (defaults): 1.5 s between requests, 15–45 s (random) between videos, 5 s before each subtitle download, 10 retries instead of infinite. The waits can be changed with `s` → *Archive mode waits* and are stored under `settings.archive` in `config.json`. Your speed limit and proxy still apply.
 - **Ban protection**: if yt-dlp reports `HTTP Error 429` or YouTube's *"Sign in to confirm you're not a bot"*, the download is stopped immediately, the event is written to the log (`[BAN-GUARD]`), and you are told to **wait a few hours and enter the same URL again: it resumes where it left off.** Items only enter the archive file once every part of them was saved, so nothing half-finished is skipped on the next run.
-- To keep request volume low, archive mode does not fetch the playlist listing or probe skipped items afterwards (the skip report is MP4/MP3 only).
+- To keep request volume low, archive mode lists a channel or playlist once (for the size estimate and the channel id, paced by the request wait) and never probes skipped items afterwards (the skip report is MP4/MP3 only). A single video sends no listing request.
+
+## Size estimate and resolution limit
+**Before downloading a playlist or channel** (MP4, MP3 and archive modes) the app shows a size estimate and checks free disk space. It reads the listing once (no extra request per video) and multiplies each video's duration by a typical bit rate, so the numbers are deliberately on the high side and are **estimates, not measurements**:
+
+| Row | Assumed bit rate |
+|-----|------------------|
+| 1080p | 6000 kbit/s video + 160 kbit/s audio |
+| 1440p (at most) | 12000 + 160 |
+| 2160p (at most) | 30000 + 160 |
+
+- 1440p and 2160p are labelled *at most*: a flat listing carries no resolution, and a video that does not exist at that resolution downloads smaller.
+- **Space needed** = the total for the chosen resolution + the largest single video, because the source and the result sit on disk together while merging, recoding or converting.
+- Videos already in the download archive are left out. A video without a duration (Shorts, live) is assumed to be 180 s (Shorts) or the median of the known durations; the screen says how many were assumed. If no duration is known at all, the estimate is skipped and the download continues.
+- **MP3** shows one number, based on your audio format and quality (`mp3` quality 0 is about 245 kbit/s; `flac` and `wav` are much larger).
+- Sizes are 1024-based (KiB/MiB/GiB), like Windows Explorer.
+- **Not enough space?** You are warned and asked *Continue anyway / Cancel*. The download is never blocked.
+- **Time:** a short (~5 s) speed test against `speed.cloudflare.com` (through your proxy; skipped for SOCKS proxies) turns the size into a download time. It measures your line, not YouTube, and sends your IP to that host. If it fails, the time column says so and nothing else changes. Archive mode also shows the *minimum* time the waits between videos alone will take.
+- A single video is not estimated (that would need an extra request).
+
+**Resolution limit.** After the estimate you are asked for the maximum resolution (1080p, 1440p, 2160p or unlimited) for MP4 and archive downloads, also for a single video. The saved default is marked; if you pick another one you can use it once or save it as the new default. It is applied to every video format selector (as `[height<=N]`, including the fallback). The compatibility MP4 profile stays at 1080p, because YouTube serves H.264 up to about 1080p and higher resolutions would be recoded slowly. Defaults: archive 1080p, MP4 unlimited (as before). Change them in `s` → *Video resolution limit* / *Archive resolution limit*, or in `config.json` (`settings.video.max_height`, `settings.archive.max_height`: `1080`, `1440`, `2160` or `null`).
 
 ## Portable runtime
 On Windows (x64) and Linux (x86_64, aarch64; glibc-based distributions) everything the app needs lives in its own folder:
@@ -103,7 +123,10 @@ On Windows (x64) and Linux (x86_64, aarch64; glibc-based distributions) everythi
 | `ui.py` | Console UI with styled panels and menus (Protocol-based) |
 | `yt_dlp.py` | CommandBuilder class for constructing yt-dlp arguments |
 | `exec.py` | Command execution with output streaming, logging, and the 429/bot ban guard |
-| `playlist.py` | Playlist and channel detection, channel id lookup, entry fetching, archive reading |
+| `playlist.py` | Playlist and channel detection, flat listing (channel tabs flattened, channel id), archive reading |
+| `estimate.py` | Size, disk-space and time estimates (pure arithmetic) |
+| `speedtest.py` | Short connection-speed measurement |
+| `preflight.py` | Listing guard, estimate table, resolution question and free-space check |
 | `skip_probe.py` | Probes skipped items to determine skip reason |
 | `logging_utils.py` | Logging utilities with colorized output |
 | `system.py` | Locates yt-dlp, ffmpeg and Deno |
@@ -188,12 +211,32 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, 
 ### Arşiv modu
 Silinme riski olan bir kanalı korumak için. Mod olarak **Arşiv**'i seç ve bir kanal URL'si (`https://www.youtube.com/@isim`, `/channel/UC...` ya da `/@isim/videos` gibi bir sekme), bir playlist veya tek bir video gir.
 
-- **Her video için saklananlar** (her biri kendi klasöründe): video (1080p'ye kadar en iyi kalite, bölümler ve metadata gömülü MKV), `.description`, `.info.json`, kapak resmi ve Türkçe/İngilizce yüklenmiş + otomatik altyazılar (`.srt`'ye dönüştürülmüş). YouTube'un makine çevirileri atlanır (kanal yüklemediyse İngilizce bir videoya Türkçe altyazı gelmez); yalnızca videoda gerçekten var olan altyazılar saklanır.
+- **Her video için saklananlar** (her biri kendi klasöründe): video (çözünürlük sınırına kadar en iyi kalite, varsayılan 1080p; bölümler ve metadata gömülü MKV), `.description`, `.info.json`, kapak resmi ve Türkçe/İngilizce yüklenmiş + otomatik altyazılar (`.srt`'ye dönüştürülmüş). YouTube'un makine çevirileri atlanır (kanal yüklemediyse İngilizce bir videoya Türkçe altyazı gelmez); yalnızca videoda gerçekten var olan altyazılar saklanır.
 - **Kanal URL'si kanalın tamamını arşivler.** yt-dlp Videos, Shorts ve Live sekmelerini iç içe playlist olarak döndürür; hepsi indirilir ve "tüm liste mi bu video mu" sorusu sorulmaz.
-- **Arşiv dosyası gerçek kanal kimliğine göre adlandırılır** (`channel_UC..._archive.txt`). Böylece aynı kanalın handle URL'si, `/channel/` URL'si ve sekme URL'leri, handle değişse bile aynı arşivden devam eder. Kimliği öğrenmek tek istek gerektirir; engel dışı bir sebeple başarısız olursa URL'deki kimlik kullanılır.
+- **Arşiv dosyası gerçek kanal kimliğine göre adlandırılır** (`channel_UC..._archive.txt`). Böylece aynı kanalın handle URL'si, `/channel/` URL'si ve sekme URL'leri, handle değişse bile aynı arşivden devam eder. Kimlik, boyut tahminini de besleyen aynı listeden okunur (ayrı bir istek yok); liste engel dışı bir sebeple başarısız olursa URL'deki kimlik kullanılır.
 - **Tempo** (varsayılanlar): istekler arası 1.5 sn, videolar arası 15–45 sn (rastgele), her altyazıdan önce 5 sn, sonsuz yerine 10 deneme. Bekleme süreleri `s` → *Arsiv modu bekleme sureleri* ile değiştirilir ve `config.json` içinde `settings.archive` altında saklanır. Hız sınırın ve proxy ayarın bu modda da geçerlidir.
 - **Ban koruması**: yt-dlp `HTTP Error 429` ya da YouTube'un *"Sign in to confirm you're not a bot"* mesajını bildirirse indirme hemen durdurulur, olay log'a (`[BAN-GUARD]`) yazılır ve **birkaç saat bekleyip aynı URL'yi tekrar vermen, indirmenin kaldığı yerden devam edeceği** söylenir. Bir öğe ancak tüm parçaları kaydedildiğinde arşiv dosyasına girer; yarım kalan hiçbir şey sonraki çalıştırmada atlanmaz.
-- İstek sayısını düşük tutmak için arşiv modu playlist listesini çekmez ve sonrasında atlanan öğeleri yoklamaz (atlama raporu yalnızca MP4/MP3'te).
+- İstek sayısını düşük tutmak için arşiv modu bir kanalı ya da playlist'i yalnızca bir kez listeler (boyut tahmini ve kanal kimliği için; istekler arası bekleme uygulanır) ve sonrasında atlanan öğeleri yoklamaz (atlama raporu yalnızca MP4/MP3'te). Tek video için liste isteği yapılmaz.
+
+### Boyut tahmini ve çözünürlük sınırı
+**Playlist ya da kanal indirmeden önce** (MP4, MP3 ve arşiv modları) uygulama bir boyut tahmini gösterir ve boş disk alanını kontrol eder. Listeyi bir kez okur (video başına ek istek yok) ve her videonun süresini tipik bir bit hızıyla çarpar; bu yüzden rakamlar bilerek yüksek taraftadır ve **ölçüm değil tahmindir**:
+
+| Satır | Varsayılan bit hızı |
+|-------|---------------------|
+| 1080p | 6000 kbit/sn video + 160 kbit/sn ses |
+| 1440p (en fazla) | 12000 + 160 |
+| 2160p (en fazla) | 30000 + 160 |
+
+- 1440p ve 2160p "en fazla" diye etiketlenir: düz listede çözünürlük yoktur ve o çözünürlükte olmayan video daha küçük iner.
+- **Gereken alan** = seçilen çözünürlüğün toplamı + en büyük tek video; birleştirme, yeniden kodlama ve dönüştürme sırasında kaynak ve sonuç diskte birlikte durur.
+- Arşivde kayıtlı videolar hariç tutulur. Süresi olmayan video (Shorts, canlı) 180 sn (Shorts) ya da bilinen sürelerin medyanı kabul edilir; ekranda kaç videonun varsayımla hesaplandığı yazar. Hiçbir süre bilinmiyorsa tahmin atlanır ve indirme devam eder.
+- **MP3** tek rakam gösterir; ses biçimin ve kaliten esas alınır (`mp3` kalite 0 yaklaşık 245 kbit/sn; `flac` ve `wav` çok daha büyük).
+- Boyutlar 1024 tabanlıdır (KiB/MiB/GiB), Windows Gezgini gibi.
+- **Yer yetmiyor mu?** Uyarılır ve *Yine de devam et / İptal* sorulur. İndirme asla engellenmez.
+- **Süre:** kısa (~5 sn) bir hız testi (`speed.cloudflare.com`, proxy'nden geçer; SOCKS proxy'de atlanır) boyutu indirme süresine çevirir. YouTube'u değil hattını ölçer ve IP adresini o sunucuya gönderir. Başarısız olursa süre sütunu bunu söyler, başka bir şey değişmez. Arşiv modu ayrıca yalnızca videolar arası beklemelerin **en az** ne kadar süreceğini gösterir.
+- Tek video için tahmin yapılmaz (ek istek gerekirdi).
+
+**Çözünürlük sınırı.** Tahminden sonra MP4 ve arşiv indirmeleri için (tek video dahil) en yüksek çözünürlük sorulur: 1080p, 1440p, 2160p ya da sınırsız. Kayıtlı varsayılan işaretlidir; başka bir seçenek seçersen yalnızca bu indirme için kullanabilir ya da yeni varsayılan olarak kaydedebilirsin. Sınır tüm video format seçicilerine (`[height<=N]`, yedek dahil) uygulanır. Uyumluluk MP4 profili 1080p'de kalır: YouTube H.264'ü yaklaşık 1080p'ye kadar verir, daha yükseği yavaşça yeniden kodlanırdı. Varsayılanlar: arşiv 1080p, MP4 sınırsız (eskisi gibi). `s` → *Video cozunurluk siniri* / *Arsiv cozunurluk siniri* ile ya da `config.json`'da (`settings.video.max_height`, `settings.archive.max_height`: `1080`, `1440`, `2160` ya da `null`) değiştirilir.
 
 ### Taşınabilir çalışma ortamı
 Windows (x64) ve Linux'ta (x86_64, aarch64; glibc tabanlı dağıtımlar) uygulamanın ihtiyaç duyduğu her şey kendi klasöründe durur:
@@ -240,7 +283,10 @@ Windows (x64) ve Linux'ta (x86_64, aarch64; glibc tabanlı dağıtımlar) uygula
 | `ui.py` | Stilize paneller ve menüler sunan konsol arayüzü |
 | `yt_dlp.py` | yt-dlp argümanlarını oluşturan CommandBuilder sınıfı |
 | `exec.py` | Çıktı akışı, loglama ve 429/bot ban koruması ile komut yürütme |
-| `playlist.py` | Playlist ve kanal algılama, kanal kimliği sorgulama, öğe çekme, arşiv okuma |
+| `playlist.py` | Playlist ve kanal algılama, düz liste (kanal sekmeleri düzleştirilir, kanal kimliği), arşiv okuma |
+| `estimate.py` | Boyut, disk alanı ve süre tahmini (saf hesap) |
+| `speedtest.py` | Kısa bağlantı hızı ölçümü |
+| `preflight.py` | Liste koruması, tahmin tablosu, çözünürlük sorusu ve boş alan kontrolü |
 | `skip_probe.py` | Atlanan öğeleri atlama nedenini belirlemek için sorgular |
 | `logging_utils.py` | Renkli çıktı ile loglama yardımcıları |
 | `system.py` | yt-dlp, ffmpeg ve Deno'nun yerini bulur |

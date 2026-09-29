@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
 
@@ -115,57 +116,6 @@ def _find_channel_id(data: dict[str, Any]) -> str | None:
     return None
 
 
-def resolve_channel_id(url: str, extra_args: list[str], runner: CaptureRunner) -> str:
-    """Ask yt-dlp for the channel id behind a channel URL.
-
-    Handles, /c/ and /user/ URLs do not contain the id, and the archive file is
-    keyed by it so that every URL form of a channel (and a later handle change)
-    resumes the same archive. The request is kept as small as possible: flat
-    listing and a single item, so a tab URL does not page through the channel.
-
-    Args:
-        url: The channel URL.
-        extra_args: JS runtime, proxy and rate-limit arguments; the lookup must
-            go through the same proxy as the download.
-        runner: Executes yt-dlp and captures its output.
-
-    Raises:
-        PlaylistError: yt-dlp failed or returned no usable channel id.
-        KeyboardInterrupt: the user pressed Ctrl+C during the lookup.
-    """
-    known = channel_id_from_url(url)
-    if known:
-        return known
-
-    cmd = [
-        "yt-dlp",
-        "--flat-playlist",
-        "-J",
-        "--playlist-items",
-        "1",
-        "--yes-playlist",
-        url,
-        *extra_args,
-    ]
-    rc, out, err = runner(cmd)
-    if rc == 130:
-        # run_capture turns Ctrl+C into a return code. Re-raise it: treating it
-        # as a failed lookup would fall back and start the download anyway.
-        raise KeyboardInterrupt
-    if rc != 0 or not out.strip():
-        raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=err))
-
-    try:
-        data = json.loads(out)
-    except json.JSONDecodeError as ex:
-        raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=str(ex))) from ex
-
-    channel_id = _find_channel_id(data) if isinstance(data, dict) else None
-    if not channel_id:
-        raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=err))
-    return channel_id
-
-
 def safe_archive_token(value: str) -> str:
     """Make an id safe to embed in an archive file name."""
     return _UNSAFE_FILENAME_CHARS.sub("_", value) or "unknown"
@@ -185,27 +135,101 @@ def read_archive_ids(archive_path: Path) -> set[str]:
     return ids
 
 
-def fetch_playlist_entries(
-    url: str, js_args: list[str], runner: CaptureRunner
-) -> list[PlaylistEntry]:
-    cmd = ["yt-dlp", "--flat-playlist", "-J", "--yes-playlist", url, *js_args]
+#: yt-dlp's key for a channel tab or playlist that was listed but not expanded.
+_TAB_IE_KEY = "YoutubeTab"
+
+
+@dataclass(frozen=True, slots=True)
+class PlaylistListing:
+    """What one flat listing of a playlist or channel returned.
+
+    Attributes:
+        entries: The videos, with channel tabs flattened into one list.
+        channel_id: The channel id when the URL or the listing carries one.
+    """
+
+    entries: list[PlaylistEntry]
+    channel_id: str | None
+
+
+def _leaf_entries(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect the video entries of a flat listing, descending into nested playlists.
+
+    A bare channel URL comes back as a playlist of tab playlists (Videos, Shorts,
+    Live). Their contents are already there, so nothing extra is requested. A tab
+    that is only a stub (an unexpanded YoutubeTab reference) has no videos to
+    read and is skipped rather than fetched.
+    """
+    leaves: list[dict[str, Any]] = []
+    for entry in data.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        if isinstance(entry.get("entries"), list):
+            leaves.extend(_leaf_entries(entry))
+        elif entry.get("ie_key") == _TAB_IE_KEY:
+            continue
+        else:
+            leaves.append(entry)
+    return leaves
+
+
+def _as_duration(value: Any) -> float | None:
+    """Return a usable duration in seconds, or None."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value) if value > 0 else None
+
+
+def _to_entry(index: int, raw: dict[str, Any]) -> PlaylistEntry:
+    vid = raw.get("id") or raw.get("url")
+    url = raw.get("url")
+    return PlaylistEntry(
+        playlist_index=index,
+        id=vid or "",
+        title=raw.get("title") or "",
+        watch_url=f"https://www.youtube.com/watch?v={vid}" if vid else "",
+        duration=_as_duration(raw.get("duration")),
+        is_short=isinstance(url, str) and "/shorts/" in url,
+    )
+
+
+def fetch_listing(url: str, extra_args: list[str], runner: CaptureRunner) -> PlaylistListing:
+    """List a playlist or channel with one flat yt-dlp request.
+
+    Args:
+        url: The playlist or channel URL.
+        extra_args: JS runtime, pacing, proxy and rate-limit arguments.
+        runner: Executes yt-dlp and captures its output.
+
+    Raises:
+        PlaylistError: yt-dlp failed or returned unusable output.
+        KeyboardInterrupt: the user pressed Ctrl+C during the request.
+    """
+    cmd = ["yt-dlp", "--flat-playlist", "-J", "--yes-playlist", url, *extra_args]
     rc, out, err = runner(cmd)
+    if rc == 130:
+        # run_capture turns Ctrl+C into a return code; carrying on would start
+        # the download the user just cancelled.
+        raise KeyboardInterrupt
     if rc != 0 or not out.strip():
         raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=err))
 
-    data = json.loads(out)
-    entries = data.get("entries") or []
-    result: list[PlaylistEntry] = []
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError as ex:
+        raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=str(ex))) from ex
+    if not isinstance(data, dict):
+        raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=err))
 
-    for idx, e in enumerate(entries, start=1):
-        vid = e.get("id") or e.get("url")
-        title = e.get("title") or ""
-        result.append(
-            PlaylistEntry(
-                playlist_index=idx,
-                id=vid or "",
-                title=title,
-                watch_url=f"https://www.youtube.com/watch?v={vid}" if vid else "",
-            )
-        )
-    return result
+    entries = [_to_entry(i, raw) for i, raw in enumerate(_leaf_entries(data), start=1)]
+    return PlaylistListing(
+        entries=entries,
+        channel_id=channel_id_from_url(url) or _find_channel_id(data),
+    )
+
+
+def fetch_playlist_entries(
+    url: str, js_args: list[str], runner: CaptureRunner
+) -> list[PlaylistEntry]:
+    """List the videos of a playlist or channel (see fetch_listing)."""
+    return fetch_listing(url, js_args, runner).entries

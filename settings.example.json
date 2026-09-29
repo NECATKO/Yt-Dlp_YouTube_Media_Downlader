@@ -1,5 +1,5 @@
 {
-  "_comment": "Advanced settings live under the \"settings\" key of config.json, in the shape shown below. Edit them there, or use the in-app settings menu. Any key you omit falls back to the default shown here.",
+  "_comment": "Advanced settings live under the \"settings\" key of config.json, in the shape shown below. Edit them there, or use the in-app settings menu. Any key you omit falls back to the default shown here. max_height is 1080, 1440, 2160 or null (no cap).",
   "settings": {
     "download": {
       "concurrent_fragments": 4,
@@ -22,7 +22,8 @@
       "embed_metadata": true,
       "embed_subtitles": false,
       "subtitle_languages": "en",
-      "write_subtitles": false
+      "write_subtitles": false,
+      "max_height": null
     },
     "output": {
       "single_video_template": "%(title)s.%(ext)s",
@@ -35,7 +36,8 @@
       "sleep_requests": 1.5,
       "sleep_interval": 15,
       "max_sleep_interval": 45,
-      "sleep_subtitles": 5
+      "sleep_subtitles": 5,
+      "max_height": 1080
     }
   }
 }

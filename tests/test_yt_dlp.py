@@ -6,7 +6,7 @@ import pytest
 
 from ytdlp_app.models import DownloadMode
 from ytdlp_app.settings import AppSettings
-from ytdlp_app.yt_dlp import PLUGINS_DIR, CommandBuilder
+from ytdlp_app.yt_dlp import PLUGINS_DIR, CommandBuilder, compat_stage1_format, video_format
 
 URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
@@ -166,7 +166,7 @@ class TestSettingsAreApplied:
 ARCHIVE_DEFAULT_PREFIX = [
     "yt-dlp",
     "-f",
-    "bv*[height<=1080]+ba/b",
+    "bv*[height<=1080]+ba/b[height<=1080]",
     "--merge-output-format",
     "mkv",
     "--write-description",
@@ -284,3 +284,143 @@ class TestArchiveMode:
         for cmd in (builder.build_mp4_quality_mkv(), builder.build_mp3()):
             assert "--sleep-requests" not in cmd
             assert "--write-info-json" not in cmd
+
+
+def _selector(cmd: list[str]) -> str:
+    return cmd[cmd.index("-f") + 1]
+
+
+class TestSelectors:
+    def test_no_cap_gives_todays_selectors(self) -> None:
+        assert video_format(None) == "bv*+ba/b"
+        assert compat_stage1_format(None) == (
+            "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]"
+        )
+
+    def test_the_cap_is_applied_to_every_alternative(self) -> None:
+        assert video_format(1440) == "bv*[height<=1440]+ba/b[height<=1440]"
+        assert compat_stage1_format(1080) == (
+            "bestvideo[vcodec^=avc1][height<=1080]+bestaudio[acodec^=mp4a]"
+            "/best[vcodec^=avc1][height<=1080]"
+        )
+
+
+class TestBuilderResolutionCap:
+    def test_defaults_do_not_change_the_video_commands(self, builder: CommandBuilder) -> None:
+        assert _selector(builder.build_mp4_quality_mkv()) == "bv*+ba/b"
+        assert _selector(builder.build_mp4_quality_remux()) == "bv*+ba/b"
+        assert _selector(builder.build_mp4_compatibility_stage2()) == "bv*+ba/b"
+        assert _selector(builder.build_mp4_compatibility_stage1()) == (
+            "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]"
+        )
+
+    def test_the_saved_video_cap_applies_without_a_choice(self, tmp_path: Path) -> None:
+        settings = AppSettings()
+        settings.video.max_height = 1440
+        builder = CommandBuilder(
+            URL, "%(title)s.%(ext)s", tmp_path / "a.txt", False, settings=settings
+        )
+        assert _selector(builder.build_mp4_quality_mkv()) == video_format(1440)
+
+    def test_a_choice_overrides_the_saved_cap(self, tmp_path: Path) -> None:
+        settings = AppSettings()
+        settings.video.max_height = 1440
+        builder = CommandBuilder(
+            URL, "%(title)s.%(ext)s", tmp_path / "a.txt", False, settings=settings
+        )
+        builder.set_max_height(None)
+        assert _selector(builder.build_mp4_quality_mkv()) == "bv*+ba/b"
+
+    def test_the_choice_reaches_every_video_command(self, builder: CommandBuilder) -> None:
+        builder.set_max_height(2160)
+        for cmd in (
+            builder.build_mp4_quality_mkv(),
+            builder.build_mp4_quality_remux(),
+            builder.build_mp4_compatibility_stage2(),
+        ):
+            assert _selector(cmd) == "bv*[height<=2160]+ba/b[height<=2160]"
+        assert "[height<=2160]" in _selector(builder.build_mp4_compatibility_stage1())
+
+    def test_audio_ignores_the_cap(self, builder: CommandBuilder) -> None:
+        builder.set_max_height(1080)
+        assert _selector(builder.build_mp3()) == "bestaudio/best"
+
+    def test_archive_defaults_to_1080(self, builder: CommandBuilder) -> None:
+        assert _selector(builder.build_archive()) == "bv*[height<=1080]+ba/b[height<=1080]"
+
+    @pytest.mark.parametrize(
+        ("choice", "expected"),
+        [
+            (1440, "bv*[height<=1440]+ba/b[height<=1440]"),
+            (None, "bv*+ba/b"),
+        ],
+    )
+    def test_archive_follows_the_choice(
+        self, builder: CommandBuilder, choice: int | None, expected: str
+    ) -> None:
+        builder.set_max_height(choice)
+        assert _selector(builder.build_archive()) == expected
+
+    def test_archive_uses_its_own_saved_cap(self, tmp_path: Path) -> None:
+        settings = AppSettings()
+        settings.archive.max_height = 2160
+        builder = CommandBuilder(
+            URL, "%(title)s.%(ext)s", tmp_path / "a.txt", False, settings=settings
+        )
+        assert _selector(builder.build_archive()) == video_format(2160)
+
+
+yt_dlp = pytest.importorskip("yt_dlp")
+
+
+def _format(fid: str, height: int | None, vcodec: str, acodec: str, ext: str = "mp4") -> dict:
+    return {
+        "format_id": fid,
+        "height": height,
+        "width": 1,
+        "vcodec": vcodec,
+        "acodec": acodec,
+        "ext": ext,
+        "protocol": "https",
+        "url": "http://example.invalid/x",
+        "tbr": height or 1,
+    }
+
+
+def _pick(selector: str, formats: list[dict]) -> list[str]:
+    """Run a selector through yt-dlp's own engine, offline, on synthetic formats."""
+    ydl = yt_dlp.YoutubeDL({"quiet": True})
+    chosen = ydl.build_format_selector(selector)({"formats": formats, "incomplete_formats": False})
+    return [f["format_id"] for f in chosen]
+
+
+_SPLIT = [
+    _format("a", None, "none", "opus", "webm"),
+    _format("v720", 720, "avc1", "none"),
+    _format("v1080", 1080, "avc1", "none"),
+    _format("v2160", 2160, "vp09", "none"),
+]
+
+
+class TestSelectorsAgainstYtDlp:
+    def test_the_cap_picks_the_best_stream_within_it(self) -> None:
+        assert _pick(video_format(1080), _SPLIT) == ["v1080+a"]
+        assert _pick(video_format(None), _SPLIT) == ["v2160+a"]
+
+    def test_the_cap_holds_in_the_fallback(self) -> None:
+        # Only a 2160p combined stream exists: the old "/b" fallback would take it.
+        progressive = [_format("p", 2160, "avc1", "mp4a")]
+        assert _pick(video_format(None), progressive) == ["p"]
+        assert _pick(video_format(1080), progressive) == []
+
+    def test_the_fallback_still_serves_streams_within_the_cap(self) -> None:
+        progressive = [_format("p", 360, "avc1", "mp4a")]
+        assert _pick(video_format(1080), progressive) == ["p"]
+
+    def test_the_compatibility_selector_prefers_avc1_within_the_cap(self) -> None:
+        formats = [
+            _format("a", None, "none", "mp4a.40.2", "m4a"),
+            _format("h264", 1080, "avc1.640028", "none"),
+            _format("vp9", 1080, "vp09", "none"),
+        ]
+        assert _pick(compat_stage1_format(1080), formats) == ["h264+a"]
