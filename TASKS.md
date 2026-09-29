@@ -92,7 +92,7 @@ Dal: `feat/disk-space-and-resolution` · Spec: `docs/superpowers/specs/2026-09-2
 - [x] `speedtest.py` (ağ hızı ölçümü)
 - [x] `max_height` ayarı, `s` menüsü, `settings.example.json`
 - [x] Format seçicileri ve `CommandBuilder.set_max_height`
-- [ ] `preflight.py` (liste sarmalayıcı, tablo, çözünürlük sorusu, disk kontrolü)
+- [x] `preflight.py` (liste sarmalayıcı, tablo, çözünürlük sorusu, disk kontrolü)
 - [ ] `session.py` entegrasyonu; `resolve_channel_id` kalktı
 - [ ] README, CHANGELOG
 - [ ] pytest / ruff / mypy temiz (346'nın altına düşmeden)
