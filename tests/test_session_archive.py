@@ -11,6 +11,7 @@ from ytdlp_app.exceptions import PlaylistError
 from ytdlp_app.exec import BAN_RETURN_CODE
 from ytdlp_app.i18n import set_language, t
 from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, UserConfig
+from ytdlp_app.playlist import PlaylistListing
 from ytdlp_app.session import CycleOutcome, InteractiveSession
 
 VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
@@ -60,7 +61,7 @@ class Recorder:
 
 
 def _forbidden(*_args: Any, **_kwargs: Any) -> Any:
-    raise AssertionError("archive mode must not send playlist-listing or skip-probe requests")
+    raise AssertionError("archive mode must not send skip-report listing or skip-probe requests")
 
 
 @pytest.fixture(autouse=True)
@@ -106,9 +107,8 @@ EXIT = int(ActionChoice.EXIT)
 
 class TestArchiveDownload:
     def test_single_video(self, monkeypatch, tmp_path: Path, paths: AppPaths) -> None:
-        ui = ScriptedUI([ARCHIVE, EXIT])
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
         runner = Recorder()
-        monkeypatch.setattr(session_module, "resolve_channel_id", _forbidden)
         session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
@@ -129,19 +129,19 @@ class TestArchiveDownload:
             / "%(channel)s/%(upload_date)s - %(title).80B [%(id)s]/%(title).80B.%(ext)s"
         )
 
-    def test_channel_uses_the_resolved_channel_id(
+    def test_channel_uses_the_channel_id_from_the_listing(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
         # No playlist-vs-video question: a channel is always archived whole.
-        ui = ScriptedUI([ARCHIVE, EXIT])
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
         runner = Recorder()
         lookups: list[tuple[str, list[str]]] = []
 
-        def fake_resolve(url: str, extra_args: list[str], _runner: Any) -> str:
+        def fake_listing(url: str, extra_args: list[str], _runner: Any) -> PlaylistListing:
             lookups.append((url, extra_args))
-            return CHANNEL_ID
+            return PlaylistListing(entries=[], channel_id=CHANNEL_ID)
 
-        monkeypatch.setattr(session_module, "resolve_channel_id", fake_resolve)
+        monkeypatch.setattr(session_module, "fetch_listing", fake_listing)
         session = _session(monkeypatch, tmp_path, paths, ui, CHANNEL_URL, runner)
         session.settings.download.proxy = "http://proxy:3128"
 
@@ -152,22 +152,24 @@ class TestArchiveDownload:
         assert cmd[cmd.index("--download-archive") + 1] == str(
             paths.archives_dir / f"channel_{CHANNEL_ID}_archive.txt"
         )
-        # The lookup goes through the same proxy as the download.
+        # The listing goes through the same proxy as the download, with the archive's
+        # request wait.
         ((url, extra_args),) = lookups
         assert url == CHANNEL_URL
         assert "http://proxy:3128" in extra_args
+        assert extra_args[extra_args.index("--sleep-requests") + 1] == "1.5"
         assert t("prompt_playlist") not in ui.prompts
 
     def test_lookup_failure_falls_back_to_the_handle(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
-        ui = ScriptedUI([ARCHIVE, EXIT])
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
         runner = Recorder()
 
-        def failing_resolve(*_args: Any) -> str:
+        def failing_listing(*_args: Any) -> PlaylistListing:
             raise PlaylistError("returncode=1\nstderr:\nERROR: Unable to download webpage")
 
-        monkeypatch.setattr(session_module, "resolve_channel_id", failing_resolve)
+        monkeypatch.setattr(session_module, "fetch_listing", failing_listing)
         session = _session(monkeypatch, tmp_path, paths, ui, CHANNEL_URL, runner)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
@@ -176,13 +178,14 @@ class TestArchiveDownload:
         assert cmd[cmd.index("--download-archive") + 1] == str(
             paths.archives_dir / "channel_ChannelHandle_archive.txt"
         )
+        assert t("estimate_unavailable") in ui.text()
 
 
 class TestBanProtection:
     def test_ban_during_download_explains_how_to_resume(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
-        ui = ScriptedUI([ARCHIVE], exit_on_failure=True)
+        ui = ScriptedUI([ARCHIVE, 1], exit_on_failure=True)
         runner = Recorder(rc=BAN_RETURN_CODE)
         session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
         monkeypatch.setattr(session, "handle_error", _forbidden)
@@ -195,26 +198,26 @@ class TestBanProtection:
     def test_ban_can_return_to_the_prompt(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
-        ui = ScriptedUI([ARCHIVE], exit_on_failure=False)
+        ui = ScriptedUI([ARCHIVE, 1], exit_on_failure=False)
         session = _session(
             monkeypatch, tmp_path, paths, ui, VIDEO_URL, Recorder(rc=BAN_RETURN_CODE)
         )
 
         assert session._process_one_cycle() == CycleOutcome.CONTINUE
 
-    def test_ban_during_channel_lookup_never_starts_the_download(
+    def test_ban_during_the_channel_listing_never_starts_the_download(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
         ui = ScriptedUI([ARCHIVE], exit_on_failure=True)
         runner = Recorder()
 
-        def banned_resolve(*_args: Any) -> str:
+        def banned_listing(*_args: Any) -> PlaylistListing:
             raise PlaylistError(
                 "returncode=1\nstderr:\n"
                 "ERROR: [youtube:tab] @ChannelHandle: Sign in to confirm you\u2019re not a bot."
             )
 
-        monkeypatch.setattr(session_module, "resolve_channel_id", banned_resolve)
+        monkeypatch.setattr(session_module, "fetch_listing", banned_listing)
         session = _session(monkeypatch, tmp_path, paths, ui, CHANNEL_URL, runner)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_FAILURE
@@ -229,8 +232,8 @@ class TestRegularModesUnchanged:
     def test_mp4_channel_still_asks_and_still_reports_skips(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
-        # Video, whole playlist, Quality profile, MKV, then exit.
-        ui = ScriptedUI([int(ModeChoice.VIDEO), 1, 2, 1, EXIT])
+        # Video, whole playlist, Quality profile, MKV, no resolution cap, then exit.
+        ui = ScriptedUI([int(ModeChoice.VIDEO), 1, 2, 1, 4, EXIT])
         runner = Recorder()
         session = _session(monkeypatch, tmp_path, paths, ui, CHANNEL_URL, runner)
         fetched: list[str] = []
@@ -255,7 +258,7 @@ class TestImpersonationWarning:
     def test_archive_mode_warns_when_it_is_missing(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
-        ui = ScriptedUI([ARCHIVE, EXIT])
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
         session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, Recorder())
         monkeypatch.setattr(session_module, "impersonation_available", lambda: False)
 
@@ -267,7 +270,7 @@ class TestImpersonationWarning:
     def test_no_warning_when_present_or_unknown(
         self, monkeypatch, tmp_path: Path, paths: AppPaths, available: bool | None
     ) -> None:
-        ui = ScriptedUI([ARCHIVE, EXIT])
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
         session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, Recorder())
         monkeypatch.setattr(session_module, "impersonation_available", lambda: available)
 

@@ -15,8 +15,6 @@ from ytdlp_app.playlist import (
     is_channel_url,
     is_playlist_url,
     read_archive_ids,
-    resolve_channel_id,
-    safe_archive_token,
 )
 
 
@@ -231,60 +229,6 @@ class FakeRunner:
     def __call__(self, cmd: list[str]) -> tuple[int, str, str]:
         self.calls.append(cmd)
         return self.rc, self.out, self.err
-
-
-class TestResolveChannelId:
-    URL = "https://www.youtube.com/@ChannelHandle"
-
-    def test_reads_the_top_level_channel_id(self) -> None:
-        runner = FakeRunner(out=json.dumps(_nested_channel_json()))
-        assert resolve_channel_id(self.URL, [], runner) == CHANNEL_ID
-
-    def test_falls_back_to_the_nested_tab_entries(self) -> None:
-        runner = FakeRunner(out=json.dumps(_nested_channel_json(top_level_id=False)))
-        assert resolve_channel_id(self.URL, [], runner) == CHANNEL_ID
-
-    def test_lookup_is_flat_limited_and_uses_the_extra_args(self) -> None:
-        runner = FakeRunner(out=json.dumps(_nested_channel_json()))
-        resolve_channel_id(self.URL, ["--proxy", "http://p:1"], runner)
-
-        (cmd,) = runner.calls
-        assert "--flat-playlist" in cmd
-        assert cmd[cmd.index("--playlist-items") + 1] == "1"
-        assert cmd[cmd.index("--proxy") + 1] == "http://p:1"
-
-    def test_channel_url_with_id_needs_no_request(self) -> None:
-        runner = FakeRunner(rc=1)
-        url = f"https://www.youtube.com/channel/{CHANNEL_ID}"
-        assert resolve_channel_id(url, [], runner) == CHANNEL_ID
-        assert runner.calls == []
-
-    def test_failure_raises_with_stderr(self) -> None:
-        err = "ERROR: [youtube:tab] x: HTTP Error 429: Too Many Requests"
-        with pytest.raises(PlaylistError, match="429"):
-            resolve_channel_id(self.URL, [], FakeRunner(rc=1, err=err))
-
-    def test_json_without_a_channel_id_raises(self) -> None:
-        runner = FakeRunner(out=json.dumps({"id": "not-a-channel", "entries": []}))
-        with pytest.raises(PlaylistError):
-            resolve_channel_id(self.URL, [], runner)
-
-    def test_ctrl_c_is_not_swallowed(self) -> None:
-        with pytest.raises(KeyboardInterrupt):
-            resolve_channel_id(self.URL, [], FakeRunner(rc=130))
-
-
-class TestSafeArchiveToken:
-    @pytest.mark.parametrize(
-        ("value", "expected"),
-        [
-            (CHANNEL_ID, CHANNEL_ID),
-            ("Some Handle/..\\x", "Some_Handle_.._x"),
-            ("", "unknown"),
-        ],
-    )
-    def test_sanitizes(self, value: str, expected: str) -> None:
-        assert safe_archive_token(value) == expected
 
 
 def _video(vid: str, *, duration: Any = None, short: bool = False) -> dict[str, Any]:

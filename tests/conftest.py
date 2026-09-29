@@ -38,3 +38,11 @@ def sample_playlist_json() -> dict[str, Any]:
             {"id": "vid3", "title": "Video 3", "url": "https://youtube.com/watch?v=vid3"},
         ],
     }
+
+
+@pytest.fixture(autouse=True)
+def _no_speed_test(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Session tests must never reach the network for a speed measurement."""
+    import ytdlp_app.session as session_module  # noqa: PLC0415
+
+    monkeypatch.setattr(session_module, "measure_speed", lambda _proxy: None)

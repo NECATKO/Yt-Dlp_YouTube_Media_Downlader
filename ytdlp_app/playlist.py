@@ -116,57 +116,6 @@ def _find_channel_id(data: dict[str, Any]) -> str | None:
     return None
 
 
-def resolve_channel_id(url: str, extra_args: list[str], runner: CaptureRunner) -> str:
-    """Ask yt-dlp for the channel id behind a channel URL.
-
-    Handles, /c/ and /user/ URLs do not contain the id, and the archive file is
-    keyed by it so that every URL form of a channel (and a later handle change)
-    resumes the same archive. The request is kept as small as possible: flat
-    listing and a single item, so a tab URL does not page through the channel.
-
-    Args:
-        url: The channel URL.
-        extra_args: JS runtime, proxy and rate-limit arguments; the lookup must
-            go through the same proxy as the download.
-        runner: Executes yt-dlp and captures its output.
-
-    Raises:
-        PlaylistError: yt-dlp failed or returned no usable channel id.
-        KeyboardInterrupt: the user pressed Ctrl+C during the lookup.
-    """
-    known = channel_id_from_url(url)
-    if known:
-        return known
-
-    cmd = [
-        "yt-dlp",
-        "--flat-playlist",
-        "-J",
-        "--playlist-items",
-        "1",
-        "--yes-playlist",
-        url,
-        *extra_args,
-    ]
-    rc, out, err = runner(cmd)
-    if rc == 130:
-        # run_capture turns Ctrl+C into a return code. Re-raise it: treating it
-        # as a failed lookup would fall back and start the download anyway.
-        raise KeyboardInterrupt
-    if rc != 0 or not out.strip():
-        raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=err))
-
-    try:
-        data = json.loads(out)
-    except json.JSONDecodeError as ex:
-        raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=str(ex))) from ex
-
-    channel_id = _find_channel_id(data) if isinstance(data, dict) else None
-    if not channel_id:
-        raise PlaylistError(t("playlist_fetch_failed_detail", rc=rc, stderr=err))
-    return channel_id
-
-
 def safe_archive_token(value: str) -> str:
     """Make an id safe to embed in an archive file name."""
     return _UNSAFE_FILENAME_CHARS.sub("_", value) or "unknown"

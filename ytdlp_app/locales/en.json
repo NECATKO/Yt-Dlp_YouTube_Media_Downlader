@@ -57,7 +57,6 @@
   "mp3_desc": "Downloading best audio and converting to MP3...",
   "archive_title": "ARCHIVE:",
   "archive_desc": "Video (up to 1080p, MKV), description, info JSON, thumbnail and subtitles. Waiting between requests to avoid rate limits...",
-  "archive_resolving_channel": "Looking up the channel id (one request)...",
   "archive_channel_id_fallback": "Could not look up the channel id; using \"{id}\" from the URL for the archive file. Use the same URL to resume.",
   "ban_detected_title": "YouTube is temporarily blocking requests - download stopped.",
   "ban_detected_detail": "It answered with HTTP 429 (Too Many Requests) or \"Sign in to confirm you're not a bot\". Sending more requests now would only extend the block.",
