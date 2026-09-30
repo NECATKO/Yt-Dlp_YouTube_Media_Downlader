@@ -8,8 +8,10 @@ engine runs, offline and in a fraction of a second per item.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
+import re
 import shutil
 import subprocess
 from typing import TYPE_CHECKING, Any
@@ -23,9 +25,29 @@ if TYPE_CHECKING:
 
 HAS_TOOLS = all(shutil.which(tool) for tool in ("ffmpeg", "ffprobe"))
 
+# One CI job sets this so that a missing ffmpeg, ffprobe or encoder fails the run instead
+# of quietly skipping the tests that prove the real engine works.
+REQUIRED = os.environ.get("YTDLP_REQUIRE_ENGINE") == "1"
+
 requires_media_tools = pytest.mark.skipif(
-    not HAS_TOOLS, reason="ffmpeg and ffprobe are needed to generate and inspect media"
+    not HAS_TOOLS and not REQUIRED,
+    reason="ffmpeg and ffprobe are needed to generate and inspect media",
 )
+
+
+@functools.cache
+def has_encoder(name: str) -> bool:
+    """Whether this ffmpeg build can encode with ``name`` (builds differ in what they include)."""
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return re.search(rf"^\s*[VAS][\w.]{{5}}\s+{re.escape(name)}\s", out, re.MULTILINE) is not None
 
 
 def make_media(
@@ -35,7 +57,13 @@ def make_media(
     acodec: str | None = "aac",
     seconds: float = 0.3,
 ) -> Path:
-    """Generate a tiny clip with the given codecs (None leaves that stream out)."""
+    """Generate a tiny clip with the given codecs (None leaves that stream out).
+
+    Skips the test when this ffmpeg lacks an encoder, unless the run requires the engine.
+    """
+    for encoder in (vcodec, acodec):
+        if encoder and not REQUIRED and not has_encoder(encoder):
+            pytest.skip(f"this ffmpeg has no {encoder} encoder")
     cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
     if vcodec:
         cmd += ["-f", "lavfi", "-i", f"color=c=blue:s=64x64:d={seconds}:r=10"]
