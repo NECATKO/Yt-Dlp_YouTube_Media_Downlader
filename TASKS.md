@@ -1,4 +1,48 @@
-# Durum — 29 Eylül 2026
+# Durum — 30 Eylül 2026
+
+Sürüm **0.4.0** (henüz tag/release yok; güncelleyici release'leri çektiği için yayın kararı ayrı).
+Tek dal: `main`. PR #1–#5 birleşmişti; yayın öncesi sağlamlaştırma (aşağıda) doğrudan `main`'e commit'lendi
+ve yan dallar temizlendi. İnceleme raporu: `degerlendirme-raporlari/2026-09-30-uygulama-analizi.md` (yerel, git'te yok).
+
+## Sağlamlaştırma — bitenler
+Ayrıntı ve gerekçe: `CHANGELOG.md` → `[Unreleased]`.
+
+- [x] Dosya adlarına video kimliği (`%(id)s`); eski varsayılan şablonların `config_version` 2 ile göçü
+- [x] `--ignore-errors` kalktı: başarısız son işleme öğeyi arşive yazmaz; iki aşamalı profil gerçekten yeniden işler
+- [x] Eksik parça (`--abort-on-unavailable-fragments`) ve var olduğu hâlde kaydedilemeyen altyazı/kapak → öğe tamamlanmış sayılmaz
+- [x] Uyumluluk profili: H.264 + AAC + MP4 sözleşmesi (`Mp4Compat` eklentisi, ffprobe doğrulaması)
+- [x] Kalite/MKV ve arşiv: tek birleşik akışta da MKV (`--remux-video mkv`)
+- [x] Süreç yaşam döngüsü: süreç grubu, her çıkış yolunda durdur/bekle/boruları kapat; zaman aşımları; hız testi bütçesi
+- [x] Güncelleyiciler işlem bütünlüklü (`update.sh` çalıştırılarak doğrulandı, `update.ps1` yazıldı ama çalıştırılamadı)
+- [x] Ortak ağ bağlamı (proxy her çağrıda), `--ignore-config`, vekil sunucu kimlik bilgisi maskeleme
+- [x] Ayar doğrulaması, atomik kayıt, geri alma, bozuk config'in kenara alınması, `config_version`
+- [x] Arşiv dosya adları güvenli kimlikten; kanal/sekme, `/live`, YouTube dışı URL sınıflandırması
+- [x] Sonuç modeli (`outcome.py`), `planning.py` ayrıştırması, atlama yoklamasında iptal/ban
+- [x] Arşiv denetimi/onarımı (`a` ya da `downloader.py audit`; önizleme + yedek + `--apply`)
+- [x] Tahmin: sınırsız satırı, ses geçici alanı, en az/beklenen bekleme, hız testi kapatma
+- [x] Terminal: renksiz yönlendirilmiş çıktı, genişliğe sığan paneller, doğal Türkçe, ses biçimi adı
+- [x] README, CHANGELOG, `settings.example.json`, bu dosya
+
+## Doğrulanamayanlar (kalan gerçek iş)
+- [ ] **Windows**: `update.ps1`, `install.ps1`, `Run.bat`, Windows süreç ağacı durdurma (`CTRL_BREAK` + `taskkill /T /F`) hiç çalıştırılmadı (bu ortamda pwsh/Windows yok). Yalnızca kararları birim testli.
+- [ ] **macOS**: hiçbir şey çalıştırılmadı.
+- [ ] Gerçek YouTube indirmesi yapılmadı (izin gerekir); altyazı/kapak/parça davranışları yerel üretilmiş medya ve yerel HTTP ile denendi.
+- [ ] `ArchiveComplete`: YouTube'un gerçek altyazı/kapak listeleriyle bir kez denenmeli (özellikle "en iyi kapak 404" durumunda daha düşüğe düşüp tamamlanması).
+- [ ] CI'da ffmpeg kurulumu (`continue-on-error`) ve `.sha256` varlığı bir sürüm etiketinde denenmeli.
+- [ ] Eski arşivlerdeki yanlış kayıtlar (aynı başlık çakışması, başarısız son işleme) otomatik onarılmaz; `downloader.py audit` yalnızca yolu/kimliği bilinenleri kanıtlayabilir, kimliksiz eski dosyalar "denetlenemedi" çıkar.
+- [ ] Bit hızı tablosu değeri kararı (PR #5 merge edildi, karar açık kaldı): tablo gerçek `tbr` değerlerinin ~3,5–4 katı.
+- [x] **Git:** `main` tek dal; çalışma commit'lendi, yerel yan dallar silindi.
+- [x] **Karar (ikinci karar iptal):** `run.sh` açılışta güncelleme *denetlemez*; otomatik güncelleyici erteleme kararı geçerli. Linux/macOS'ta güncelleme istek üzerine (`bash update.sh`), Windows'ta `Run.bat` eskisi gibi sessizce denetler. Fark README'de belgeli.
+
+## Test durumu
+- 30 Eylül son çalıştırma: **1156 test geçti, 1 atlandı** (`unzip` kurulu değil), satır+dal kapsamı **%92** (incelemede 521 test / %86,19). Eski geçerli testler korundu; davranışı bilerek değişen birkaçı (varsayılan şablon, `--ignore-errors`, arşiv komutu, Türkçe sesli mod adı, hız/tahmin metinleri, ses geçici alanı) gerekçesiyle güncellendi.
+- ruff, `ruff format --check`, `mypy ytdlp_app --ignore-missing-imports`, `scripts/check_version.py`, `bash -n` (run/install/update) temiz. wheel + sdist üretildi (`uv build --offline`), temiz sanal ortama kurulup AV1→H.264/AAC dönüşümü ve `audit` çalıştırıldı.
+- Gerçek motorla (yt-dlp + ffmpeg, üretilmiş medya, ağsız) koşan sözleşme testleri: `tests/test_engine_contract.py`.
+- `update.sh` gerçek bash + curl ile, tek kullanımlık kurulumda: `tests/test_update_sh.py`.
+
+---
+
+# Önceki durum — 29 Eylül 2026 (PR #5 ve sonrası için yukarıya bakın)
 
 Arşiv modu ve taşınabilir çalışma ortamı `main`'e birleşti (PR #2, `ce7ba12`).
 `en`/`en-orig` düzeltmesi de birleşti (PR #3, `8c9a90a`).
