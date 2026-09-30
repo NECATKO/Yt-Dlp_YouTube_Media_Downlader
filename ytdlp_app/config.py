@@ -9,16 +9,24 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .atomic import atomic_write_text
 from .i18n import get_available_languages, get_language_name, t
-from .logging_utils import Colors, paint
-from .settings import AppSettings
+from .logging_utils import Colors, console_print, paint
+from .settings import LEGACY_TEMPLATES, AppSettings, OutputSettings, SettingsIssue
 
 if TYPE_CHECKING:
     from .ui import UI
+
+#: The schema of config.json. Bumped when a saved value has to be reinterpreted:
+#:   1 (no "config_version" key): the original layout.
+#:   2: the default output templates carry %(id)s (see OutputSettings); saved copies of
+#:      the old defaults are moved over by migrate_config.
+CONFIG_VERSION = 2
 
 
 def normalize_user_path(s: str, base: Path | None = None) -> Path:
@@ -82,6 +90,15 @@ def default_dirs(portable_root: Path | None = None) -> tuple[Path, Path]:
     return Path.home() / "Videos", Path.home() / "Music"
 
 
+def _keep_unreadable(config_file: Path) -> None:
+    """Copy a config.json that cannot be used aside, so saving cannot destroy it."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    kept = config_file.with_name(f"{config_file.name}.corrupt-{stamp}")
+    with contextlib.suppress(OSError):
+        shutil.copy2(config_file, kept)
+        console_print(paint(t("config_corrupt_kept", name=kept.name), Colors.YELLOW))
+
+
 def load_config(config_file: Path) -> dict[str, Any]:
     """Load configuration from a JSON file.
 
@@ -90,7 +107,9 @@ def load_config(config_file: Path) -> dict[str, Any]:
 
     Returns:
         The configuration dictionary, or empty dict if file doesn't exist
-        or cannot be parsed.
+        or cannot be parsed. A file that exists but cannot be used is first copied to
+        ``config.json.corrupt-<time>``: the app carries on with defaults and its next
+        save would otherwise overwrite whatever could still be recovered from it.
     """
     if not config_file.exists():
         return {}
@@ -100,24 +119,95 @@ def load_config(config_file: Path) -> dict[str, Any]:
         # Runs before the language is known -- the config being unreadable is
         # exactly what would have told us which language to use -- so this
         # falls back to English.
-        print(paint(t("config_read_warning"), Colors.YELLOW))
+        console_print(paint(t("config_read_warning"), Colors.YELLOW))
+        _keep_unreadable(config_file)
         return {}
     # A JSON file whose top level is a list or scalar is as unusable as a
     # corrupt one; callers rely on getting a mapping back.
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        _keep_unreadable(config_file)
+        return {}
+    return data
+
+
+def _version_of(cfg: dict[str, Any]) -> int:
+    version = cfg.get("config_version")
+    if isinstance(version, int) and not isinstance(version, bool) and version >= 1:
+        return version
+    return 1
+
+
+def migrate_config(cfg: dict[str, Any]) -> list[str]:
+    """Bring a loaded configuration up to CONFIG_VERSION, in memory.
+
+    Nothing is written here; the migrated dict reaches disk with the next save (which
+    first keeps a copy of the old file, see save_config). A configuration from a newer
+    version is left alone: it is not this version's to reinterpret.
+
+    Saved output templates that are still exactly the old defaults (title-only names
+    that let two videos with one title share a file) move to the id-based defaults. A
+    template that differs from them is the user's own choice and is never rewritten.
+
+    Returns:
+        A description of each change, empty when there was nothing to do.
+    """
+    version = _version_of(cfg)
+    if version > CONFIG_VERSION:
+        return []
+    notes: list[str] = []
+    if version < 2:
+        settings = cfg.get("settings")
+        output = settings.get("output") if isinstance(settings, dict) else None
+        if isinstance(output, dict):
+            defaults = OutputSettings()
+            for key, old in LEGACY_TEMPLATES.items():
+                if output.get(key) == old:
+                    output[key] = getattr(defaults, key)
+                    notes.append(f"settings.output.{key}: {old} -> {output[key]}")
+    if version != CONFIG_VERSION or "config_version" not in cfg:
+        cfg["config_version"] = CONFIG_VERSION
+        if not notes and version < CONFIG_VERSION:
+            notes.append(f"config_version: {version} -> {CONFIG_VERSION}")
+    return notes
+
+
+def _back_up_older_version(config_file: Path, new_version: int) -> None:
+    """Keep the file as it was, once, before the first save of a newer schema replaces it."""
+    try:
+        old = json.loads(config_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(old, dict):
+        return
+    old_version = _version_of(old)
+    if old_version >= new_version:
+        return
+    backup = config_file.with_name(f"{config_file.name}.v{old_version}.bak")
+    if not backup.exists():
+        with contextlib.suppress(OSError):
+            shutil.copy2(config_file, backup)
 
 
 def save_config(config_file: Path, cfg: dict[str, Any]) -> None:
-    """Save configuration to a JSON file.
+    """Save configuration to a JSON file, atomically.
+
+    The old file is replaced in one step, so an interruption or a full disk leaves it
+    exactly as it was. When the file on disk has an older schema than ``cfg``, a copy
+    of it is kept as ``config.json.v<N>.bak`` first.
 
     Args:
         config_file: Path to the configuration file.
         cfg: The configuration dictionary to save.
+
+    Raises:
+        OSError: The file could not be written; it is then unchanged.
     """
-    config_file.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    if config_file.exists():
+        _back_up_older_version(config_file, _version_of(cfg))
+    atomic_write_text(config_file, json.dumps(cfg, ensure_ascii=False, indent=2))
 
 
-def load_settings(cfg: dict[str, Any]) -> AppSettings:
+def load_settings(cfg: dict[str, Any], issues: list[SettingsIssue] | None = None) -> AppSettings:
     """Read the advanced settings out of a loaded configuration dict.
 
     Configs written before settings existed simply have no "settings" key, so
@@ -125,29 +215,48 @@ def load_settings(cfg: dict[str, Any]) -> AppSettings:
 
     Args:
         cfg: The configuration dictionary from load_config().
+        issues: When given, receives one SettingsIssue per unusable value, named by
+            its dotted field path; each falls back to its default.
 
     Returns:
         The parsed settings, or all-defaults when the key is absent or unusable.
     """
     raw = cfg.get("settings")
-    if not isinstance(raw, dict):
+    if raw is None:
         return AppSettings()
-    return AppSettings.from_dict(raw)
+    if not isinstance(raw, dict):
+        if issues is not None:
+            issues.append(
+                SettingsIssue(
+                    "settings", f"expected an object, found {type(raw).__name__}", "defaults"
+                )
+            )
+        return AppSettings()
+    return AppSettings.from_dict(raw, issues)
 
 
 def save_settings(config_file: Path, cfg: dict[str, Any], settings: AppSettings) -> None:
     """Write the advanced settings back into config.json.
 
-    Mutates ``cfg`` so the caller keeps holding the current state.
+    ``cfg`` is updated only after the file was written, so the caller's copy never
+    claims a state the disk does not have.
 
     Args:
         config_file: Path to the configuration file.
         cfg: The configuration dictionary to update and persist.
         settings: The settings to store.
+
+    Raises:
+        OSError: The file could not be written; ``cfg`` is then unchanged.
     """
-    cfg["settings"] = settings.to_dict()
-    cfg["saved_at"] = datetime.now().isoformat(timespec="seconds")
-    save_config(config_file, cfg)
+    updated = {
+        **cfg,
+        "settings": settings.to_dict(),
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+        "config_version": CONFIG_VERSION,
+    }
+    save_config(config_file, updated)
+    cfg.update(updated)
 
 
 def delete_config(config_file: Path) -> None:
@@ -185,7 +294,7 @@ def ensure_language_interactive(ui: UI, existing_cfg: dict, *, config_file: Path
     # Nothing recorded yet. Translations are not loaded at this point, so the
     # prompt has to carry its own text in every language it offers.
     choice = ui.pick(
-        "Select language / Dil secin",
+        "Select language / Dil seçin",
         [get_language_name(code) for code in available],
     )
     language = available[choice - 1]
@@ -196,6 +305,17 @@ def ensure_language_interactive(ui: UI, existing_cfg: dict, *, config_file: Path
         save_config(config_file, existing_cfg)
 
     return language
+
+
+def _folder_setting(ui: UI, cfg: dict[str, Any], key: str) -> str:
+    """Read a folder setting; anything but a usable path string counts as not set."""
+    value = cfg.get(key)
+    if value is None or value == "":
+        return ""
+    if isinstance(value, str) and value.strip() and "\x00" not in value:
+        return value.strip()
+    ui.print(paint(t("config_folder_invalid", field=key), Colors.YELLOW))
+    return ""
 
 
 def ensure_dirs_interactive(
@@ -211,8 +331,8 @@ def ensure_dirs_interactive(
     base = config_file.parent
     def_videos, def_music = default_dirs(base if portable else None)
 
-    v_raw = (existing_cfg.get("videos_dir") or "").strip()
-    m_raw = (existing_cfg.get("music_dir") or "").strip()
+    v_raw = _folder_setting(ui, existing_cfg, "videos_dir")
+    m_raw = _folder_setting(ui, existing_cfg, "music_dir")
 
     videos_dir = normalize_user_path(v_raw, base) if v_raw else None
     music_dir = normalize_user_path(m_raw, base) if m_raw else None

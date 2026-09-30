@@ -6,6 +6,7 @@ playlist IDs, reading download archives, and fetching playlist entries.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -19,8 +20,10 @@ from .models import CaptureRunner, PlaylistEntry
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Regex pattern to detect YouTube channel URL paths
-_CHANNEL_PATH_PATTERN = re.compile(r"^/(channel|c|user|@)")
+# The app is built around YouTube: playlist and channel handling, the size estimate and
+# the archive naming all rest on YouTube's URL forms and ids. Any other site's URL is
+# still handed to yt-dlp, but only ever as a single item.
+_YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
 
 # A whole channel, or one of its listing tabs. A bare channel URL makes yt-dlp
 # return the Videos, Shorts and Live tabs as nested playlists. "/live" is left
@@ -31,6 +34,13 @@ _CHANNEL_URL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# The first path segments that name a channel, with the segment after them being its id.
+_CHANNEL_KINDS = ("channel", "c", "user")
+
+# A channel's own tabs beyond the ones that list videos (its playlists, its community
+# posts...) are still "the channel" for classification. "live" is not: it is one video.
+_SINGLE_VIDEO_TABS = ("live",)
+
 # YouTube channel ids: "UC" followed by 22 URL-safe base64 characters.
 _CHANNEL_ID_PATTERN = re.compile(r"^UC[\w-]{22}$")
 
@@ -38,8 +48,36 @@ _CHANNEL_ID_PATTERN = re.compile(r"^UC[\w-]{22}$")
 _UNSAFE_FILENAME_CHARS = re.compile(r"[^\w.-]")
 
 
+def is_youtube_host(url: str) -> bool:
+    """Whether the URL is on one of YouTube's own hosts (the exact domain or a subdomain)."""
+    host = (urlparse(url).hostname or "").lower()
+    return any(host == domain or host.endswith("." + domain) for domain in _YOUTUBE_HOSTS)
+
+
+def _channel_segments(path: str) -> tuple[str, list[str]] | None:
+    """Split a channel path into its identifier and the tab segments after it.
+
+    Returns None when the path is not a channel's (``/watch``, ``/clip/...``, ``/cats``).
+    """
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        return None
+    head = parts[0]
+    if head.startswith("@") and len(head) > 1:
+        return head.removeprefix("@"), parts[1:]
+    if head.lower() in _CHANNEL_KINDS and len(parts) >= 2:
+        return parts[1], parts[2:]
+    return None
+
+
 def is_playlist_url(url: str) -> bool:
-    """Check if the URL is a playlist or a channel (treated as playlist)."""
+    """Check if the URL is a YouTube playlist or channel (treated as playlist).
+
+    Other sites' URLs are never playlists here, and a channel's ``/live`` address is
+    the single video it redirects to.
+    """
+    if not is_youtube_host(url):
+        return False
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
 
@@ -50,15 +88,22 @@ def is_playlist_url(url: str) -> bool:
     path = parsed.path
 
     # Explicit /playlist path
-    if path.startswith("/playlist"):
+    if path == "/playlist" or path.startswith("/playlist/"):
         return True
 
-    # Channel patterns: /channel/, /c/, /user/, /@username
-    return bool(_CHANNEL_PATH_PATTERN.match(path))
+    channel = _channel_segments(path)
+    if channel is None:
+        return False
+    _ident, tabs = channel
+    return not (tabs and tabs[0].lower() in _SINGLE_VIDEO_TABS)
 
 
 def get_playlist_id(url: str) -> str:
-    """Extract a unique identifier for the playlist or channel."""
+    """Extract a unique identifier for the playlist or channel.
+
+    A channel is identified by its handle, id or name, never by the tab of it that
+    the URL points at: ``/@a/videos`` and ``/@b/videos`` must not share an identifier.
+    """
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
 
@@ -66,11 +111,15 @@ def get_playlist_id(url: str) -> str:
     if "list" in qs:
         return qs["list"][0]
 
-    # 2. For channel URLs, use the last path segment (e.g., @ChannelName, UCxxxxx)
+    # 2. For channel URLs, the channel's own identifier (@ChannelName -> ChannelName, UCxxxxx)
+    channel = _channel_segments(parsed.path)
+    if channel is not None:
+        return channel[0]
+
+    # 3. Anything else: the last path segment
     path = parsed.path.rstrip("/")
     if path:
         segment = path.split("/")[-1]
-        # Sanitize: remove @ prefix if present for cleaner archive filenames
         return segment.lstrip("@") if segment.startswith("@") else segment
 
     return "unknown_playlist"
@@ -78,11 +127,9 @@ def get_playlist_id(url: str) -> str:
 
 def is_channel_url(url: str) -> bool:
     """Check if the URL points at a whole YouTube channel or one of its tabs."""
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower()
-    if host != "youtube.com" and not host.endswith(".youtube.com"):
+    if not is_youtube_host(url):
         return False
-    return bool(_CHANNEL_URL_PATTERN.match(parsed.path))
+    return bool(_CHANNEL_URL_PATTERN.match(urlparse(url).path))
 
 
 def channel_id_from_url(url: str) -> str | None:
@@ -116,9 +163,25 @@ def _find_channel_id(data: dict[str, Any]) -> str | None:
     return None
 
 
+#: Longest identifier kept verbatim in an archive file name.
+_MAX_TOKEN = 80
+
+
 def safe_archive_token(value: str) -> str:
-    """Make an id safe to embed in an archive file name."""
-    return _UNSAFE_FILENAME_CHARS.sub("_", value) or "unknown"
+    """Make an id safe to embed in an archive file name.
+
+    Real YouTube ids (letters, digits, "-" and "_") pass through unchanged. Anything else
+    is replaced, and because the replacement can make two different ids equal, a token
+    that had to change gets a short hash of the original appended: different ids can then
+    never share an archive file, and no id can carry a path separator into the name.
+    """
+    token = _UNSAFE_FILENAME_CHARS.sub("_", value)
+    changed = token != value or not token.strip(".") or len(token) > _MAX_TOKEN
+    if not changed:
+        return token
+    digest = hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:8]
+    base = token[:_MAX_TOKEN].strip(".") or "id"
+    return f"{base}-{digest}"
 
 
 def read_archive_ids(archive_path: Path) -> set[str]:
@@ -180,6 +243,26 @@ def _as_duration(value: Any) -> float | None:
     return float(value) if value > 0 else None
 
 
+def _watch_url(raw: dict[str, Any]) -> str:
+    """The address to fetch an entry from.
+
+    Only a YouTube entry (or one that does not say what it is) may have a watch URL
+    built from its id. Another extractor's id means nothing to YouTube, so such an entry
+    keeps the address its own extractor gave, or has none.
+    """
+    url = raw.get("url")
+    vid = raw.get("id")
+    if isinstance(url, str) and url.startswith(("http://", "https://")):
+        # A YouTube address (a /shorts/ one too) is fetched through the canonical watch URL.
+        if vid and is_youtube_host(url):
+            return f"https://www.youtube.com/watch?v={vid}"
+        return url
+    ie_key = raw.get("ie_key")
+    if vid and (ie_key is None or str(ie_key).lower() == "youtube"):
+        return f"https://www.youtube.com/watch?v={vid}"
+    return ""
+
+
 def _to_entry(index: int, raw: dict[str, Any]) -> PlaylistEntry:
     vid = raw.get("id") or raw.get("url")
     url = raw.get("url")
@@ -187,7 +270,7 @@ def _to_entry(index: int, raw: dict[str, Any]) -> PlaylistEntry:
         playlist_index=index,
         id=vid or "",
         title=raw.get("title") or "",
-        watch_url=f"https://www.youtube.com/watch?v={vid}" if vid else "",
+        watch_url=_watch_url(raw),
         duration=_as_duration(raw.get("duration")),
         is_short=isinstance(url, str) and "/shorts/" in url,
     )

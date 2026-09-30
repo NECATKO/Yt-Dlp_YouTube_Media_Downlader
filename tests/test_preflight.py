@@ -156,7 +156,9 @@ class TestGuardedListing:
 
 
 class TestEstimateTable:
-    def test_video_table_has_three_rows_and_the_summary(self, tmp_path: Path) -> None:
+    def test_video_table_has_a_row_per_cap_plus_the_unlimited_one_and_the_summary(
+        self, tmp_path: Path
+    ) -> None:
         ui = ScriptedUI([4])
         _run(_request(tmp_path), ui)
 
@@ -164,6 +166,7 @@ class TestEstimateTable:
         assert "1080p" in text
         assert "1440p (at most)" in text
         assert "2160p (at most)" in text
+        assert "Unlimited (up to 8K)" in text
         assert "3 videos to download, 0 already in the archive, 0 with an assumed duration" in text
         assert "Free space:" in text
 
@@ -180,7 +183,10 @@ class TestEstimateTable:
     def test_the_measured_speed_is_shown(self, tmp_path: Path) -> None:
         ui = ScriptedUI([4])
         _run(_request(tmp_path), ui, measured=1_000_000.0)
-        assert "Measured speed: 8.0 Mbit/s" in ui.text()
+        text = ui.text()
+        assert "about 8.0 Mbit/s" in text
+        # A test against a public server says nothing certain about YouTube's speed.
+        assert "YouTube" in text and "differ" in text
 
     def test_an_unmeasurable_speed_leaves_the_time_column_empty(self, tmp_path: Path) -> None:
         ui = ScriptedUI([4])
@@ -233,8 +239,11 @@ class TestEstimateTable:
 
         _run(request, ui)  # 10 videos x 30 s average = 5 min
 
-        assert "at least 5 min" in ui.text()
-        assert "10 videos" in ui.text()
+        text = ui.text()
+        # 10 videos: the waits alone take at least 2 min 30 s and about 5 min on average.
+        assert "at least 2 min" in text
+        assert "about 5 min" in text
+        assert "10 videos" in text
 
     def test_other_modes_do_not_show_the_wait_line(self, tmp_path: Path) -> None:
         ui = ScriptedUI([4])
@@ -294,6 +303,65 @@ class TestUnavailableEstimate:
         )
         result = _run(request, ScriptedUI())
         assert result.max_height == 1080
+
+
+class TestUnlimitedRow:
+    def test_the_note_explains_that_unlimited_is_not_2160p(self, tmp_path: Path) -> None:
+        ui = ScriptedUI([4])
+        _run(_request(tmp_path), ui)
+
+        assert "8K" in ui.text()
+        assert "estimate" in ui.text().lower()
+
+    def test_the_unlimited_choice_is_checked_against_the_unlimited_row_not_2160p(
+        self, tmp_path: Path
+    ) -> None:
+        # 3 x 600 s: 2160p needs about 9 GB; the unlimited row needs clearly more.
+        free = 12_000_000_000
+        ui_capped = ScriptedUI([3, 1])  # 2160p, only this once
+        _run(_request(tmp_path), ui_capped, free=free)
+        ui_unlimited = ScriptedUI([4, 1])
+        _run(_request(tmp_path), ui_unlimited, free=free)
+
+        assert "Not enough free space" not in ui_capped.text()
+        assert "Not enough free space" in ui_unlimited.text()
+
+    def test_the_compatibility_profile_has_no_unlimited_row(self, tmp_path: Path) -> None:
+        ui = ScriptedUI()
+        _run(_request(tmp_path, mp4_profile=ProfileChoice.COMPATIBILITY), ui)
+
+        assert "8K" not in ui.text()
+
+
+class TestSpeedTestSetting:
+    def test_turning_it_off_skips_the_measurement_and_says_so(self, tmp_path: Path) -> None:
+        settings = AppSettings()
+        settings.download.speed_test = False
+        ui = ScriptedUI([4])
+
+        def must_not_measure(_proxy: str | None) -> float | None:
+            raise AssertionError("the speed test is switched off")
+
+        result = run_preflight(
+            _request(tmp_path),
+            ui=ui,
+            settings=settings,
+            persist_default=lambda _h: None,
+            measure=must_not_measure,
+            disk_free=lambda _p: 10**15,
+        )
+
+        text = ui.text()
+        assert result.action is PreflightAction.PROCEED
+        assert "speed test is off" in text
+        assert "n/a" in text  # no time estimate without a speed
+        assert "Estimated size" in text  # the size estimate still appears
+
+    def test_it_is_on_by_default(self, tmp_path: Path) -> None:
+        ui = ScriptedUI([4])
+        _run(_request(tmp_path), ui, measured=1_000_000.0)
+
+        assert "about 8.0 Mbit/s" in ui.text()
 
 
 class TestResolutionQuestion:

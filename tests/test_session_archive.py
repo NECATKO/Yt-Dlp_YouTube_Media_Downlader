@@ -49,19 +49,35 @@ class ScriptedUI:
 
 
 class Recorder:
-    """Stands in for run_cmd_tee and records what it was asked to run."""
+    """Stands in for run_cmd_tee and records what it was asked to run.
 
-    def __init__(self, rc: int = 0) -> None:
+    Like yt-dlp, a run that succeeds leaves its ids in the download archive named by
+    ``--download-archive`` (``archive_writes``); the session judges the run by that, not
+    by the exit code alone.
+    """
+
+    def __init__(self, rc: int = 0, archive_writes: list[str] | None = None) -> None:
         self.rc = rc
+        self.archive_writes = list(archive_writes or [])
         self.calls: list[dict[str, Any]] = []
 
     def __call__(self, cmd: list[str], log_path: Path, *, stop_on_ban: bool = False) -> int:
         self.calls.append({"cmd": cmd, "log_path": log_path, "stop_on_ban": stop_on_ban})
+        if self.archive_writes and "--download-archive" in cmd:
+            archive = Path(cmd[cmd.index("--download-archive") + 1])
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open("a", encoding="utf-8") as handle:
+                for ident in self.archive_writes:
+                    handle.write(f"youtube {ident}\n")
         return self.rc
 
 
 def _forbidden(*_args: Any, **_kwargs: Any) -> Any:
     raise AssertionError("archive mode must not send skip-report listing or skip-probe requests")
+
+
+def _forbidden_probe(*_args: Any, **_kwargs: Any) -> Any:
+    raise AssertionError("archive mode must not send skip-probe requests")
 
 
 @pytest.fixture(autouse=True)
@@ -96,8 +112,7 @@ def _session(
     monkeypatch.setattr(session_module, "deno_available", lambda: True)
     monkeypatch.setattr(session_module, "impersonation_available", lambda: True)
     monkeypatch.setattr(session_module, "run_cmd_tee", runner)
-    monkeypatch.setattr(session_module, "fetch_playlist_entries", _forbidden)
-    monkeypatch.setattr(session_module, "probe_skip_reason", _forbidden)
+    monkeypatch.setattr(session_module, "probe_item", _forbidden_probe)
     return session
 
 
@@ -239,8 +254,8 @@ class TestRegularModesUnchanged:
         fetched: list[str] = []
         monkeypatch.setattr(
             session_module,
-            "fetch_playlist_entries",
-            lambda url, *_args: fetched.append(url) or [],
+            "fetch_listing",
+            lambda url, *_args: fetched.append(url) or PlaylistListing([], None),
         )
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS

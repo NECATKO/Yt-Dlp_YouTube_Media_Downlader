@@ -6,16 +6,27 @@ import pytest
 
 from ytdlp_app.models import DownloadMode
 from ytdlp_app.settings import AppSettings
-from ytdlp_app.yt_dlp import PLUGINS_DIR, CommandBuilder, compat_stage1_format, video_format
+from ytdlp_app.yt_dlp import (
+    PLUGINS_DIR,
+    CommandBuilder,
+    compat_stage1_format,
+    ledger_args,
+    video_format,
+)
 
 URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
-# The arguments the builder emitted before the settings were wired in. Defaults
-# must keep producing exactly these, so an upgrade cannot silently change how
-# downloads behave.
-LEGACY_STABILITY_ARGS = [
+# The retry and error-handling arguments of the regular modes with default settings,
+# pinned verbatim. They differ from the pre-0.4 ones in two deliberate ways:
+#   --ignore-errors became --no-abort-on-error. -i makes yt-dlp count a failed
+#     post-processing step as success and record the item in the download archive;
+#     the default it is replaced with still continues past a failed download.
+#   --abort-on-unavailable-fragments is new: a missing HLS/DASH fragment used to be
+#     skipped, leaving a file with a hole in it that was archived as complete.
+STABILITY_ARGS = [
     "--continue",
-    "--ignore-errors",
+    "--no-abort-on-error",
+    "--abort-on-unavailable-fragments",
     "--retries",
     "infinite",
     "--fragment-retries",
@@ -43,8 +54,9 @@ def builder(tmp_path: Path) -> CommandBuilder:
 class TestDefaults:
     """The default settings must reproduce the pre-settings behavior."""
 
-    def test_stability_args_unchanged(self, builder: CommandBuilder) -> None:
-        assert builder.stability_args == LEGACY_STABILITY_ARGS
+    def test_stability_args_are_pinned(self, builder: CommandBuilder) -> None:
+        assert builder.stability_args == STABILITY_ARGS
+        assert "--ignore-errors" not in builder.stability_args
 
     def test_video_post_args_unchanged(self, builder: CommandBuilder) -> None:
         assert builder.build_post_args(DownloadMode.VIDEO) == [
@@ -124,13 +136,13 @@ class TestSettingsAreApplied:
     def test_proxy(self, tmp_path: Path) -> None:
         settings = AppSettings()
         settings.download.proxy = "http://proxy:8080"
-        args = self._builder(tmp_path, settings).stability_args
+        args = self._builder(tmp_path, settings).build_mp4_quality_mkv()
         assert args[args.index("--proxy") + 1] == "http://proxy:8080"
 
     def test_rate_limit(self, tmp_path: Path) -> None:
         settings = AppSettings()
         settings.download.rate_limit = "1M"
-        args = self._builder(tmp_path, settings).stability_args
+        args = self._builder(tmp_path, settings).build_mp4_quality_mkv()
         assert args[args.index("--limit-rate") + 1] == "1M"
 
     def test_concurrent_fragments(self, tmp_path: Path) -> None:
@@ -163,47 +175,59 @@ class TestSettingsAreApplied:
 # The exact command archive mode produces with default settings for a
 # single video when Deno is available. Any change here changes what gets
 # archived or how hard YouTube is hit, so it is pinned verbatim.
-ARCHIVE_DEFAULT_PREFIX = [
-    "yt-dlp",
-    "-f",
-    "bv*[height<=1080]+ba/b[height<=1080]",
-    "--merge-output-format",
-    "mkv",
-    "--write-description",
-    "--write-info-json",
-    "--write-thumbnail",
-    "--write-subs",
-    "--write-auto-subs",
-    "--sub-langs",
-    "tr.*,en.*",
-    "--convert-subs",
-    "srt",
-    "--embed-metadata",
-    "--embed-chapters",
-    "--plugin-dirs",
-    str(PLUGINS_DIR),
-    "--use-postprocessor",
-    "OriginalSubsOnly:when=video",
-    "--sleep-requests",
-    "1.5",
-    "--sleep-interval",
-    "15",
-    "--max-sleep-interval",
-    "45",
-    "--sleep-subtitles",
-    "5",
-    "--retries",
-    "10",
-    "--fragment-retries",
-    "10",
-    "--js-runtime",
-    "deno",
-    "--remote-components",
-    "ejs:github",
-    "-o",
-    "%(title)s.%(ext)s",
-    "--download-archive",
-]
+def archive_default(tmp_path: Path) -> list[str]:
+    return [
+        "yt-dlp",
+        "--ignore-config",
+        "--js-runtime",
+        "deno",
+        "--remote-components",
+        "ejs:github",
+        "--socket-timeout",
+        "30",
+        "-f",
+        "bv*[height<=1080]+ba/b[height<=1080]",
+        "--merge-output-format",
+        "mkv",
+        "--remux-video",
+        "mkv",
+        "--write-description",
+        "--write-info-json",
+        "--write-thumbnail",
+        "--write-subs",
+        "--write-auto-subs",
+        "--sub-langs",
+        "tr.*,en.*",
+        "--convert-subs",
+        "srt",
+        "--embed-metadata",
+        "--embed-chapters",
+        "--plugin-dirs",
+        str(PLUGINS_DIR),
+        "--use-postprocessor",
+        "OriginalSubsOnly:when=video",
+        "--use-postprocessor",
+        "ArchiveComplete:when=video;stage=snapshot",
+        "--use-postprocessor",
+        "ArchiveComplete:when=before_dl;stage=check",
+        *ledger_args(tmp_path / "archive.files.tsv"),
+        "--sleep-requests",
+        "1.5",
+        "--sleep-interval",
+        "15",
+        "--max-sleep-interval",
+        "45",
+        "--sleep-subtitles",
+        "5",
+        "--retries",
+        "10",
+        "--fragment-retries",
+        "10",
+        "--abort-on-unavailable-fragments",
+        "-o",
+        "%(title)s.%(ext)s",
+        "--download-archive",
+    ]
 
 
 class TestArchiveMode:
@@ -223,7 +247,7 @@ class TestArchiveMode:
     def test_exact_default_argument_list(self, tmp_path: Path) -> None:
         cmd = self._builder(tmp_path).build_archive()
         assert cmd == [
-            *ARCHIVE_DEFAULT_PREFIX,
+            *archive_default(tmp_path),
             str(tmp_path / "archive.txt"),
             "--progress",
             "--no-playlist",
@@ -280,7 +304,7 @@ class TestArchiveMode:
 
     def test_regular_modes_are_unchanged(self, builder: CommandBuilder) -> None:
         """Adding archive mode must not leak into the MP4/MP3 commands."""
-        assert builder.stability_args == LEGACY_STABILITY_ARGS
+        assert builder.stability_args == STABILITY_ARGS
         for cmd in (builder.build_mp4_quality_mkv(), builder.build_mp3()):
             assert "--sleep-requests" not in cmd
             assert "--write-info-json" not in cmd
@@ -424,3 +448,72 @@ class TestSelectorsAgainstYtDlp:
             _format("vp9", 1080, "vp09", "none"),
         ]
         assert _pick(compat_stage1_format(1080), formats) == ["h264+a"]
+
+
+class TestCodecAndContainerContract:
+    """The command-level half of the guarantees checked end to end in test_engine_contract."""
+
+    def test_compatibility_stage2_does_not_rely_on_recode_video(
+        self, builder: CommandBuilder
+    ) -> None:
+        cmd = builder.build_mp4_compatibility_stage2()
+
+        assert "--recode-video" not in cmd
+        assert "Mp4Compat:when=post_process" in cmd
+
+    def test_compatibility_stage1_verifies_the_codecs_too(self, builder: CommandBuilder) -> None:
+        assert "Mp4Compat:when=post_process" in builder.build_mp4_compatibility_stage1()
+
+    def test_mkv_commands_remux_a_single_stream(self, builder: CommandBuilder) -> None:
+        cmd = builder.build_mp4_quality_mkv()
+
+        assert cmd[cmd.index("--merge-output-format") + 1] == "mkv"
+        assert cmd[cmd.index("--remux-video") + 1] == "mkv"
+
+    def test_archive_remuxes_to_mkv(self, tmp_path: Path) -> None:
+        cmd = TestArchiveMode()._builder(tmp_path).build_archive()
+
+        assert cmd[cmd.index("--remux-video") + 1] == "mkv"
+
+    def test_the_quality_mp4_choice_still_remuxes_to_mp4(self, builder: CommandBuilder) -> None:
+        cmd = builder.build_mp4_quality_remux()
+
+        assert cmd[cmd.index("--remux-video") + 1] == "mp4"
+
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "build_mp4_compatibility_stage1",
+            "build_mp4_compatibility_stage2",
+            "build_mp4_quality_mkv",
+            "build_mp4_quality_remux",
+            "build_mp3",
+            "build_archive",
+        ],
+    )
+    def test_every_download_runs_under_the_apps_config_policy_and_records_its_files(
+        self, builder: CommandBuilder, method: str
+    ) -> None:
+        cmd = getattr(builder, method)()
+
+        assert cmd[1] == "--ignore-config"
+        assert any(arg.startswith("DownloadLedger:when=after_move;path=") for arg in cmd)
+        assert "--abort-on-unavailable-fragments" in cmd
+        assert "--ignore-errors" not in cmd
+        assert cmd[-1] == URL
+
+    def test_the_manifest_sits_beside_the_archive(self, builder: CommandBuilder) -> None:
+        assert builder.manifest_path == builder.archive_path.with_name("archive.files.tsv")
+
+    def test_manifest_path_is_escaped_for_the_option_syntax(self) -> None:
+        args = ledger_args(Path("/a;b/100%/x.files.tsv"))
+
+        assert args[1] == "DownloadLedger:when=after_move;path=/a%3Bb/100%25/x.files.tsv"
+
+    def test_opting_in_to_external_config_removes_the_isolation(self, tmp_path: Path) -> None:
+        settings = AppSettings()
+        settings.download.allow_external_config = True
+        b = CommandBuilder(URL, "%(id)s.%(ext)s", tmp_path / "a.txt", False, settings=settings)
+
+        for cmd in (b.build_mp3(), b.build_archive(), b.build_mp4_quality_mkv()):
+            assert "--ignore-config" not in cmd

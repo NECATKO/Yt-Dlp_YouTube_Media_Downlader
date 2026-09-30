@@ -6,9 +6,13 @@ The reasons are user-facing, so every branch returns a translated string.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
+from .exec import TIMEOUT_RETURN_CODE, BanSignal, find_ban_signal
 from .i18n import t
+from .redact import redact_secrets
 
 if TYPE_CHECKING:
     from .models import CaptureRunner
@@ -17,16 +21,60 @@ if TYPE_CHECKING:
 _DETAIL_LIMIT = 240
 
 
-def probe_skip_reason(video_url: str, js_args: list[str], runner: CaptureRunner) -> str:
+class ProbeStatus(Enum):
+    """How a probe ended. Only REASON means the loop over the skipped items may go on."""
+
+    REASON = "reason"
+    CANCELLED = "cancelled"
+    BANNED = "banned"
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeResult:
+    """A probe's outcome: whether to go on, and the text to show for the item."""
+
+    status: ProbeStatus
+    text: str
+
+
+def probe_item(video_url: str, extra_args: list[str], runner: CaptureRunner) -> ProbeResult:
+    """Ask yt-dlp for an item's metadata only, to explain why it was skipped.
+
+    Args:
+        video_url: The item's watch URL.
+        extra_args: The shared network arguments (proxy, config policy, JS runtime,
+            pacing; see netctx.NetworkContext.probe_args).
+        runner: Executes yt-dlp and captures its output. Its time limit is not this
+            module's business: the caller binds PROBE_TIMEOUT_SECONDS into it.
+
+    Returns:
+        CANCELLED when the user pressed Ctrl+C and BANNED when YouTube is blocking us;
+        in both the caller must stop probing, since carrying on would either start
+        the requests the user just cancelled or extend the block. Otherwise REASON.
     """
-    Try to explain why an item was skipped by asking yt-dlp for metadata only.
-    """
-    cmd = ["yt-dlp", "-J", "--no-playlist", "--skip-download", video_url, *js_args]
+    cmd = ["yt-dlp", "-J", "--no-playlist", "--skip-download", video_url, *extra_args]
     rc, out, err = runner(cmd)
 
     if rc == 130:
-        return t("skip_reason_interrupted")
+        return ProbeResult(ProbeStatus.CANCELLED, t("skip_reason_interrupted"))
 
+    signal = find_ban_signal(err or "") if rc != 0 else None
+    if signal is BanSignal.RATE_LIMITED:
+        return ProbeResult(ProbeStatus.BANNED, t("skip_reason_rate_limited"))
+    if signal is BanSignal.BOT_CHECK:
+        return ProbeResult(ProbeStatus.BANNED, t("skip_reason_blocked"))
+
+    if rc == TIMEOUT_RETURN_CODE:
+        return ProbeResult(ProbeStatus.REASON, t("skip_reason_timeout"))
+    return ProbeResult(ProbeStatus.REASON, _explain(rc, out, err))
+
+
+def probe_skip_reason(video_url: str, js_args: list[str], runner: CaptureRunner) -> str:
+    """The text of probe_item, for callers that only want the explanation."""
+    return probe_item(video_url, js_args, runner).text
+
+
+def _explain(rc: int, out: str, err: str) -> str:
     if rc != 0 or not out.strip():
         e = (err or "").lower()
 
@@ -52,7 +100,7 @@ def probe_skip_reason(video_url: str, js_args: list[str], runner: CaptureRunner)
             return t("skip_reason_timeout")
         if "429" in e or "too many requests" in e:
             return t("skip_reason_rate_limited")
-        return t("skip_reason_unknown", detail=(err or "").strip()[:_DETAIL_LIMIT])
+        return t("skip_reason_unknown", detail=redact_secrets((err or "").strip()[:_DETAIL_LIMIT]))
 
     try:
         data = json.loads(out)

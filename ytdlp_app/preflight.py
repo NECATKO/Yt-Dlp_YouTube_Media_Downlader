@@ -22,9 +22,10 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 
 from .estimate import (
     RESOLUTIONS,
+    UNLIMITED_HEIGHT,
     SizeEstimate,
     VideoSet,
-    archive_wait_seconds,
+    archive_wait,
     audio_output_kbps,
     download_seconds,
     effective_speed,
@@ -213,13 +214,17 @@ def _show_estimate(
         ui.print(paint(t("estimate_nothing_new"), Colors.GREEN))
         return _Sizes([], videos)
 
-    ui.print(paint(t("preflight_measuring_speed"), Colors.CYAN))
-    measured = measure(settings.download.proxy)
-    speed = effective_speed(measured, settings.download.rate_limit)
-    if measured is None:
-        ui.print(paint(t("preflight_speed_unknown"), Colors.YELLOW))
+    measured: float | None = None
+    if settings.download.speed_test:
+        ui.print(paint(t("preflight_measuring_speed"), Colors.CYAN))
+        measured = measure(settings.download.proxy)
+        if measured is None:
+            ui.print(paint(t("preflight_speed_unknown"), Colors.YELLOW))
+        else:
+            ui.print(t("preflight_speed_measured", mbps=f"{measured * 8 / 1_000_000:.1f}"))
     else:
-        ui.print(t("preflight_speed_measured", mbps=f"{measured * 8 / 1_000_000:.1f}"))
+        ui.print(paint(t("preflight_speed_off"), Colors.YELLOW))
+    speed = effective_speed(measured, settings.download.rate_limit)
 
     if request.mode == DownloadMode.AUDIO:
         kbps = audio_output_kbps(settings.audio.audio_format, settings.audio.audio_quality)
@@ -227,14 +232,16 @@ def _show_estimate(
         labels = [settings.audio.audio_format]
         first_column = t("estimate_col_format")
     else:
-        heights = (COMPAT_MAX_HEIGHT,) if compat else RESOLUTIONS
+        heights: tuple[int | None, ...] = (COMPAT_MAX_HEIGHT,) if compat else (*RESOLUTIONS, None)
         rows = [estimate_video(videos, height) for height in heights]
-        labels = [
-            t("estimate_row_plain", height=height)
-            if height == RESOLUTIONS[0]
-            else t("estimate_row_at_most", height=height)
-            for height in heights
-        ]
+        labels = []
+        for height in heights:
+            if height is None:
+                labels.append(t("estimate_row_unlimited"))
+            elif height == RESOLUTIONS[0]:
+                labels.append(t("estimate_row_plain", height=height))
+            else:
+                labels.append(t("estimate_row_at_most", height=height))
         first_column = t("estimate_col_resolution")
 
     cells: list[tuple[str, ...]] = []
@@ -266,6 +273,8 @@ def _show_estimate(
             assumed=videos.assumed,
         )
     )
+    if request.mode != DownloadMode.AUDIO and not compat:
+        ui.print(paint(t("estimate_unlimited_note"), Colors.YELLOW))
     if free is None:
         ui.print(paint(t("estimate_free_unknown"), Colors.YELLOW))
     else:
@@ -273,19 +282,16 @@ def _show_estimate(
 
     if request.mode == DownloadMode.ARCHIVE:
         archive = settings.archive
-        wait = archive_wait_seconds(
-            videos.count, archive.sleep_interval, archive.max_sleep_interval
-        )
-        average = (
-            archive.sleep_interval + max(archive.sleep_interval, archive.max_sleep_interval)
-        ) / 2
+        wait = archive_wait(videos.count, archive.sleep_interval, archive.max_sleep_interval)
         ui.print(
             paint(
                 t(
-                    "archive_wait_minimum",
-                    duration=format_duration(wait),
+                    "archive_wait_estimate",
+                    minimum=format_duration(wait.minimum),
+                    expected=format_duration(wait.expected),
                     count=videos.count,
-                    average=f"{average:g}",
+                    low=f"{archive.sleep_interval:g}",
+                    high=f"{max(archive.sleep_interval, archive.max_sleep_interval):g}",
                 ),
                 Colors.YELLOW,
             )
@@ -330,9 +336,10 @@ def _choose_height(
 
 
 def _row_for(rows: list[SizeEstimate], height: int | None) -> SizeEstimate:
-    """The row for a cap; "unlimited" is judged by the largest row (2160p)."""
+    """The row for a cap; "unlimited" is judged by the unlimited row, not by 2160p."""
+    wanted = UNLIMITED_HEIGHT if height is None else height
     for row in rows:
-        if height is not None and row.height == height:
+        if row.height == wanted:
             return row
     return rows[-1]
 

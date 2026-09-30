@@ -1,21 +1,33 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, TextIO
 
 from ._version import __version__
+from .archive_audit import cli_entry as audit_command
 from .config import (
+    default_dirs,
     ensure_dirs_interactive,
     ensure_language_interactive,
     load_config,
     load_settings,
+    migrate_config,
+    normalize_user_path,
 )
 from .i18n import set_language, t
-from .logging_utils import Colors, log_error, now_stamp
+from .logging_utils import Colors, console_print, log_error, now_stamp, paint
 from .models import AppPaths, UserConfig
+from .redact import register_proxy
 from .session import InteractiveSession
 from .ui import ConsoleUI
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from .settings import SettingsIssue
 
 _APP_DIR_NAME = "ytdlp-downloader"
 
@@ -49,7 +61,53 @@ def _resolve_app_dir() -> Path:
     return _portable_app_dir() or _installed_data_dir()
 
 
-def run() -> int:
+def make_streams_forgiving(*streams: TextIO | Any) -> None:
+    """Make console output replace what the terminal cannot encode instead of raising.
+
+    The messages use natural Turkish, and a terminal in a legacy code page (a Windows
+    console outside the launcher's UTF-8 mode, ``LANG=C``) cannot show every letter. A
+    stray "?" is a better failure than an UnicodeEncodeError in the middle of a download.
+    """
+    for stream in streams:
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            with contextlib.suppress(OSError, ValueError):
+                reconfigure(errors="replace")
+
+
+def _print_settings_issues(issues: Sequence[SettingsIssue]) -> None:
+    """Tell the user which settings could not be used, by name."""
+    for issue in issues:
+        if issue.fallback is None:
+            text = t("settings_issue_warning", field=issue.field, problem=issue.problem)
+        else:
+            text = t(
+                "settings_issue_invalid",
+                field=issue.field,
+                problem=issue.problem,
+                fallback=issue.fallback,
+            )
+        console_print(paint(text, Colors.YELLOW))
+
+
+def _folders_for_audit(
+    cfg: dict[str, Any], app_dir: Path, portable_dir: Path | None
+) -> tuple[Path, Path]:
+    """The download folders as configured, or the defaults, without asking anything."""
+    default_videos, default_music = default_dirs(portable_dir)
+
+    def pick(key: str, fallback: Path) -> Path:
+        value = cfg.get(key)
+        if isinstance(value, str) and value.strip() and "\x00" not in value:
+            return normalize_user_path(value.strip(), app_dir)
+        return fallback
+
+    return pick("videos_dir", default_videos), pick("music_dir", default_music)
+
+
+def run(argv: Sequence[str] | None = None) -> int:
+    make_streams_forgiving(sys.stdout, sys.stderr)
+    args = list(sys.argv[1:] if argv is None else argv)
     app_name = "yt-dlp-downloader"
     portable_dir = _portable_app_dir()
     app_dir = _resolve_app_dir()
@@ -75,10 +133,19 @@ def run() -> int:
     try:
         # 0) config: load or create paths (once)
         cfg = load_config(paths.config_file)
+        migration_notes = migrate_config(cfg)
 
         # Language must be resolved before anything else is printed, otherwise
         # every t() lookup falls through to the raw key.
         set_language(ensure_language_interactive(ui, cfg, config_file=paths.config_file))
+
+        if args and args[0] == "audit":
+            # The archive check: no prompts, nothing changed without --apply.
+            videos, music = _folders_for_audit(cfg, app_dir, portable_dir)
+            return audit_command(args[1:], paths, UserConfig(app_name, videos, music))
+
+        if migration_notes:
+            ui.print(paint(t("config_migrated", count=len(migration_notes)), Colors.CYAN))
 
         ui.print_panel(
             t("app_version", version=__version__),
@@ -100,7 +167,12 @@ def run() -> int:
             saved_at=(_cfg.get("saved_at") or None),
         )
 
-        session = InteractiveSession(ui, user_config, paths, load_settings(_cfg), _cfg)
+        issues: list[SettingsIssue] = []
+        settings = load_settings(_cfg, issues)
+        _print_settings_issues(issues)
+        register_proxy(settings.download.proxy)
+
+        session = InteractiveSession(ui, user_config, paths, settings, _cfg)
         return session.run_loop()
 
     except (KeyboardInterrupt, EOFError):

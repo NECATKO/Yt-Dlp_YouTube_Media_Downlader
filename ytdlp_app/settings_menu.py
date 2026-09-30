@@ -8,22 +8,22 @@ progress.
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 from typing import TYPE_CHECKING, Any
 
 from .config import normalize_user_path, save_settings, to_config_path
-from .i18n import get_available_languages, get_language_name, set_language, t
+from .i18n import get_available_languages, get_language, get_language_name, set_language, t
 from .logging_utils import Colors, paint
 from .models import UserConfig
+from .redact import redact_secrets, register_proxy
+from .settings import AUDIO_FORMATS, AppSettings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from .settings import AppSettings
     from .ui import UI
-
-#: Audio containers offered for extraction. "best" keeps the source codec.
-AUDIO_FORMATS = ("mp3", "m4a", "opus", "flac", "wav", "best")
 
 #: yt-dlp's audio quality scale, best to worst.
 _QUALITY_MIN, _QUALITY_MAX = 0, 9
@@ -67,15 +67,43 @@ class SettingsMenu:
     # -- persistence ------------------------------------------------------
 
     def _persist(self) -> None:
-        """Write the current state to disk and confirm it to the user."""
+        """Write the current state to disk and confirm it to the user.
+
+        Raises:
+            OSError: The file could not be written. run() then puts every part of the
+                edit back, so the running app and config.json keep agreeing.
+        """
         save_settings(self.config_file, self.cfg, self.settings)
+        register_proxy(self.settings.download.proxy)
         self.ui.print(paint(t("settings_saved"), Colors.GREEN))
+
+    def _snapshot(self) -> tuple[AppSettings, dict[str, Any], UserConfig, str]:
+        """Everything an editor may change, as it is now."""
+        return (
+            copy.deepcopy(self.settings),
+            copy.deepcopy(self.cfg),
+            self.config,
+            get_language(),
+        )
+
+    def _restore(self, snapshot: tuple[AppSettings, dict[str, Any], UserConfig, str]) -> None:
+        """Put back what _snapshot captured, in the same objects the session holds."""
+        settings, cfg, config, language = snapshot
+        for f in dataclasses.fields(AppSettings):
+            setattr(self.settings, f.name, getattr(settings, f.name))
+        self.cfg.clear()
+        self.cfg.update(cfg)
+        self.config = config
+        set_language(language)
+        register_proxy(None)
+        register_proxy(self.settings.download.proxy)
 
     # -- input helpers ----------------------------------------------------
 
     def _show_current(self, value: object) -> None:
         """Print the value an edit is about to replace."""
-        shown = t("settings_unset") if value in (None, "") else str(value)
+        # A proxy URL may carry a password, and this line is printed to the console.
+        shown = t("settings_unset") if value in (None, "") else redact_secrets(str(value))
         self.ui.print(paint(t("settings_current", value=shown), Colors.YELLOW))
 
     def _prompt_header(self, label: str, current: object, hint: str) -> None:
@@ -149,7 +177,8 @@ class SettingsMenu:
             else:
                 # float() also accepts "nan" and "inf", which the bounds reject.
                 if 0 <= value <= high:
-                    return value
+                    # 5.0 is stored as 5, so the config file keeps reading naturally.
+                    return int(value) if value.is_integer() else value
             self.ui.print(paint(t("settings_invalid_seconds", max=f"{high:g}"), Colors.RED))
 
     def _ask_bool(self, label: str, current: bool) -> bool:
@@ -171,6 +200,8 @@ class SettingsMenu:
             (t("settings_archive"), self._edit_archive),
             (t("settings_video_height"), self._edit_video_height),
             (t("settings_archive_height"), self._edit_archive_height),
+            (t("settings_external_config"), self._edit_external_config),
+            (t("settings_speed_test"), self._edit_speed_test),
         ]
 
     def run(self) -> UserConfig:
@@ -190,7 +221,24 @@ class SettingsMenu:
             if choice == len(labels):
                 return self.config
 
-            entries[choice - 1][1]()
+            self._run_editor(entries[choice - 1][1])
+
+    def _run_editor(self, editor: Callable[[], None]) -> None:
+        """Run one editor as a unit: it is applied whole, or not at all.
+
+        Editors change the live settings as they go and save at the end. If the save
+        fails (a full or read-only disk), or the user interrupts halfway, the changes
+        made so far are taken back, because they exist nowhere but in memory.
+        """
+        snapshot = self._snapshot()
+        try:
+            editor()
+        except OSError as ex:
+            self._restore(snapshot)
+            self.ui.print(paint(t("settings_save_failed", error=ex.strerror or ex), Colors.RED))
+        except BaseException:
+            self._restore(snapshot)
+            raise
 
     # -- individual editors -----------------------------------------------
 
@@ -280,11 +328,13 @@ class SettingsMenu:
         if fragments is not None:
             download.concurrent_fragments = fragments
 
-        sleep = self._ask_int(t("settings_sleep"), download.sleep_interval, 0, 3600)
+        sleep = self._ask_seconds(t("settings_sleep"), download.sleep_interval, _MAX_WAIT_SECONDS)
         if sleep is not None:
             download.sleep_interval = sleep
 
-        max_sleep = self._ask_int(t("settings_max_sleep"), download.max_sleep_interval, 0, 3600)
+        max_sleep = self._ask_seconds(
+            t("settings_max_sleep"), download.max_sleep_interval, _MAX_WAIT_SECONDS
+        )
         if max_sleep is not None:
             download.max_sleep_interval = max_sleep
 
@@ -372,6 +422,20 @@ class SettingsMenu:
     def _edit_archive_height(self) -> None:
         archive = self.settings.archive
         archive.max_height = self._pick_height(t("settings_archive_height"), archive.max_height)
+        self._persist()
+
+    def _edit_external_config(self) -> None:
+        download = self.settings.download
+        self.ui.print(paint(t("settings_external_config_hint"), Colors.WHITE))
+        download.allow_external_config = self._ask_bool(
+            t("settings_external_config"), download.allow_external_config
+        )
+        self._persist()
+
+    def _edit_speed_test(self) -> None:
+        download = self.settings.download
+        self.ui.print(paint(t("settings_speed_test_hint"), Colors.WHITE))
+        download.speed_test = self._ask_bool(t("settings_speed_test"), download.speed_test)
         self._persist()
 
 

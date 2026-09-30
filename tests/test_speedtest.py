@@ -138,3 +138,88 @@ def test_a_keyboard_interrupt_is_not_swallowed() -> None:
 )
 def test_proxy_without_a_scheme_is_treated_as_http(proxy: str, expected: str) -> None:
     assert speedtest._normalize_proxy(proxy) == expected
+
+
+class _Blocking(_Response):
+    """A response whose read hangs, as a stalled connection does, after some data."""
+
+    def __init__(self, good_chunks: int, release: "threading.Event") -> None:
+        super().__init__(chunks=None)
+        self.good = good_chunks
+        self.release = release
+
+    def read(self, _size: int = -1) -> bytes:
+        if self.good > 0:
+            self.good -= 1
+            return CHUNK
+        self.release.wait(30)
+        return b""
+
+
+import threading  # noqa: E402
+import time  # noqa: E402
+
+
+class TestTotalTimeBudget:
+    """A read that blocks must not stretch the measurement past its budget."""
+
+    def test_a_stalled_read_is_cut_off_at_the_budget(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = threading.Event()
+        response = _Blocking(good_chunks=5, release=release)
+        monkeypatch.setattr(speedtest, "TOTAL_BUDGET_SECONDS", 0.5)
+
+        started = time.monotonic()
+        speed = measure_speed(None, open_url=_opener(response))
+        elapsed = time.monotonic() - started
+        release.set()
+
+        assert elapsed < 3
+        # It got 5 chunks before stalling, which is enough to say something.
+        assert speed is not None and speed > 0
+
+    def test_a_connection_that_never_answers_is_unknown_not_a_hang(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        release = threading.Event()
+        monkeypatch.setattr(speedtest, "TOTAL_BUDGET_SECONDS", 0.4)
+
+        def hangs(_request: urllib.request.Request, _timeout: float) -> _Response:
+            release.wait(30)
+            raise OSError("gave up")
+
+        started = time.monotonic()
+        speed = measure_speed(None, open_url=hangs)
+        elapsed = time.monotonic() - started
+        release.set()
+
+        assert speed is None
+        assert elapsed < 3
+
+    def test_too_little_data_before_the_budget_is_not_a_speed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        release = threading.Event()
+        response = _Blocking(good_chunks=0, release=release)
+        monkeypatch.setattr(speedtest, "TOTAL_BUDGET_SECONDS", 0.3)
+
+        assert measure_speed(None, open_url=_opener(response)) is None
+        release.set()
+
+    def test_ctrl_c_while_waiting_stops_the_worker(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = threading.Event()
+        response = _Blocking(good_chunks=1, release=release)
+        real_join = threading.Thread.join
+
+        def interrupted(self: threading.Thread, timeout: float | None = None) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(threading.Thread, "join", interrupted)
+
+        with pytest.raises(KeyboardInterrupt):
+            measure_speed(None, open_url=_opener(response))
+
+        monkeypatch.setattr(threading.Thread, "join", real_join)
+        release.set()
+
+    def test_the_default_budget_is_bounded(self) -> None:
+        assert 0 < speedtest.TOTAL_BUDGET_SECONDS <= 10

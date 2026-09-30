@@ -102,3 +102,67 @@ def test_every_branch_is_translated(runner) -> None:
     set_language("en")
 
     assert english != turkish, f"untranslated skip reason: {english!r}"
+
+
+class TestProbeStatus:
+    """Cancellation and a ban are signals to stop, not just explanatory text."""
+
+    def test_ctrl_c_is_a_cancellation(self) -> None:
+        from ytdlp_app.skip_probe import ProbeStatus, probe_item  # noqa: PLC0415
+
+        result = probe_item("https://x.test/v", [], _runner(130, err="Interrupted by user"))
+
+        assert result.status is ProbeStatus.CANCELLED
+
+    @pytest.mark.parametrize(
+        "stderr",
+        [
+            "ERROR: [youtube] abc: HTTP Error 429: Too Many Requests",
+            "ERROR: [youtube] abc: Sign in to confirm you\u2019re not a bot. Use --cookies",
+        ],
+    )
+    def test_a_block_is_a_ban(self, stderr: str) -> None:
+        from ytdlp_app.skip_probe import ProbeStatus, probe_item  # noqa: PLC0415
+
+        result = probe_item("https://x.test/v", [], _runner(1, err=stderr))
+
+        assert result.status is ProbeStatus.BANNED
+
+    def test_the_bot_check_is_not_mistaken_for_an_age_restriction(self) -> None:
+        """Both say "Sign in"; only one means the whole run should stop."""
+        from ytdlp_app.skip_probe import ProbeStatus, probe_item  # noqa: PLC0415
+
+        age = probe_item("u", [], _runner(1, err="ERROR: Sign in to confirm your age"))
+
+        assert age.status is ProbeStatus.REASON
+
+    def test_an_ordinary_failure_is_only_a_reason(self) -> None:
+        from ytdlp_app.skip_probe import ProbeStatus, probe_item  # noqa: PLC0415
+
+        result = probe_item("u", [], _runner(1, err="ERROR: Video unavailable"))
+
+        assert result.status is ProbeStatus.REASON
+        assert result.text == probe_skip_reason("u", [], _runner(1, err="ERROR: Video unavailable"))
+
+    def test_a_timeout_is_reported_as_a_reason(self) -> None:
+        from ytdlp_app.exec import TIMEOUT_RETURN_CODE  # noqa: PLC0415
+        from ytdlp_app.skip_probe import ProbeStatus, probe_item  # noqa: PLC0415
+
+        result = probe_item("u", [], _runner(TIMEOUT_RETURN_CODE, err="Timed out after 180 s"))
+
+        assert result.status is ProbeStatus.REASON
+        assert result.text == load_locale("en")["skip_reason_timeout"]
+
+    def test_the_probe_command_can_carry_the_shared_network_arguments(self) -> None:
+        from ytdlp_app.skip_probe import probe_item  # noqa: PLC0415
+
+        seen: list[list[str]] = []
+
+        def run(cmd: list[str]) -> tuple[int, str, str]:
+            seen.append(cmd)
+            return 1, "", "ERROR: Video unavailable"
+
+        probe_item("https://x.test/v", ["--proxy", "http://p:1"], run)
+
+        assert "--proxy" in seen[0]
+        assert seen[0][-2:] == ["--proxy", "http://p:1"]

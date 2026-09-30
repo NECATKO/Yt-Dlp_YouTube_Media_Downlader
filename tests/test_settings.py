@@ -36,21 +36,29 @@ class TestDownloadSettings:
         assert "--retries" in args
         assert "infinite" in args
 
-    def test_to_args_with_rate_limit(self) -> None:
-        """Test rate limit is included in args."""
+    def test_network_args_carry_the_rate_limit(self) -> None:
         settings = DownloadSettings(rate_limit="1M")
-        args = settings.to_args()
 
-        assert "--limit-rate" in args
-        assert "1M" in args
+        assert settings.network_args() == ["--limit-rate", "1M"]
 
-    def test_to_args_with_proxy(self) -> None:
-        """Test proxy is included in args."""
+    def test_network_args_carry_the_proxy(self) -> None:
         settings = DownloadSettings(proxy="http://proxy:8080")
-        args = settings.to_args()
 
-        assert "--proxy" in args
-        assert "http://proxy:8080" in args
+        assert settings.network_args() == ["--proxy", "http://proxy:8080"]
+
+    def test_to_args_leave_the_network_to_the_shared_context(self) -> None:
+        """Proxy and speed limit are added once, by NetworkContext, for every call."""
+        args = DownloadSettings(rate_limit="1M", proxy="http://proxy:8080").to_args()
+
+        assert "--limit-rate" not in args
+        assert "--proxy" not in args
+
+    def test_errors_do_not_count_as_success(self) -> None:
+        args = DownloadSettings().to_args()
+
+        assert "--ignore-errors" not in args
+        assert "--no-abort-on-error" in args
+        assert "--abort-on-unavailable-fragments" in args
 
 
 class TestAudioSettings:
@@ -108,7 +116,9 @@ class TestAppSettings:
         assert settings.download.concurrent_fragments == 4
         assert settings.audio.audio_format == "mp3"
         assert settings.video.embed_subtitles is False
-        assert settings.output.single_video_template == "%(title)s.%(ext)s"
+        # Not the bare title: two videos with one title would share a file (see
+        # OutputSettings). The content id makes the name unique.
+        assert settings.output.single_video_template == "%(title).150B [%(id)s].%(ext)s"
 
     def test_from_dict_empty(self) -> None:
         """Test loading from empty dict uses defaults."""
@@ -169,6 +179,7 @@ class TestArchiveSettings:
             "10",
             "--fragment-retries",
             "10",
+            "--abort-on-unavailable-fragments",
         ]
 
     def test_roundtrip_through_app_settings(self) -> None:

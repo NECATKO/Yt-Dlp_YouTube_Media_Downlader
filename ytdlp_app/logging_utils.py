@@ -6,11 +6,14 @@ yt-dlp command output, and logging functions for session logs.
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 import traceback
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
+
+from .redact import redact_secrets
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -32,6 +35,52 @@ class Colors:
     MAGENTA = "\033[95m"
     CYAN = "\033[96m"
     WHITE = "\033[97m"
+
+
+#: ANSI SGR (colour/style) sequences; they take no columns on screen.
+_ANSI_SGR = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def strip_ansi(text: str) -> str:
+    """Remove colour and style escape sequences from text."""
+    return _ANSI_SGR.sub("", text)
+
+
+def colors_enabled(stream: TextIO | None = None) -> bool:
+    """Whether escape codes belong in what is written to a stream.
+
+    Follows the usual conventions: ``NO_COLOR`` (any non-empty value) turns colour
+    off, ``FORCE_COLOR`` turns it on even when redirected, ``TERM=dumb`` is off, and
+    otherwise colour is used only when the stream is an interactive terminal.
+    Redirected output (a file, a pipe, a CI log) is therefore plain text.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    force = os.environ.get("FORCE_COLOR")
+    if force and force != "0":
+        return True
+    if os.environ.get("TERM") == "dumb":
+        return False
+    target = stream if stream is not None else sys.stdout
+    try:
+        return bool(target.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
+def console_print(
+    *values: object,
+    sep: str = " ",
+    end: str = "\n",
+    file: TextIO | None = None,
+    flush: bool = False,
+) -> None:
+    """print() that drops colour codes unless the destination is a colour terminal."""
+    stream = file if file is not None else sys.stdout
+    text = sep.join(str(value) for value in values)
+    if not colors_enabled(stream):
+        text = strip_ansi(text)
+    print(text, end=end, file=stream, flush=flush)
 
 
 def paint(text: object, *codes: str) -> str:
@@ -231,7 +280,8 @@ def append_log(log_path: Path | None, text: str) -> None:
             return
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8", errors="ignore") as f:
-            f.write(text)
+            # Whatever the caller passes, a proxy password never lands in a log.
+            f.write(redact_secrets(text))
     except Exception:
         # logging must never crash the app
         pass
@@ -254,14 +304,14 @@ def log_error(log_path: Path | None, title: str, ex: BaseException | None = None
         ex: Optional exception to include in the log.
     """
     stamp = datetime.now().isoformat(timespec="seconds")
-    header = f"\n[ERROR {stamp}] {title}\n"
-    print(header.strip())
+    header = f"\n[ERROR {stamp}] {redact_secrets(title)}\n"
+    console_print(header.strip())
     if log_path:
-        print(f"(details written to {log_path})")
+        console_print(f"(details written to {log_path})")
 
     details = header
     if ex is not None:
-        details += f"Exception: {type(ex).__name__}: {ex}\n"
+        details += f"Exception: {type(ex).__name__}: {redact_secrets(str(ex))}\n"
         details += "Traceback:\n"
         details += "".join(traceback.format_exception(type(ex), ex, ex.__traceback__))
     details += "\n"

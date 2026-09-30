@@ -12,6 +12,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from .archive_audit import run_menu as run_archive_tools
 from .config import save_settings
 from .exceptions import ValidationError
 from .exec import BAN_RETURN_CODE, run_capture, run_cmd_tee
@@ -29,16 +30,18 @@ from .models import (
     ProfileChoice,
     UserConfig,
 )
+from .netctx import LISTING_TIMEOUT_SECONDS, PROBE_TIMEOUT_SECONDS, NetworkContext
+from .outcome import RunOutcome, RunStatus, StageReport, describe, evaluate, read_manifest
+from .planning import plan_targets
 from .playlist import (
     PlaylistListing,
     channel_id_from_url,
     fetch_listing,
-    fetch_playlist_entries,
     get_playlist_id,
     is_channel_url,
     is_playlist_url,
+    is_youtube_host,
     read_archive_ids,
-    safe_archive_token,
 )
 from .preflight import (
     ListingStatus,
@@ -48,9 +51,10 @@ from .preflight import (
     guarded_listing,
     run_preflight,
 )
+from .redact import redact_secrets, register_proxy
 from .settings import AppSettings
 from .settings_menu import run_settings_menu
-from .skip_probe import probe_skip_reason
+from .skip_probe import ProbeStatus, probe_item
 from .speedtest import measure_speed
 from .system import (
     deno_available,
@@ -60,18 +64,21 @@ from .system import (
     yt_dlp_available,
 )
 from .validators import validate_url
-from .yt_dlp import CommandBuilder, js_runtime_args
+from .yt_dlp import CommandBuilder
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from .preflight import GuardedListing
-    from .ui import ConsoleUI
+    from .ui import UI
 
 _T = TypeVar("_T")
 
 #: Typed at the URL prompt to open the settings menu instead of downloading.
 SETTINGS_SHORTCUT = "s"
+
+#: Typed at the URL prompt to open the archive tools (check, repair, download again).
+ARCHIVE_TOOLS_SHORTCUT = "a"
 
 #: The mode menu, in the order its options are shown.
 _MODE_BY_CHOICE = {
@@ -95,7 +102,7 @@ class InteractiveSession:
 
     def __init__(
         self,
-        ui: ConsoleUI,
+        ui: UI,
         config: UserConfig,
         paths: AppPaths,
         settings: AppSettings | None = None,
@@ -117,6 +124,8 @@ class InteractiveSession:
         self.settings = settings if settings is not None else AppSettings()
         self.cfg = cfg if cfg is not None else {}
         self.log_path: Path | None = None
+        # Anything logged or shown must not reveal the proxy password.
+        register_proxy(self.settings.download.proxy)
 
     def analyze_log_for_error(self, log_path: Path) -> str:
         """Read the log to find a user-friendly error cause."""
@@ -216,32 +225,34 @@ class InteractiveSession:
         return guarded_listing(fetch, self.log_path)
 
     def _persist_default_height(self, mode: DownloadMode, height: int | None) -> None:
-        """Save a resolution cap as the default for its mode."""
+        """Save a resolution cap as the default for its mode.
+
+        Raises:
+            OSError: It could not be saved; the default in memory is then the old one.
+        """
+        previous = (self.settings.archive.max_height, self.settings.video.max_height)
         if mode == DownloadMode.ARCHIVE:
             self.settings.archive.max_height = height
         else:
             self.settings.video.max_height = height
-        save_settings(self.paths.config_file, self.cfg, self.settings)
+        try:
+            save_settings(self.paths.config_file, self.cfg, self.settings)
+        except OSError:
+            self.settings.archive.max_height, self.settings.video.max_height = previous
+            raise
 
-    def _archive_file_name(
-        self,
-        url: str,
-        channel_archive: bool,
-        playlist_id: str | None,
-        listing: PlaylistListing | None,
-    ) -> str:
-        """Pick the download archive file for an archive-mode run.
+    def _audio_label(self) -> str:
+        """How the chosen audio format is named to the user ("MP3", "OPUS", "source format")."""
+        fmt = self.settings.audio.audio_format
+        return t("audio_format_best") if fmt == "best" else fmt.upper()
 
-        A channel is keyed by its real channel id, so the handle URL, the
-        /channel/ URL and any tab URL of one channel all resume one archive. The
-        id comes from the URL when it carries one, otherwise from the listing
-        that also feeds the size estimate.
+    def _channel_key(self, url: str, listing: PlaylistListing | None) -> str:
+        """The identifier a channel's archive is keyed by: its real channel id.
+
+        A channel is keyed by its channel id, so the handle URL, the /channel/ URL and any
+        tab URL of one channel all resume one archive. The id comes from the URL when it
+        carries one, otherwise from the listing that also feeds the size estimate.
         """
-        if not channel_archive:
-            if playlist_id:
-                return f"playlist_{safe_archive_token(playlist_id)}_archive.txt"
-            return "single_videos_archive.txt"
-
         channel_id = channel_id_from_url(url) or (listing.channel_id if listing else None)
         if channel_id is None:
             # Not fatal: fall back to the identifier in the URL, which still
@@ -251,7 +262,7 @@ class InteractiveSession:
                 f"{paint(t('label_warning'), Colors.YELLOW, Colors.BOLD)} "
                 f"{paint(t('archive_channel_id_fallback', id=channel_id), Colors.YELLOW)}"
             )
-        return f"channel_{safe_archive_token(channel_id)}_archive.txt"
+        return channel_id
 
     def run_loop(self) -> int:
         """Run the main interactive loop.
@@ -304,6 +315,9 @@ class InteractiveSession:
             if raw.strip().lower() == SETTINGS_SHORTCUT:
                 self.open_settings()
                 continue
+            if raw.strip().lower() == ARCHIVE_TOOLS_SHORTCUT:
+                run_archive_tools(self.ui, self.paths, self.config)
+                continue
             try:
                 # Guards against input yt-dlp would misread, most importantly a
                 # leading "-", which it would take as a command-line flag.
@@ -329,7 +343,8 @@ class InteractiveSession:
 
         # 2) Mode selection
         mode_choice = self.ui.pick(
-            t("prompt_mode"), [t("mode_video"), t("mode_audio"), t("mode_archive")]
+            t("prompt_mode"),
+            [t("mode_video"), t("mode_audio", format=self._audio_label()), t("mode_archive")],
         )
         mode = _MODE_BY_CHOICE[ModeChoice(mode_choice)]
         archive_mode = mode == DownloadMode.ARCHIVE
@@ -372,6 +387,11 @@ class InteractiveSession:
             )
 
         # 4) Playlist vs single video
+        youtube = is_youtube_host(url)
+        if not youtube:
+            self.ui.print(paint(t("notice_non_youtube"), Colors.YELLOW))
+        # Another site's URL is never a playlist here: the listing, the estimate and the
+        # archive naming rest on YouTube's URL forms (see playlist.is_playlist_url).
         playlist_like = is_playlist_url(url)
         # Archiving a channel always means the whole channel: there is no
         # "this video" in a channel URL to fall back to.
@@ -389,6 +409,7 @@ class InteractiveSession:
                 force_single = True
 
         is_playlist = playlist_like and (not force_single)
+        is_channel = is_playlist and is_channel_url(url)
         playlist_id = get_playlist_id(url) if is_playlist else None
 
         # 5) MP4 profile
@@ -415,7 +436,7 @@ class InteractiveSession:
                     )
                 )
 
-        # 6) Directories and templates
+        # 6) Directories, and the playlist listing that names the archive
         self.paths.archives_dir.mkdir(parents=True, exist_ok=True)
         self.paths.logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -425,48 +446,54 @@ class InteractiveSession:
         )
         self.log_path = log_path
 
-        templates = self.settings.output
-        listing: PlaylistListing | None = None
-        if archive_mode:
-            base_dir = self.config.videos_dir / "yt-dlp"
-            output_template = str(base_dir / templates.archive_template)
-            if is_playlist:
-                # One flat listing feeds the size estimate and, for a channel, the
-                # archive file name, so there is no separate channel id request.
-                listing_args = [
-                    *js_runtime_args(deno_ok),
-                    *self.settings.archive.listing_args(),
-                    *self.settings.download.network_args(),
-                ]
-                guarded = self._list_playlist(
-                    lambda: fetch_listing(url, listing_args, run_capture), archive_mode=True
-                )
-                if guarded.status is ListingStatus.INTERRUPTED:
-                    return CycleOutcome.INTERRUPTED
-                if guarded.status is ListingStatus.BAN:
-                    # YouTube is already blocking us; the guard has logged it.
-                    return self._stop_after_ban()
-                listing = guarded.value
-            archive_name = self._archive_file_name(url, channel_archive, playlist_id, listing)
-            archive_path = self.paths.archives_dir / archive_name
-        elif mode == DownloadMode.VIDEO:
-            if is_playlist:
-                base_dir = self.config.videos_dir / "yt-dlp"
-                output_template = str(base_dir / templates.playlist_video_template)
-                archive_path = self.paths.archives_dir / f"playlist_{playlist_id}_mp4.txt"
-            else:
-                base_dir = self.config.videos_dir / "Downloaded Videos"
-                output_template = str(base_dir / templates.single_video_template)
-                archive_path = self.paths.archives_dir / "single_videos_mp4.txt"
-        elif is_playlist:
-            base_dir = self.config.music_dir / "yt-dlp"
-            output_template = str(base_dir / templates.playlist_audio_template)
-            archive_path = self.paths.archives_dir / f"playlist_{playlist_id}_mp3.txt"
-        else:
-            base_dir = self.config.music_dir / "Downloaded Music"
-            output_template = str(base_dir / templates.single_audio_template)
-            archive_path = self.paths.archives_dir / "single_audios_mp3.txt"
+        network = NetworkContext(self.settings, deno_ok)
 
+        # One flat listing feeds the size estimate, the skip report and, for a channel, the
+        # archive file name (its real channel id), so there is no separate channel request.
+        # A single item sends none.
+        listing: PlaylistListing | None = None
+        if is_playlist:
+            guarded = self._list_playlist(
+                lambda: fetch_listing(
+                    url,
+                    network.listing_args(archive=archive_mode),
+                    lambda cmd: run_capture(cmd, timeout=LISTING_TIMEOUT_SECONDS),
+                ),
+                archive_mode=archive_mode,
+            )
+            if guarded.status is ListingStatus.INTERRUPTED:
+                return CycleOutcome.INTERRUPTED
+            if guarded.status is ListingStatus.BAN:
+                # YouTube is already blocking us; the guard has logged it.
+                return self._stop_after_ban()
+            if guarded.status is ListingStatus.FAILED and not archive_mode:
+                self.ui.print(f"{t('playlist_fetch_failed')}\n{redact_secrets(guarded.error)}\n")
+                if self.ui.prompt_exit_on_failure():
+                    return CycleOutcome.EXIT_FAILURE
+            listing = guarded.value
+
+        key = playlist_id
+        if is_channel:
+            key = self._channel_key(url, listing)
+        try:
+            targets = plan_targets(
+                mode=mode,
+                is_playlist=is_playlist,
+                is_channel=is_channel,
+                key=key,
+                config=self.config,
+                settings=self.settings,
+                archives_dir=self.paths.archives_dir,
+                legacy_key=get_playlist_id(url) if is_channel else None,
+            )
+        except ValidationError as ex:
+            self.ui.print(f"{paint(t('label_error'), Colors.RED, Colors.BOLD)} {ex}")
+            return CycleOutcome.CONTINUE
+        base_dir, output_template, archive_path = (
+            targets.base_dir,
+            targets.output_template,
+            targets.archive_path,
+        )
         base_dir.mkdir(parents=True, exist_ok=True)
 
         self._print_summary_panel(
@@ -516,32 +543,15 @@ class InteractiveSession:
             output_template=output_template,
             archive_path=archive_path,
             log_path=log_path,
-            js_args=cmd_builder.js_args,
+            probe_args=network.probe_args(),
         )
 
-        # 8) Playlist listing. Archive mode already listed in step 6, and never
-        # runs the skip report, whose per-item probes are exactly the kind of
-        # extra traffic archive mode avoids.
-        entries: list[PlaylistEntry] = []
-        estimate_entries: list[PlaylistEntry] | None = None
-        if archive_mode:
-            estimate_entries = listing.entries if listing is not None else None
-        elif plan.is_playlist:
-            guarded_entries = self._list_playlist(
-                lambda: fetch_playlist_entries(plan.url, plan.js_args, run_capture),
-                archive_mode=False,
-            )
-            if guarded_entries.status is ListingStatus.INTERRUPTED:
-                return CycleOutcome.INTERRUPTED
-            if guarded_entries.status is ListingStatus.BAN:
-                return self._stop_after_ban()
-            if guarded_entries.status is ListingStatus.FAILED:
-                self.ui.print(f"{t('playlist_fetch_failed')}\n{guarded_entries.error}\n")
-                if self.ui.prompt_exit_on_failure():
-                    return CycleOutcome.EXIT_FAILURE
-            else:
-                entries = guarded_entries.value or []
-                estimate_entries = entries
+        # 8) The entries. Archive mode never runs the skip report, whose per-item probes
+        # are exactly the kind of extra traffic archive mode avoids.
+        entries: list[PlaylistEntry] = listing.entries if listing is not None else []
+        estimate_entries: list[PlaylistEntry] | None = (
+            listing.entries if listing is not None else None
+        )
 
         # 8b) Size estimate, resolution cap and free-space check.
         preflight = run_preflight(
@@ -566,31 +576,53 @@ class InteractiveSession:
             return CycleOutcome.CONTINUE
         cmd_builder.set_max_height(preflight.max_height)
 
-        # 9) DOWNLOAD
-        final_rc = self._execute_download(plan, cmd_builder)
-        if final_rc == 130:
+        # 9) DOWNLOAD, judged by what it left behind rather than by an exit code
+        archive_before = read_archive_ids(archive_path)
+        report = self._execute_download(plan, cmd_builder)
+        outcome = evaluate(
+            stage_codes=report.codes,
+            archive_before=archive_before,
+            archive_after=read_archive_ids(archive_path),
+            manifest=read_manifest(cmd_builder.manifest_path),
+            expected_ids=[e.id for e in entries if e.id] if plan.is_playlist and listing else None,
+            banned=report.banned,
+            cancelled=report.cancelled,
+        )
+        append_log(
+            log_path,
+            f"\n[INFO {datetime.now().isoformat(timespec='seconds')}] "
+            f"DOWNLOAD_FINISHED status={outcome.status} stage_codes={list(report.codes)} "
+            f"completed={outcome.completed} already_present={outcome.already_present} "
+            f"failed={list(outcome.failed)} missing={list(outcome.missing)} "
+            f"failed_unknown={outcome.failed_unknown}\n",
+        )
+
+        status = outcome.status
+        if status is RunStatus.CANCELLED:
             return CycleOutcome.INTERRUPTED
-        if final_rc == BAN_RETURN_CODE:
+        if status is RunStatus.BANNED:
             return self._stop_after_ban()
-        if final_rc != 0:
+        if status is RunStatus.FAILED:
+            self._print_outcome(outcome)
             if self.handle_error(log_path):
                 return CycleOutcome.EXIT_FAILURE
             return CycleOutcome.CONTINUE
 
-        append_log(
-            log_path,
-            f"\n[INFO {datetime.now().isoformat(timespec='seconds')}] "
-            f"DOWNLOAD_FINISHED returncode={final_rc}\n",
-        )
-
-        # 10) Skip report (never in archive mode, see step 8)
+        # 10) Report, then the skip report (never in archive mode, see step 8)
+        self._print_outcome(outcome)
         if not archive_mode:
-            self._show_skip_report(plan, entries)
+            skip_stop = self._show_skip_report(plan, entries)
+            if skip_stop is ProbeStatus.CANCELLED:
+                return CycleOutcome.INTERRUPTED
 
-        self.ui.print("\n" + t("tasks_completed"))
         self.ui.print(f"{t('info_log')} {log_path}")
         self.ui.print(f"{t('info_config')} {self.paths.config_file}")
 
+        # What "already in the archive" means when the target changes.
+        if outcome.already_present:
+            self.ui.print(paint(t("archive_records_note"), Colors.CYAN))
+
+        partial = status is RunStatus.PARTIAL
         next_action = self.ui.pick(
             t("prompt_next"),
             [
@@ -606,7 +638,20 @@ class InteractiveSession:
             return CycleOutcome.CONTINUE
         if next_action == ActionChoice.DOWNLOAD_ANOTHER:
             return CycleOutcome.CONTINUE
-        return CycleOutcome.EXIT_SUCCESS
+        # Leaving after a run that left items undone must not look like a clean exit.
+        return CycleOutcome.EXIT_FAILURE if partial else CycleOutcome.EXIT_SUCCESS
+
+    def _print_outcome(self, outcome: RunOutcome) -> None:
+        """Show the success, partial-success or failure lines of a run."""
+        colors = {
+            "ok": (Colors.GREEN, Colors.BOLD),
+            "warn": (Colors.YELLOW, Colors.BOLD),
+            "error": (Colors.RED, Colors.BOLD),
+            "info": (Colors.WHITE,),
+        }
+        self.ui.print("")
+        for kind, text in describe(outcome):
+            self.ui.print(paint(text, *colors[kind]))
 
     def _print_summary_panel(
         self,
@@ -669,109 +714,122 @@ class InteractiveSession:
 
         self.ui.print_panel("\n".join(lines), title=t("summary_title"), color=Colors.BLUE)
 
-    def _execute_download(self, plan: DownloadPlan, cmd_builder: CommandBuilder) -> int:
-        """Execute download commands and return the final process status."""
-        final_rc = 1
+    def _execute_download(self, plan: DownloadPlan, cmd_builder: CommandBuilder) -> StageReport:
+        """Run the download command(s) and report how each stage ended.
 
+        Whether the items are done is judged afterwards from the archive and the files
+        (see outcome.evaluate); this only says what ran, and whether it was cut short.
+        """
         log_path = self.log_path
         if not log_path:
             self.ui.print(t("error_log_uninitialized"))
-            return 1
+            return StageReport((1,))
+
+        codes: list[int] = []
+
+        def run(cmd: list[str], *, stop_on_ban: bool = False) -> int:
+            rc = run_cmd_tee(cmd, log_path, stop_on_ban=stop_on_ban)
+            codes.append(rc)
+            return rc
+
+        def report() -> StageReport:
+            return StageReport(
+                tuple(codes),
+                banned=BAN_RETURN_CODE in codes,
+                cancelled=130 in codes,
+            )
 
         if plan.mode == DownloadMode.ARCHIVE:
-            cmd_archive = cmd_builder.build_archive()
             self.ui.print(
                 f"{paint('### ' + t('archive_title'), Colors.MAGENTA, Colors.BOLD)} "
                 f"{paint(t('archive_desc'), Colors.CYAN)}"
             )
-            return run_cmd_tee(cmd_archive, log_path, stop_on_ban=True)
+            run(cmd_builder.build_archive(), stop_on_ban=True)
+            return report()
 
         if plan.mode == DownloadMode.VIDEO:
             if plan.mp4_profile == ProfileChoice.COMPATIBILITY:
-                cmd_stage1 = cmd_builder.build_mp4_compatibility_stage1()
                 self.ui.print(
                     f"{paint('### ' + t('stage1_title'), Colors.BLUE, Colors.BOLD)} "
                     f"{paint(t('stage1_desc'), Colors.CYAN)}"
                 )
-                rc1 = run_cmd_tee(cmd_stage1, log_path)
-                final_rc = rc1
-
+                rc1 = run(cmd_builder.build_mp4_compatibility_stage1())
                 if rc1 == 130:
-                    return 130
+                    return report()
                 if rc1 != 0:
                     # Expected whenever an item has no avc1+mp4a rendition --
-                    # that is exactly what Stage 2 is for. Not a failure yet.
+                    # that is exactly what Stage 2 is for. Not a failure yet: an item
+                    # that stage 1 could not finish is not in the archive, so stage 2
+                    # picks it up, and evaluate() judges the result, not this code.
                     self.ui.print(f"{Colors.YELLOW}{t('stage1_partial')}{Colors.RESET}")
 
-                cmd_stage2 = cmd_builder.build_mp4_compatibility_stage2()
                 self.ui.print(
                     f"{paint('### ' + t('stage2_title'), Colors.BLUE, Colors.BOLD)} "
                     f"{paint(t('stage2_desc'), Colors.CYAN)}"
                 )
-                rc2 = run_cmd_tee(cmd_stage2, log_path)
-                final_rc = rc2
-
-                if rc2 == 130:
-                    return 130
-
+                run(cmd_builder.build_mp4_compatibility_stage2())
+            elif plan.remux_container == ContainerChoice.MKV:
+                self.ui.print(
+                    f"{paint('### ' + t('quality_title'), Colors.MAGENTA, Colors.BOLD)} "
+                    f"{paint(t('quality_mkv_desc'), Colors.GREEN)}"
+                )
+                run(cmd_builder.build_mp4_quality_mkv())
             else:
-                if plan.remux_container == ContainerChoice.MKV:
-                    cmd_quality = cmd_builder.build_mp4_quality_mkv()
-                    self.ui.print(
-                        f"{paint('### ' + t('quality_title'), Colors.MAGENTA, Colors.BOLD)} "
-                        f"{paint(t('quality_mkv_desc'), Colors.GREEN)}"
-                    )
-                    rc = run_cmd_tee(cmd_quality, log_path)
-                    final_rc = rc
-                else:
-                    cmd_quality_mp4 = cmd_builder.build_mp4_quality_remux()
-                    self.ui.print(
-                        f"{paint('### ' + t('quality_title'), Colors.MAGENTA, Colors.BOLD)} "
-                        f"{paint(t('quality_mp4_desc'), Colors.GREEN)}"
-                    )
-                    rc = run_cmd_tee(cmd_quality_mp4, log_path)
-                    final_rc = rc
+                self.ui.print(
+                    f"{paint('### ' + t('quality_title'), Colors.MAGENTA, Colors.BOLD)} "
+                    f"{paint(t('quality_mp4_desc'), Colors.GREEN)}"
+                )
+                run(cmd_builder.build_mp4_quality_remux())
+            return report()
 
-                if final_rc == 130:
-                    return 130
-        else:
-            cmd_audio = cmd_builder.build_mp3()
-            self.ui.print(
-                f"{paint('### ' + t('mp3_title'), Colors.GREEN, Colors.BOLD)} "
-                f"{paint(t('mp3_desc'), Colors.CYAN)}"
-            )
-            rc = run_cmd_tee(cmd_audio, log_path)
-            final_rc = rc
+        label = self._audio_label()
+        self.ui.print(
+            f"{paint('### ' + t('audio_title', format=label), Colors.GREEN, Colors.BOLD)} "
+            f"{paint(t('audio_desc', format=label), Colors.CYAN)}"
+        )
+        run(cmd_builder.build_mp3())
+        return report()
 
-            if rc == 130:
-                return 130
+    def _show_skip_report(
+        self, plan: DownloadPlan, entries: list[PlaylistEntry]
+    ) -> ProbeStatus | None:
+        """Show skipped items report.
 
-        return final_rc
+        Returns:
+            CANCELLED when the user cancelled, BANNED when YouTube started blocking the
+            probes (both end the report at once: going on would either start the requests
+            just cancelled or extend the block), None when it ran to the end.
+        """
+        if not (plan.is_playlist and entries):
+            return None
+        downloaded_ids = read_archive_ids(Path(plan.archive_path))
+        skipped = [e for e in entries if e.id and e.id not in downloaded_ids]
 
-    def _show_skip_report(self, plan: DownloadPlan, entries: list[PlaylistEntry]) -> None:
-        """Show skipped items report."""
-        if plan.is_playlist and entries:
-            downloaded_ids = read_archive_ids(Path(plan.archive_path))
-            skipped = [e for e in entries if e.id and e.id not in downloaded_ids]
+        if not skipped:
+            self.ui.print("\n" + t("playlist_all_archived"))
+            return None
 
-            if skipped:
-                header = t("skip_report_title")
-                rule = "=" * len(header)
-                self.ui.print(f"\n{Colors.YELLOW}{Colors.BOLD}{rule}{Colors.RESET}")
-                self.ui.print(f"{Colors.YELLOW}{Colors.BOLD}{header}{Colors.RESET}")
-                self.ui.print(f"{Colors.YELLOW}{Colors.BOLD}{rule}{Colors.RESET}")
+        header = t("skip_report_title")
+        rule = "=" * len(header)
+        self.ui.print(f"\n{Colors.YELLOW}{Colors.BOLD}{rule}{Colors.RESET}")
+        self.ui.print(f"{Colors.YELLOW}{Colors.BOLD}{header}{Colors.RESET}")
+        self.ui.print(f"{Colors.YELLOW}{Colors.BOLD}{rule}{Colors.RESET}")
 
-                self.ui.print(t("playlist_analyzing"))
+        self.ui.print(t("playlist_analyzing"))
 
-                for e in skipped:
-                    idx = e.playlist_index
-                    vid = e.id
-                    title = e.title
-                    vurl = e.watch_url
-                    reason = probe_skip_reason(vurl, plan.js_args, run_capture)
+        def bounded(cmd: list[str]) -> tuple[int, str, str]:
+            return run_capture(cmd, timeout=PROBE_TIMEOUT_SECONDS)
 
-                    self.ui.print(f"- #{idx:03d}  ({vid})")
-                    self.ui.print(f"  {t('skip_item_title')} {title}")
-                    self.ui.print(f"  {t('skip_item_reason')} {reason}\n")
-            else:
-                self.ui.print("\n" + t("playlist_all_archived"))
+        for e in skipped:
+            result = probe_item(e.watch_url, plan.probe_args, bounded)
+            if result.status is ProbeStatus.CANCELLED:
+                self.ui.print(f"\n>>> {t('status_cancelled')} (Ctrl+C).")
+                return ProbeStatus.CANCELLED
+            if result.status is ProbeStatus.BANNED:
+                self.report_ban()
+                return ProbeStatus.BANNED
+
+            self.ui.print(f"- #{e.playlist_index:03d}  ({e.id})")
+            self.ui.print(f"  {t('skip_item_title')} {e.title}")
+            self.ui.print(f"  {t('skip_item_reason')} {redact_secrets(result.text)}\n")
+        return None

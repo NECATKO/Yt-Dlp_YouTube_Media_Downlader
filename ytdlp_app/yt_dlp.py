@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .models import DownloadMode
+from .netctx import NetworkContext, js_runtime_args
 from .settings import AppSettings
 
 #: Archive mode keeps everything a channel publishes that could be lost with it:
@@ -18,6 +19,12 @@ from .settings import AppSettings
 #: video_format(), because the cap can change.
 ARCHIVE_CONTENT_ARGS = [
     "--merge-output-format",
+    "mkv",
+    # --merge-output-format only acts when separate streams are merged. A video that
+    # arrives as one combined stream (a single mp4) would stay an mp4, so it is also
+    # remuxed: a stream copy into MKV, no re-encode. Metadata, chapters, the thumbnail
+    # and the subtitles are embedded or written after this step, on the MKV.
+    "--remux-video",
     "mkv",
     "--write-description",
     "--write-info-json",
@@ -32,19 +39,61 @@ ARCHIVE_CONTENT_ARGS = [
     "--embed-chapters",
 ]
 
-#: Holds the yt-dlp plugin that drops YouTube's machine-translated subtitles.
-#: See plugins/original_subs for why --sub-langs alone cannot exclude them.
+#: Holds the yt-dlp plugins the app ships (see each plugin's docstring):
+#: OriginalSubsOnly drops YouTube's machine-translated subtitles (archive mode),
+#: Mp4Compat guarantees the compatibility profile's H.264 + AAC in MP4, and
+#: DownloadLedger records where each finished item was written, and ArchiveComplete
+#: (archive mode) refuses an item whose subtitles or thumbnail could not be saved.
 PLUGINS_DIR = Path(__file__).parent / "plugins"
+
+#: Suffix of the manifest kept beside a download archive: "<id>\t<final path>" lines.
+MANIFEST_SUFFIX = ".files.tsv"
+
+
+def plugin_dirs_args() -> list[str]:
+    """Make yt-dlp load the bundled plugins."""
+    return ["--plugin-dirs", str(PLUGINS_DIR)]
 
 
 def original_subs_args() -> list[str]:
-    """Build the arguments that restrict archive mode to original subtitles."""
+    """Build the arguments that restrict archive mode to original subtitles.
+
+    OriginalSubsOnly runs at when=video: after the subtitles are selected and before
+    any of them is downloaded.
+    """
+    return [*plugin_dirs_args(), "--use-postprocessor", "OriginalSubsOnly:when=video"]
+
+
+def archive_complete_args() -> list[str]:
+    """Arguments that fail an item whose subtitles or thumbnail could not be saved.
+
+    One step notes what the video lists before anything is written (when=video), the other
+    checks it once the parts were written and before the video is downloaded (when=before_dl).
+    """
     return [
-        "--plugin-dirs",
-        str(PLUGINS_DIR),
         "--use-postprocessor",
-        "OriginalSubsOnly:when=video",
+        "ArchiveComplete:when=video;stage=snapshot",
+        "--use-postprocessor",
+        "ArchiveComplete:when=before_dl;stage=check",
     ]
+
+
+def mp4_compat_args() -> list[str]:
+    """Arguments that make the finished file H.264 + AAC in MP4 (see Mp4Compat).
+
+    when=post_process runs before the metadata, chapter, subtitle and thumbnail
+    embedding, so those act on the final MP4.
+    """
+    return ["--use-postprocessor", "Mp4Compat:when=post_process"]
+
+
+def ledger_args(manifest: Path) -> list[str]:
+    """Arguments that append each finished item to a manifest (see DownloadLedger).
+
+    yt-dlp splits the option on ";", so the path is percent-encoded for ";" and "%".
+    """
+    encoded = str(manifest).replace("%", "%25").replace(";", "%3B")
+    return ["--use-postprocessor", f"DownloadLedger:when=after_move;path={encoded}"]
 
 
 def _height_filter(max_height: int | None) -> str:
@@ -65,18 +114,6 @@ def compat_stage1_format(max_height: int | None) -> str:
     """Build the H.264 + AAC selector of the compatibility profile's first stage."""
     cap = _height_filter(max_height)
     return f"bestvideo[vcodec^=avc1]{cap}+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]{cap}"
-
-
-def js_runtime_args(use_deno: bool) -> list[str]:
-    """Build JavaScript runtime arguments for yt-dlp.
-
-    Standalone so lookups that run before a CommandBuilder exists (the archive
-    mode channel lookup) can pass the same flags.
-    """
-    base = ["--remote-components", "ejs:github"]
-    if not use_deno:
-        return base
-    return ["--js-runtime", "deno", *base]
 
 
 class CommandBuilder:
@@ -112,6 +149,7 @@ class CommandBuilder:
         self.is_playlist = is_playlist
         self.use_deno = use_deno
         self.settings = settings if settings is not None else AppSettings()
+        self.network = NetworkContext(self.settings, use_deno)
         # The cap chosen for this download, once the user has been asked. Until
         # then each mode uses the default saved in the settings.
         self._max_height: int | None = None
@@ -134,11 +172,13 @@ class CommandBuilder:
         return js_runtime_args(self.use_deno)
 
     @property
-    def stability_args(self) -> list[str]:
-        """Build stability and retry arguments for yt-dlp.
+    def manifest_path(self) -> Path:
+        """Where DownloadLedger records this archive's finished items."""
+        return self.archive_path.with_name(self.archive_path.stem + MANIFEST_SUFFIX)
 
-        Also carries the rate limit and proxy, which are off by default.
-        """
+    @property
+    def stability_args(self) -> list[str]:
+        """Build the retry, pacing and error-handling arguments for yt-dlp."""
         return self.settings.download.to_args()
 
     @property
@@ -165,22 +205,33 @@ class CommandBuilder:
             return self.settings.audio.to_args()
         return self.settings.video.to_args()
 
-    def _assemble(self, selection: list[str], mode: DownloadMode) -> list[str]:
+    def _assemble(
+        self, selection: list[str], mode: DownloadMode, extra: list[str] | None = None
+    ) -> list[str]:
         """Combine a format selection with the arguments every command shares.
 
         common_args must stay last: it ends with the URL, which yt-dlp reads
         positionally.
         """
         return [
-            *selection,
+            selection[0],
+            *self.network.download_args(),
+            *selection[1:],
             *self.stability_args,
-            *self.js_args,
             *self.build_post_args(mode),
+            *plugin_dirs_args(),
+            *(extra or []),
+            *ledger_args(self.manifest_path),
             *self.common_args,
         ]
 
     def build_mp4_compatibility_stage1(self) -> list[str]:
-        """Build Stage 1 command for MP4 compatibility mode."""
+        """Build Stage 1 command for MP4 compatibility mode.
+
+        Asks for an H.264 + AAC rendition, which merges into MP4 without re-encoding.
+        Mp4Compat then only verifies it (and would still convert should the selector
+        ever let something else through).
+        """
         return self._assemble(
             [
                 "yt-dlp",
@@ -190,29 +241,37 @@ class CommandBuilder:
                 "mp4",
             ],
             DownloadMode.VIDEO,
+            mp4_compat_args(),
         )
 
     def build_mp4_compatibility_stage2(self) -> list[str]:
-        """Build Stage 2 command for MP4 compatibility mode."""
+        """Build Stage 2 command for MP4 compatibility mode.
+
+        Takes the best rendition whatever its codecs and has Mp4Compat make it H.264 +
+        AAC in MP4. ``--recode-video mp4`` is not used: it judges by container, so an
+        AV1 or VP9 file that already is an .mp4 would be reported as "already in target
+        format" and kept.
+        """
         return self._assemble(
-            [
-                "yt-dlp",
-                "-f",
-                video_format(self._cap(self.settings.video.max_height)),
-                "--recode-video",
-                "mp4",
-            ],
+            ["yt-dlp", "-f", video_format(self._cap(self.settings.video.max_height))],
             DownloadMode.VIDEO,
+            mp4_compat_args(),
         )
 
     def build_mp4_quality_mkv(self) -> list[str]:
-        """Build command for MP4 quality mode with MKV container."""
+        """Build command for MP4 quality mode with MKV container.
+
+        ``--merge-output-format mkv`` only applies when separate streams are merged;
+        ``--remux-video mkv`` (a stream copy) covers a single combined stream.
+        """
         return self._assemble(
             [
                 "yt-dlp",
                 "-f",
                 video_format(self._cap(self.settings.video.max_height)),
                 "--merge-output-format",
+                "mkv",
+                "--remux-video",
                 "mkv",
             ],
             DownloadMode.VIDEO,
@@ -245,13 +304,14 @@ class CommandBuilder:
         """
         return [
             "yt-dlp",
+            *self.network.download_args(),
             "-f",
             video_format(self._cap(self.settings.archive.max_height)),
             *ARCHIVE_CONTENT_ARGS,
             *original_subs_args(),
+            *archive_complete_args(),
+            *ledger_args(self.manifest_path),
             *self.settings.archive.to_args(),
-            *self.settings.download.network_args(),
-            *self.js_args,
             *self.common_args,
         ]
 

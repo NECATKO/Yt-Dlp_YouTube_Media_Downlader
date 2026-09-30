@@ -35,6 +35,8 @@ from datetime import datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+from .atomic import atomic_write_text
+
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableMapping, Sequence
 
@@ -206,8 +208,8 @@ def load_state(layout: RuntimeLayout) -> dict[str, Any]:
 
 
 def save_state(layout: RuntimeLayout, state: dict[str, Any]) -> None:
-    layout.runtime_dir.mkdir(parents=True, exist_ok=True)
-    layout.state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    """Write runtime/state.json atomically: an interruption keeps the previous file."""
+    atomic_write_text(layout.state_file, json.dumps(state, indent=2))
 
 
 # -- download and unpack ----------------------------------------------------
@@ -367,8 +369,51 @@ def extract_component(component: str, archive: Path, target: Path, *, windows: b
         for path in staging.iterdir():
             path.chmod(0o755)
 
-    shutil.rmtree(target, ignore_errors=True)
-    staging.rename(target)
+    swap_in(staging, target)
+
+
+def _backup_of(target: Path) -> Path:
+    return target.with_name(target.name + ".old")
+
+
+def swap_in(staging: Path, target: Path) -> None:
+    """Put a fully prepared folder in place of ``target`` without a gap.
+
+    The old copy is not deleted first: it is renamed to ``<name>.old``, the new one is
+    renamed into place, and only then is the old one removed. If the new rename fails the
+    old copy is put back. A crash between the two renames leaves the old copy at
+    ``.old``, which recover_component() restores on the next run, so at no point is
+    there neither a working component nor a way back to one.
+    """
+    backup = _backup_of(target)
+    shutil.rmtree(backup, ignore_errors=True)
+    had_old = target.exists()
+    if had_old:
+        target.rename(backup)
+    try:
+        staging.rename(target)
+    except BaseException:
+        if had_old:
+            shutil.rmtree(target, ignore_errors=True)
+            backup.rename(target)
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
+
+
+def recover_component(target: Path) -> None:
+    """Undo a swap that was interrupted between its two renames.
+
+    If ``<name>.old`` is left over and the component is missing, the old copy goes back;
+    if the component is there, the leftover is stale and is removed.
+    """
+    backup = _backup_of(target)
+    if not backup.exists():
+        return
+    if target.exists():
+        shutil.rmtree(backup, ignore_errors=True)
+    else:
+        backup.rename(target)
 
 
 def ensure_component(
@@ -386,6 +431,7 @@ def ensure_component(
         True if it was (re)installed, False if it was already current.
     """
     entry = find_entry(entries, component, key)
+    recover_component(layout.component_dir(component))
     installed = state.setdefault("components", {}).get(component, {})
     if installed.get("sha256") == entry.sha256 and layout.component_exe(component).exists():
         return False

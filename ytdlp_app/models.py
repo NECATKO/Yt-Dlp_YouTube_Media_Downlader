@@ -154,9 +154,9 @@ class DownloadPlan:
     URL, mode, output paths, and command-line arguments.
 
     The command-line arguments themselves are not stored here: the download is
-    driven by the CommandBuilder that produced them. js_args is the exception,
-    because the playlist fetch and the skip probe need the same JS runtime flags
-    outside of any download command.
+    driven by the CommandBuilder that produced them. probe_args is the exception,
+    because the skip probe needs the same network arguments (proxy, config policy, JS
+    runtime, pacing) outside of any download command.
 
     Attributes:
         url: The URL to download from.
@@ -169,7 +169,7 @@ class DownloadPlan:
         output_template: yt-dlp output template string.
         archive_path: Path to the download archive file.
         log_path: Path to the session log file.
-        js_args: Arguments for JavaScript runtime configuration.
+        probe_args: The shared network arguments for a skip-probe request.
     """
 
     url: str
@@ -182,4 +182,4 @@ class DownloadPlan:
     output_template: str
     archive_path: Path
     log_path: Path
-    js_args: list[str]
+    probe_args: list[str]

@@ -5,6 +5,7 @@ from pathlib import Path
 import ytdlp_app.session as session_module
 from ytdlp_app.i18n import t
 from ytdlp_app.models import AppPaths, ModeChoice, UserConfig
+from ytdlp_app.outcome import StageReport
 from ytdlp_app.session import CycleOutcome, InteractiveSession
 
 
@@ -38,7 +39,7 @@ def make_failed_session(
 
     monkeypatch.setattr(session, "_ask_url", lambda: "https://youtu.be/dQw4w9WgXcQ")
     monkeypatch.setattr(session, "_print_summary_panel", lambda *args: None)
-    monkeypatch.setattr(session, "_execute_download", lambda *args: 1)
+    monkeypatch.setattr(session, "_execute_download", lambda *args: StageReport((1,)))
     monkeypatch.setattr(session, "handle_error", lambda _path: exit_on_failure)
     monkeypatch.setattr(session_module, "yt_dlp_available", lambda: True)
     monkeypatch.setattr(session_module, "ffmpeg_available", lambda: True)

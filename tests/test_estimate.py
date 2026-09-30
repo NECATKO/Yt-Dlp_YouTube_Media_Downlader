@@ -4,8 +4,9 @@ import pytest
 
 from ytdlp_app.estimate import (
     RESOLUTIONS,
+    UNLIMITED_HEIGHT,
     VideoSet,
-    archive_wait_seconds,
+    archive_wait,
     audio_output_kbps,
     download_seconds,
     effective_speed,
@@ -143,6 +144,21 @@ class TestEstimates:
         assert estimate.required_bytes == 1_386_000_000 + 924_000_000
         assert estimate.download_bytes == estimate.total_bytes
 
+    def test_the_audio_estimate_never_undercounts_a_small_output(self) -> None:
+        """A 65 kbit/s MP3 is smaller than its ~160 kbit/s source: the source is the peak."""
+        videos = VideoSet(seconds=(600.0, 600.0), assumed=0, archived=0)
+        estimate = estimate_audio(videos, 65)
+
+        source = 12_000_000
+        assert estimate.required_bytes >= estimate.total_bytes + source
+
+    def test_a_large_output_is_covered_too(self) -> None:
+        """wav is far bigger than its source; the peak is every output plus one source."""
+        videos = VideoSet(seconds=(600.0, 300.0), assumed=0, archived=0)
+        estimate = estimate_audio(videos, 1536)
+
+        assert estimate.required_bytes == estimate.total_bytes + 12_000_000
+
     def test_higher_resolutions_need_more(self) -> None:
         sizes = [estimate_video(self.VIDEOS, h).total_bytes for h in RESOLUTIONS]
         assert sizes == sorted(sizes)
@@ -154,7 +170,10 @@ class TestEstimates:
 
         assert estimate.height is None
         assert estimate.total_bytes == 18_375_000
-        assert estimate.required_bytes == 36_750_000
+        # While the last file converts, all finished outputs plus that file's *source*
+        # (the ~160 kbit/s stream, 12 MB) are on disk, and the output is already in the
+        # total. Counting the largest output instead under-estimated small outputs.
+        assert estimate.required_bytes == 18_375_000 + 12_000_000
         # The network carries the ~160 kbit/s source stream, not the MP3.
         assert estimate.download_bytes == 12_000_000
 
@@ -195,11 +214,46 @@ class TestSpeed:
 
 
 class TestArchiveWait:
-    def test_average_wait_times_video_count(self) -> None:
-        assert archive_wait_seconds(10, 15, 45) == 300.0
+    def test_minimum_and_expected_are_different_numbers(self) -> None:
+        wait = archive_wait(10, 15, 45)
+
+        # The shortest possible waits are all 15 s; on average they are 30 s.
+        assert wait.minimum == 150.0
+        assert wait.expected == 300.0
+
+    def test_a_single_video_shows_the_same_gap(self) -> None:
+        wait = archive_wait(1, 15, 45)
+
+        assert (wait.minimum, wait.expected) == (15.0, 30.0)
 
     def test_a_max_below_the_min_is_treated_as_the_min(self) -> None:
-        assert archive_wait_seconds(10, 20, 5) == 200.0
+        wait = archive_wait(10, 20, 5)
+
+        assert wait.minimum == wait.expected == 200.0
+
+    def test_no_videos_no_wait(self) -> None:
+        wait = archive_wait(0, 15, 45)
+
+        assert (wait.minimum, wait.expected) == (0.0, 0.0)
+
+
+class TestUnlimitedResolution:
+    """ "No limit" is not 2160p: YouTube serves 4320p (8K) too."""
+
+    VIDEOS = VideoSet(seconds=(600.0,), assumed=0, archived=0)
+
+    def test_the_unlimited_estimate_exceeds_the_2160p_one(self) -> None:
+        capped = estimate_video(self.VIDEOS, 2160)
+        unlimited = estimate_video(self.VIDEOS, None)
+
+        assert unlimited.total_bytes > capped.total_bytes
+        assert unlimited.required_bytes > capped.required_bytes
+
+    def test_the_unlimited_row_says_it_is_the_unlimited_one(self) -> None:
+        assert estimate_video(self.VIDEOS, None).height == UNLIMITED_HEIGHT
+
+    def test_no_capped_row_is_treated_as_the_upper_bound(self) -> None:
+        assert max(RESOLUTIONS) < UNLIMITED_HEIGHT
 
 
 class TestFormatting:

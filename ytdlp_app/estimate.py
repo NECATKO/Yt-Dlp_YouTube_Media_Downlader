@@ -23,10 +23,15 @@ if TYPE_CHECKING:
 #: The resolution caps the estimate table shows.
 RESOLUTIONS: Final[tuple[int, ...]] = (1080, 1440, 2160)
 
+#: What "no limit" is estimated as. It is not 2160p: YouTube serves 4320p (8K) as well,
+#: and an unlimited download takes the best format there is. No listing carries the
+#: formats, so this is an assumption, and shown as one.
+UNLIMITED_HEIGHT: Final = 4320
+
 #: Video bit rate in kbit/s per resolution. 1080p is YouTube's H.264 upper end
 #: (60 fps), because the compatibility profile asks for H.264; 1440p and 2160p
-#: are the upper end of typical VP9.
-VIDEO_KBPS: Final[dict[int, int]] = {1080: 6000, 1440: 12000, 2160: 30000}
+#: are the upper end of typical VP9, and 4320p that of 8K VP9/AV1.
+VIDEO_KBPS: Final[dict[int, int]] = {1080: 6000, 1440: 12000, 2160: 30000, 4320: 80000}
 
 #: Bit rate of the audio stream YouTube pairs with the video (Opus ~130-160, m4a ~128).
 AUDIO_KBPS: Final = 160
@@ -147,10 +152,12 @@ class SizeEstimate:
     """Estimated bytes for one row of the table.
 
     Attributes:
-        height: The resolution cap this row is for; None for an audio row.
+        height: The resolution cap this row is for (UNLIMITED_HEIGHT for "no limit");
+            None for an audio row.
         total_bytes: Size of everything that stays on disk.
-        required_bytes: total_bytes plus the largest single video, because the
-            source and the output coexist while merging, recoding or converting.
+        required_bytes: total_bytes plus what is temporarily on disk as well: for video
+            the largest single video (source and output coexist while merging or
+            recoding), for audio the largest single *source* stream.
         download_bytes: What crosses the network.
     """
 
@@ -160,19 +167,30 @@ class SizeEstimate:
     download_bytes: int
 
 
-def estimate_video(videos: VideoSet, height: int) -> SizeEstimate:
-    """Estimate a video download capped at the given resolution."""
-    kbps = VIDEO_KBPS[height] + AUDIO_KBPS
+def estimate_video(videos: VideoSet, height: int | None) -> SizeEstimate:
+    """Estimate a video download capped at the given resolution (None = no cap).
+
+    "No cap" is estimated at UNLIMITED_HEIGHT, not at the largest cap offered.
+    """
+    effective = UNLIMITED_HEIGHT if height is None else height
+    kbps = VIDEO_KBPS[effective] + AUDIO_KBPS
     total = sum(size_bytes(s, kbps) for s in videos.seconds)
-    return SizeEstimate(height, total, total + size_bytes(videos.longest_seconds, kbps), total)
+    return SizeEstimate(effective, total, total + size_bytes(videos.longest_seconds, kbps), total)
 
 
 def estimate_audio(videos: VideoSet, output_kbps: int) -> SizeEstimate:
-    """Estimate an audio extraction: the output stays, the source is downloaded."""
+    """Estimate an audio extraction: the outputs stay, the sources are downloaded.
+
+    While one file converts, every finished output plus that file's source and its
+    own output are on disk. The outputs are all in the total, so the peak is the total
+    plus the largest *source*. (Adding the largest output instead, as an earlier
+    version did, under-counts whenever the output is smaller than the source, as a
+    low-bit-rate MP3 is.)
+    """
     total = sum(size_bytes(s, output_kbps) for s in videos.seconds)
-    largest = size_bytes(videos.longest_seconds, output_kbps)
+    largest_source = size_bytes(videos.longest_seconds, AUDIO_KBPS)
     downloaded = sum(size_bytes(s, AUDIO_KBPS) for s in videos.seconds)
-    return SizeEstimate(None, total, total + largest, downloaded)
+    return SizeEstimate(None, total, total + largest_source, downloaded)
 
 
 def parse_rate_limit(text: str | None) -> float | None:
@@ -201,10 +219,23 @@ def download_seconds(download_bytes: int, bytes_per_second: float | None) -> flo
     return download_bytes / bytes_per_second
 
 
-def archive_wait_seconds(count: int, sleep_interval: float, max_sleep_interval: float) -> float:
-    """Lower bound for archive mode: the wait between videos, times the videos."""
+@dataclass(frozen=True, slots=True)
+class WaitEstimate:
+    """How long archive mode's waits between videos take, in seconds.
+
+    Attributes:
+        minimum: If every wait were the shortest allowed.
+        expected: On average: each wait is random between the two bounds.
+    """
+
+    minimum: float
+    expected: float
+
+
+def archive_wait(count: int, sleep_interval: float, max_sleep_interval: float) -> WaitEstimate:
+    """The minimum and the expected total of archive mode's waits between videos."""
     high = max(sleep_interval, max_sleep_interval)
-    return count * (sleep_interval + high) / 2
+    return WaitEstimate(count * sleep_interval, count * (sleep_interval + high) / 2)
 
 
 def format_size(num_bytes: float) -> str:

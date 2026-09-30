@@ -25,7 +25,7 @@ class TestLoadLocale:
         locale = load_locale("tr")
         assert "prompt_url" in locale
         # Turkish has different text
-        assert locale.get("mode_audio") == "Ses (MP3)"
+        assert locale.get("mode_audio") == "Ses ({format})"
 
     def test_fallback_to_english(self) -> None:
         """An unknown language still yields the full English catalogue."""
@@ -88,8 +88,8 @@ class TestTranslation:
     def test_turkish_translation(self) -> None:
         """Test Turkish translations."""
         set_language("tr")
-        result = t("mode_audio")
-        assert result == "Ses (MP3)"
+        result = t("mode_audio", format="OPUS")
+        assert result == "Ses (OPUS)"
 
 
 class TestAvailableLanguages:
@@ -113,7 +113,7 @@ class TestLanguageName:
     def test_known_languages(self) -> None:
         """Test getting names for known languages."""
         assert get_language_name("en") == "English"
-        assert get_language_name("tr") == "Turkce"
+        assert get_language_name("tr") == "Türkçe"
 
     def test_unknown_language(self) -> None:
         """Test getting name for unknown language."""

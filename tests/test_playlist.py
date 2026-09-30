@@ -376,3 +376,130 @@ class TestFetchListing:
         )
         assert [e.id for e in entries] == ["vid1", "vid2", "vid3"]
         assert entries[0].watch_url == "https://www.youtube.com/watch?v=vid1"
+
+
+class TestUrlClassification:
+    """Redirect forms are single videos, look-alike paths are not channels, and only
+    YouTube's own hosts are ever treated as playlists or channels."""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.youtube.com/@ChannelHandle/live",
+            "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw/live",
+            "https://www.youtube.com/c/Name/live",
+            "https://www.youtube.com/live/dQw4w9WgXcQ",
+            "https://www.youtube.com/clip/UgkxSomeClipId",
+            "https://www.youtube.com/channelsomething",
+            "https://www.youtube.com/cats",
+            "https://www.youtube.com/user",
+            "https://www.youtube.com/embed/dQw4w9WgXcQ",
+        ],
+    )
+    def test_single_video_redirects_and_lookalike_paths_are_not_playlists(self, url: str) -> None:
+        assert is_playlist_url(url) is False
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://vimeo.com/channels/staffpicks",
+            "https://soundcloud.com/@someone",
+            "https://example.com/watch?v=1&list=abc",
+            "https://example.com/playlist?list=abc",
+            "https://notyoutube.com/@handle",
+            "https://youtube.com.evil.example/playlist?list=PL1",
+        ],
+    )
+    def test_other_sites_are_never_playlists_or_channels(self, url: str) -> None:
+        assert is_playlist_url(url) is False
+        assert is_channel_url(url) is False
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.youtube.com/@ChannelHandle/videos",
+            "https://www.youtube.com/@ChannelHandle/shorts",
+            "https://www.youtube.com/@ChannelHandle/streams",
+            "https://www.youtube.com/@ChannelHandle/playlists",
+            "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw/videos",
+            "https://www.youtube.com/c/Name/videos",
+            "https://www.youtube.com/user/name/streams",
+            "https://youtu.be/dQw4w9WgXcQ?list=PLtest123",
+            "https://music.youtube.com/playlist?list=PLtest123",
+            "https://m.youtube.com/playlist?list=PLtest123",
+        ],
+    )
+    def test_youtube_playlists_channels_and_their_tabs_still_are(self, url: str) -> None:
+        assert is_playlist_url(url) is True
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("https://www.youtube.com/@ChannelHandle/videos", "ChannelHandle"),
+            ("https://www.youtube.com/@ChannelHandle/shorts", "ChannelHandle"),
+            ("https://www.youtube.com/@ChannelHandle/", "ChannelHandle"),
+            (
+                "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw/videos",
+                "UCuAXFkgsw1L7xaCfnd5JJOw",
+            ),
+            ("https://www.youtube.com/c/Name/videos", "Name"),
+            ("https://www.youtube.com/user/somebody/streams", "somebody"),
+        ],
+    )
+    def test_the_id_names_the_channel_never_the_tab(self, url: str, expected: str) -> None:
+        """Two channels' /videos tabs used to share one archive called "videos"."""
+        assert get_playlist_id(url) == expected
+
+    def test_two_channels_never_share_an_id(self) -> None:
+        first = get_playlist_id("https://www.youtube.com/@Alpha/videos")
+        second = get_playlist_id("https://www.youtube.com/@Beta/videos")
+
+        assert first != second
+
+    @pytest.mark.parametrize(
+        ("host", "expected"),
+        [
+            ("youtube.com", True),
+            ("www.youtube.com", True),
+            ("m.youtube.com", True),
+            ("music.youtube.com", True),
+            ("youtu.be", True),
+            ("www.youtube-nocookie.com", True),
+            ("notyoutube.com", False),
+            ("youtube.com.evil.example", False),
+            ("vimeo.com", False),
+        ],
+    )
+    def test_youtube_hosts(self, host: str, expected: bool) -> None:
+        from ytdlp_app.playlist import is_youtube_host  # noqa: PLC0415
+
+        assert is_youtube_host(f"https://{host}/x") is expected
+
+
+class TestForeignExtractorEntries:
+    """An entry from another site must keep its own address, not become a watch URL."""
+
+    def make(self, raw: dict[str, Any]) -> Any:
+        listing = {"_type": "playlist", "id": "x", "entries": [raw]}
+        return fetch_listing(
+            "https://www.youtube.com/playlist?list=PL1",
+            [],
+            FakeRunner(out=__import__("json").dumps(listing)),
+        ).entries[0]
+
+    def test_a_foreign_entry_keeps_its_own_url(self) -> None:
+        entry = self.make(
+            {"_type": "url", "ie_key": "Vimeo", "id": "123456", "url": "https://vimeo.com/123456"}
+        )
+
+        assert entry.watch_url == "https://vimeo.com/123456"
+
+    def test_a_foreign_entry_without_a_usable_url_gets_none(self) -> None:
+        entry = self.make({"_type": "url", "ie_key": "Vimeo", "id": "123456"})
+
+        assert entry.watch_url == ""
+
+    def test_a_youtube_entry_with_only_an_id_still_gets_a_watch_url(self) -> None:
+        entry = self.make({"_type": "url", "ie_key": "Youtube", "id": "abcDEF12345"})
+
+        assert entry.watch_url == "https://www.youtube.com/watch?v=abcDEF12345"

@@ -158,7 +158,7 @@ def get_available_languages() -> list[str]:
 # Language display names
 LANGUAGE_NAMES: dict[str, str] = {
     "en": "English",
-    "tr": "Turkce",
+    "tr": "Türkçe",
     "de": "Deutsch",
     "es": "Espanol",
     "fr": "Francais",

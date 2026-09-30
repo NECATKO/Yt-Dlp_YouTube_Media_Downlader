@@ -6,15 +6,22 @@ line, not YouTube: it cannot see YouTube-specific throttling, and it tells the
 test host the user's IP. It goes through the configured proxy, is skipped for
 SOCKS proxies (urllib cannot use them) and reports None on any failure, which
 callers treat as "speed unknown", never as an error.
+
+The whole measurement is bounded by TOTAL_BUDGET_SECONDS however the connection
+behaves: the transfer runs in a worker thread and the caller stops waiting for it at the
+budget. (A check made only between reads cannot bound it, because a read that blocks
+is exactly the case where it never gets to run.)
 """
 
 from __future__ import annotations
 
 import http.client
+import threading
 import time
 import urllib.request
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from typing import IO, cast
 
 #: A public speed-test download endpoint (about 10 MB).
@@ -24,8 +31,14 @@ SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=10000000"
 MAX_BYTES = 10_000_000
 MAX_SECONDS = 5.0
 
+#: Hard limit on the whole measurement, connect and stalled reads included.
+TOTAL_BUDGET_SECONDS = 8.0
+
 #: Connect/read timeout for the request.
 TIMEOUT_SECONDS = 5.0
+
+#: Less than this before the budget ends is too little to call a speed.
+MIN_MEASURED_BYTES = 65_536
 
 _CHUNK_BYTES = 65_536
 
@@ -57,6 +70,18 @@ def _default_opener(proxy: str | None) -> UrlOpener:
     return open_url
 
 
+@dataclass
+class _Transfer:
+    """What the worker thread has done so far, read by the caller when it stops waiting."""
+
+    start: float = 0.0
+    received: int = 0
+    elapsed: float | None = None
+    stop: bool = False
+    #: An exception that is not "the network failed", to be raised in the caller's thread.
+    error: BaseException | None = None
+
+
 def measure_speed(
     proxy: str | None,
     *,
@@ -71,7 +96,8 @@ def measure_speed(
         clock: Monotonic seconds; replaced in tests.
 
     Returns:
-        Bytes per second, or None when it could not be measured.
+        Bytes per second, or None when it could not be measured within
+        TOTAL_BUDGET_SECONDS (or the connection gave too little data to say).
 
     Raises:
         KeyboardInterrupt: the user pressed Ctrl+C during the measurement.
@@ -81,21 +107,46 @@ def measure_speed(
 
     opener = open_url if open_url is not None else _default_opener(proxy)
     request = urllib.request.Request(SPEED_TEST_URL, headers={"User-Agent": "ytdlp-downloader"})
-    received = 0
-    try:
-        start = clock()
-        with opener(request, TIMEOUT_SECONDS) as response:
-            while received < MAX_BYTES:
-                chunk = response.read(_CHUNK_BYTES)
-                if not chunk:
-                    break
-                received += len(chunk)
-                if clock() - start >= MAX_SECONDS:
-                    break
-        elapsed = clock() - start
-    except (OSError, http.client.HTTPException, ValueError):
-        return None
+    transfer = _Transfer()
 
-    if received <= 0 or elapsed <= 0:
+    def work() -> None:
+        try:
+            transfer.start = clock()
+            with opener(request, TIMEOUT_SECONDS) as response:
+                while transfer.received < MAX_BYTES and not transfer.stop:
+                    chunk = response.read(_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    transfer.received += len(chunk)
+                    if clock() - transfer.start >= MAX_SECONDS:
+                        break
+            transfer.elapsed = clock() - transfer.start
+        except (OSError, http.client.HTTPException, ValueError):
+            transfer.received = 0
+        except BaseException as ex:
+            transfer.error = ex
+
+    worker = threading.Thread(target=work, name="speed-test", daemon=True)
+    worker.start()
+    try:
+        worker.join(timeout=TOTAL_BUDGET_SECONDS)
+    except BaseException:
+        transfer.stop = True
+        raise
+
+    if transfer.error is not None:
+        raise transfer.error
+
+    if worker.is_alive():
+        # Out of time: the worker is a daemon still stuck in a read. What it had received
+        # by now is the measurement, if it is enough to mean anything.
+        transfer.stop = True
+        if transfer.received < MIN_MEASURED_BYTES:
+            return None
+        elapsed = clock() - transfer.start
+    else:
+        elapsed = transfer.elapsed if transfer.elapsed is not None else 0.0
+
+    if transfer.received <= 0 or elapsed <= 0:
         return None
-    return received / elapsed
+    return transfer.received / elapsed

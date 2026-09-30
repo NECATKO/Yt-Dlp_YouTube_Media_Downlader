@@ -13,6 +13,7 @@ from ytdlp_app.i18n import set_language, t
 from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, PlaylistEntry
 from ytdlp_app.playlist import PlaylistListing
 from ytdlp_app.session import CycleOutcome
+from ytdlp_app.skip_probe import ProbeResult, ProbeStatus
 
 VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 LIST_URL = "https://www.youtube.com/playlist?list=PLabc"
@@ -64,17 +65,20 @@ def _selector(cmd: list[str]) -> str:
 class TestMp4Playlist:
     def _start(self, monkeypatch, tmp_path, paths, ui, runner, url: str = LIST_URL):
         session = _session(monkeypatch, tmp_path, paths, ui, url, runner)
-        monkeypatch.setattr(session_module, "fetch_playlist_entries", lambda *_a: _entries())
-        # The recorder never writes the download archive, so the skip report would
-        # probe every video; the probe itself is not what these tests are about.
-        monkeypatch.setattr(session_module, "probe_skip_reason", lambda *_a: "test")
+        monkeypatch.setattr(
+            session_module, "fetch_listing", lambda *_a: PlaylistListing(_entries(), None)
+        )
+        # The probe itself is not what these tests are about.
+        monkeypatch.setattr(
+            session_module, "probe_item", lambda *_a: ProbeResult(ProbeStatus.REASON, "test")
+        )
         return session
 
     def test_the_estimate_is_shown_before_the_download(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
         ui = ScriptedUI([VIDEO, FULL_PLAYLIST, QUALITY, MKV, UNLIMITED, EXIT])
-        runner = Recorder()
+        runner = Recorder(archive_writes=["v1", "v2", "v3"])
         session = self._start(monkeypatch, tmp_path, paths, ui, runner)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
@@ -127,7 +131,7 @@ class TestMp4Playlist:
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
         ui = ScriptedUI([VIDEO, FULL_PLAYLIST, QUALITY, MKV, UNLIMITED, 1, EXIT])
-        runner = Recorder()
+        runner = Recorder(archive_writes=["v1", "v2", "v3"])
         session = self._start(monkeypatch, tmp_path, paths, ui, runner)
         monkeypatch.setattr(session_module, "free_bytes", lambda _path: 1000)
 
@@ -158,7 +162,7 @@ class TestMp4Playlist:
         def failing(*_a: Any) -> list[PlaylistEntry]:
             raise PlaylistError("returncode=1\nstderr:\nERROR: Unable to download webpage")
 
-        monkeypatch.setattr(session_module, "fetch_playlist_entries", failing)
+        monkeypatch.setattr(session_module, "fetch_listing", failing)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_FAILURE
         assert t("playlist_fetch_failed") in ui.text()
@@ -176,7 +180,7 @@ class TestMp4Playlist:
         def failing(*_a: Any) -> list[PlaylistEntry]:
             raise PlaylistError("returncode=1\nstderr:\nERROR: Unable to download webpage")
 
-        monkeypatch.setattr(session_module, "fetch_playlist_entries", failing)
+        monkeypatch.setattr(session_module, "fetch_listing", failing)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
         assert t("estimate_unavailable") in ui.text()
@@ -192,7 +196,7 @@ class TestMp4Playlist:
         def banned(*_a: Any) -> list[PlaylistEntry]:
             raise PlaylistError(f"returncode=1\nstderr:\n{BAN_TEXT}")
 
-        monkeypatch.setattr(session_module, "fetch_playlist_entries", banned)
+        monkeypatch.setattr(session_module, "fetch_listing", banned)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_FAILURE
         assert runner.calls == []
@@ -208,7 +212,7 @@ class TestMp4Playlist:
         def interrupted(*_a: Any) -> list[PlaylistEntry]:
             raise KeyboardInterrupt
 
-        monkeypatch.setattr(session_module, "fetch_playlist_entries", interrupted)
+        monkeypatch.setattr(session_module, "fetch_listing", interrupted)
 
         assert session._process_one_cycle() == CycleOutcome.INTERRUPTED
         assert runner.calls == []
@@ -219,10 +223,14 @@ class TestMp3Playlist:
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
         ui = ScriptedUI([AUDIO, FULL_PLAYLIST, EXIT])
-        runner = Recorder()
+        runner = Recorder(archive_writes=["v1", "v2", "v3"])
         session = _session(monkeypatch, tmp_path, paths, ui, LIST_URL, runner)
-        monkeypatch.setattr(session_module, "fetch_playlist_entries", lambda *_a: _entries())
-        monkeypatch.setattr(session_module, "probe_skip_reason", lambda *_a: "test")
+        monkeypatch.setattr(
+            session_module, "fetch_listing", lambda *_a: PlaylistListing(_entries(), None)
+        )
+        monkeypatch.setattr(
+            session_module, "probe_item", lambda *_a: ProbeResult(ProbeStatus.REASON, "test")
+        )
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
 
@@ -236,7 +244,7 @@ class TestArchive:
         self, monkeypatch, tmp_path: Path, paths: AppPaths
     ) -> None:
         ui = ScriptedUI([ARCHIVE, FULL_PLAYLIST, 2, 1, EXIT])  # 1440p, only this once
-        runner = Recorder()
+        runner = Recorder(archive_writes=["v1", "v2", "v3"])
         seen: list[tuple[str, list[str]]] = []
 
         def listing(url: str, extra_args: list[str], _runner: Any) -> PlaylistListing:
