@@ -1,6 +1,9 @@
 #!/bin/bash
 # run.sh - launcher for ytdlp-downloader (Linux and macOS)
 #
+# Start it with:  bash run.sh   (or ./run.sh when the file is executable; a ZIP download
+# does not keep that bit, so "bash run.sh" always works).
+#
 # Linux runs from the portable runtime in ./runtime, which install.sh downloads
 # on first launch. macOS uses the .venv created by install.sh.
 
@@ -18,6 +21,14 @@ NC='\033[0m' # No Color
 
 # Ignore packages from the user's own Python profile.
 export PYTHONNOUSERSITE=1
+
+# The console output is natural Turkish/English text: make Python use UTF-8 whatever the
+# terminal's locale says (the Windows launcher does the same).
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
+# There is no update check here: on Linux/macOS the app is updated on request with
+# "bash update.sh" (Run.bat, on Windows, still checks at launch).
 
 if [[ "$(uname -s)" == "Linux" ]]; then
     PYTHON="runtime/python/bin/python3"

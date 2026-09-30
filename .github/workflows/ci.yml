@@ -61,6 +61,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # The engine tests generate media and inspect it with ffmpeg/ffprobe; without them
+      # they skip themselves. Installing is best effort so a package-manager hiccup does
+      # not fail the run.
+      - name: Install ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: brew install ffmpeg
+
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: choco install ffmpeg -y --no-progress
+
       - name: Run tests with coverage
         run: pytest --cov=ytdlp_app --cov-report=xml --cov-report=term-missing
 
@@ -155,11 +173,16 @@ jobs:
           # asset up by exact name, so a version-stamped name is never found.
           Compress-Archive -Path $releaseDir -DestinationPath "YtDlpDownloader-Portable.zip"
 
+          # The updaters verify the download against this when it is published.
+          $hash = (Get-FileHash -Path "YtDlpDownloader-Portable.zip" -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "YtDlpDownloader-Portable.zip.sha256" -Value "$hash  YtDlpDownloader-Portable.zip" -Encoding ASCII
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             YtDlpDownloader-Portable.zip
+            YtDlpDownloader-Portable.zip.sha256
             dist/*.whl
             dist/*.tar.gz
           generate_release_notes: true

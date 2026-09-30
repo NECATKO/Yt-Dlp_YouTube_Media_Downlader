@@ -90,12 +90,39 @@ function Install-Python($Entry) {
   $unpacked = Join-Path $staging "python"
   if (-not (Test-Path (Join-Path $unpacked "python.exe"))) { throw "Unexpected archive layout: $archive" }
 
-  if (Test-Path $PythonDir) { Remove-Item $PythonDir -Recurse -Force }
-  Move-Item $unpacked $PythonDir
+  # Swap without a gap: the old Python is renamed aside, not deleted, until the new one is in
+  # place; if moving the new one in fails, the old one goes back.
+  $old = Join-Path $RuntimeDir "python.old"
+  if (Test-Path $old) { Remove-Item $old -Recurse -Force }
+  $hadOld = Test-Path $PythonDir
+  if ($hadOld) { Move-Item $PythonDir $old }
+  try {
+    Move-Item $unpacked $PythonDir
+  } catch {
+    if ($hadOld) {
+      if (Test-Path $PythonDir) { Remove-Item $PythonDir -Recurse -Force }
+      Move-Item $old $PythonDir
+    }
+    throw "Could not put the new Python in place; the previous one was kept. $($_.Exception.Message)"
+  }
+  Set-Content -Path $PythonMarker -Value $Entry.Sha256 -Encoding ASCII -NoNewline
+  if (Test-Path $old) { Remove-Item $old -Recurse -Force }
   Remove-Item $staging -Recurse -Force
   Remove-Item $archive -Force
-  Set-Content -Path $PythonMarker -Value $Entry.Sha256 -Encoding ASCII -NoNewline
   Write-Host "Python installed: $PythonExe" -ForegroundColor Green
+}
+
+# A run killed between "old Python aside" and "new Python in place" leaves only python.old:
+# put it back, or drop it when the real one is there.
+function Restore-PythonBackup {
+  $old = Join-Path $RuntimeDir "python.old"
+  if (-not (Test-Path $old)) { return }
+  if (Test-Path $PythonExe) {
+    Remove-Item $old -Recurse -Force
+  } else {
+    if (Test-Path $PythonDir) { Remove-Item $PythonDir -Recurse -Force }
+    Move-Item $old $PythonDir
+  }
 }
 
 # --- 0) Sanity check ---
@@ -104,6 +131,7 @@ if (-not (Test-Path (Join-Path $AppDir "downloader.py"))) {
 }
 
 # --- 1) Python ---
+Restore-PythonBackup
 $entry = Get-LockEntry "python" (Get-PlatformKey)
 $current = if (Test-Path $PythonMarker) { (Get-Content $PythonMarker -Raw).Trim() } else { "" }
 if ((Test-Path $PythonExe) -and ($current -eq $entry.Sha256)) {

@@ -13,7 +13,11 @@ REM --- Move to this directory ---
 cd /d "%~dp0"
 
 REM --- Silent update check ---
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" -Quiet
+REM Quiet, checks a new package before installing it, and never stops the launch (being
+REM offline is fine). Set YTDLP_NO_AUTO_UPDATE=1 to skip it.
+if not defined YTDLP_NO_AUTO_UPDATE (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" -Quiet
+)
 
 echo ==========================================
 echo   YouTube Downloader - One Click Launch
@@ -47,7 +51,7 @@ echo [2/2] Starting app...
 echo.
 
 REM --- Run program ---
-"runtime\python\python.exe" -s "%~dp0downloader.py"
+"runtime\python\python.exe" -s "%~dp0downloader.py" %*
 
 echo.
 echo Application closed.

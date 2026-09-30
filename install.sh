@@ -10,7 +10,7 @@
 #
 # macOS: the system installation (Homebrew Python/ffmpeg + a .venv), as before.
 #
-# Usage: ./install.sh [--quiet]
+# Usage: bash install.sh [--quiet]   (or ./install.sh once it is executable)
 
 set -euo pipefail
 
@@ -113,17 +113,42 @@ install_python() {
     tar -xzf "$archive" -C "$staging"
     [[ -x "$staging/python/bin/python3" ]] || die "Unexpected archive layout: $archive"
 
-    rm -rf "$PYTHON_DIR"
-    mv "$staging/python" "$PYTHON_DIR"
-    rm -rf "$staging" "$archive"
+    # Swap without a gap: the old Python is renamed aside, not deleted, until the new one
+    # is in place; if the rename in fails the old one goes back.
+    local old="$RUNTIME_DIR/python.old"
+    rm -rf "$old"
+    if [[ -d "$PYTHON_DIR" ]]; then
+        mv "$PYTHON_DIR" "$old" || die "Could not move the old Python aside."
+    fi
+    if ! mv "$staging/python" "$PYTHON_DIR"; then
+        if [[ -d "$old" ]]; then
+            mv "$old" "$PYTHON_DIR"
+        fi
+        die "Could not put the new Python in place; the previous one was kept."
+    fi
     printf '%s' "$sha" > "$PYTHON_MARKER"
+    rm -rf "$old" "$staging" "$archive"
     echo -e "${GREEN}Python installed: $PYTHON_EXE${NC}"
+}
+
+# A run killed between "old Python aside" and "new Python in place" leaves only python.old:
+# put it back, or drop it when the real one is there.
+recover_python() {
+    local old="$RUNTIME_DIR/python.old"
+    [[ -d "$old" ]] || return 0
+    if [[ -x "$PYTHON_EXE" ]]; then
+        rm -rf "$old"
+    else
+        rm -rf "$PYTHON_DIR"
+        mv "$old" "$PYTHON_DIR"
+    fi
 }
 
 portable_install() {
     [[ -f downloader.py ]] || die "install.sh must be run from the program folder."
 
     local platform entry sha url current=""
+    recover_python
     platform="$(linux_platform_key)"
     entry="$(lock_entry python "$platform")"
     sha="${entry%% *}"
