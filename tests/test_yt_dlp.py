@@ -1,6 +1,7 @@
 """Tests for ytdlp_app.yt_dlp command construction."""
 
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 
@@ -506,9 +507,13 @@ class TestCodecAndContainerContract:
         assert builder.manifest_path == builder.archive_path.with_name("archive.files.tsv")
 
     def test_manifest_path_is_escaped_for_the_option_syntax(self) -> None:
-        args = ledger_args(Path("/a;b/100%/x.files.tsv"))
+        path = Path("a;b") / "100%" / "x.files.tsv"
 
-        assert args[1] == "DownloadLedger:when=after_move;path=/a%3Bb/100%25/x.files.tsv"
+        value = ledger_args(path)[1].split("path=", 1)[1]
+
+        assert ";" not in value
+        assert value == str(path).replace("%", "%25").replace(";", "%3B")
+        assert unquote(value) == str(path)
 
     def test_opting_in_to_external_config_removes_the_isolation(self, tmp_path: Path) -> None:
         settings = AppSettings()
