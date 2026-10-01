@@ -61,8 +61,24 @@ class Recorder:
         self.archive_writes = list(archive_writes or [])
         self.calls: list[dict[str, Any]] = []
 
-    def __call__(self, cmd: list[str], log_path: Path, *, stop_on_ban: bool = False) -> int:
-        self.calls.append({"cmd": cmd, "log_path": log_path, "stop_on_ban": stop_on_ban})
+    def __call__(
+        self,
+        cmd: list[str],
+        log_path: Path,
+        *,
+        stop_on_ban: bool = False,
+        sink: Any = None,
+        cancel: Any = None,
+    ) -> int:
+        self.calls.append(
+            {
+                "cmd": cmd,
+                "log_path": log_path,
+                "stop_on_ban": stop_on_ban,
+                "sink": sink,
+                "cancel": cancel,
+            }
+        )
         if self.archive_writes and "--download-archive" in cmd:
             archive = Path(cmd[cmd.index("--download-archive") + 1])
             archive.parent.mkdir(parents=True, exist_ok=True)

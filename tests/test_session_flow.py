@@ -57,7 +57,15 @@ class Script:
         self.steps = list(steps)
         self.calls: list[dict[str, Any]] = []
 
-    def __call__(self, cmd: list[str], log_path: Path, *, stop_on_ban: bool = False) -> int:
+    def __call__(
+        self,
+        cmd: list[str],
+        log_path: Path,
+        *,
+        stop_on_ban: bool = False,
+        sink: Any = None,
+        cancel: Any = None,
+    ) -> int:
         self.calls.append({"cmd": cmd, "stop_on_ban": stop_on_ban})
         rc, writes = self.steps.pop(0)
         archive = Path(cmd[cmd.index("--download-archive") + 1])
@@ -137,7 +145,7 @@ class TestJudgedByWhatWasLeftBehind:
         ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
 
         class WithManifest(Recorder):
-            def __call__(self, cmd, log_path, *, stop_on_ban=False):
+            def __call__(self, cmd, log_path, *, stop_on_ban=False, sink=None, cancel=None):
                 rc = super().__call__(cmd, log_path, stop_on_ban=stop_on_ban)
                 archive = Path(cmd[cmd.index("--download-archive") + 1])
                 manifest = archive.with_name(archive.stem + ".files.tsv")
@@ -359,7 +367,7 @@ class TestSharedNetworkArguments:
         monkeypatch.setattr(
             session_module,
             "run_capture",
-            lambda cmd, timeout=None: limits.append(timeout) or (0, "", ""),
+            lambda cmd, timeout=None, cancel=None: limits.append(timeout) or (0, "", ""),
         )
 
         def listing(_url: str, _args: list[str], capture: Any) -> PlaylistListing:

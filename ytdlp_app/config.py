@@ -20,6 +20,8 @@ from .logging_utils import Colors, console_print, paint
 from .settings import LEGACY_TEMPLATES, AppSettings, OutputSettings, SettingsIssue
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .ui import UI
 
 #: The schema of config.json. Bumped when a saved value has to be reinterpreted:
@@ -90,20 +92,22 @@ def default_dirs(portable_root: Path | None = None) -> tuple[Path, Path]:
     return Path.home() / "Videos", Path.home() / "Music"
 
 
-def _keep_unreadable(config_file: Path) -> None:
+def _keep_unreadable(config_file: Path, warn: Callable[[str], None]) -> None:
     """Copy a config.json that cannot be used aside, so saving cannot destroy it."""
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     kept = config_file.with_name(f"{config_file.name}.corrupt-{stamp}")
     with contextlib.suppress(OSError):
         shutil.copy2(config_file, kept)
-        console_print(paint(t("config_corrupt_kept", name=kept.name), Colors.YELLOW))
+        warn(paint(t("config_corrupt_kept", name=kept.name), Colors.YELLOW))
 
 
-def load_config(config_file: Path) -> dict[str, Any]:
+def load_config(config_file: Path, warn: Callable[[str], None] | None = None) -> dict[str, Any]:
     """Load configuration from a JSON file.
 
     Args:
         config_file: Path to the configuration file.
+        warn: Receives each warning (coloured text) when given, for a caller that shows
+            them later or elsewhere; without it they are printed to the console at once.
 
     Returns:
         The configuration dictionary, or empty dict if file doesn't exist
@@ -111,6 +115,8 @@ def load_config(config_file: Path) -> dict[str, Any]:
         ``config.json.corrupt-<time>``: the app carries on with defaults and its next
         save would otherwise overwrite whatever could still be recovered from it.
     """
+    if warn is None:
+        warn = console_print
     if not config_file.exists():
         return {}
     try:
@@ -119,13 +125,13 @@ def load_config(config_file: Path) -> dict[str, Any]:
         # Runs before the language is known -- the config being unreadable is
         # exactly what would have told us which language to use -- so this
         # falls back to English.
-        console_print(paint(t("config_read_warning"), Colors.YELLOW))
-        _keep_unreadable(config_file)
+        warn(paint(t("config_read_warning"), Colors.YELLOW))
+        _keep_unreadable(config_file, warn)
         return {}
     # A JSON file whose top level is a list or scalar is as unusable as a
     # corrupt one; callers rely on getting a mapping back.
     if not isinstance(data, dict):
-        _keep_unreadable(config_file)
+        _keep_unreadable(config_file, warn)
         return {}
     return data
 

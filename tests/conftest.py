@@ -45,4 +45,4 @@ def _no_speed_test(monkeypatch: pytest.MonkeyPatch) -> None:
     """Session tests must never reach the network for a speed measurement."""
     import ytdlp_app.session as session_module  # noqa: PLC0415
 
-    monkeypatch.setattr(session_module, "measure_speed", lambda _proxy: None)
+    monkeypatch.setattr(session_module, "measure_speed", lambda _proxy, cancel=None: None)

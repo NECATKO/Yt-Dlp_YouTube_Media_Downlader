@@ -18,7 +18,7 @@ from .config import (
     normalize_user_path,
 )
 from .i18n import set_language, t
-from .logging_utils import Colors, console_print, log_error, now_stamp, paint
+from .logging_utils import Colors, log_error, now_stamp, paint
 from .models import AppPaths, UserConfig
 from .redact import register_proxy
 from .session import InteractiveSession
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from .settings import SettingsIssue
+    from .ui import UI
 
 _APP_DIR_NAME = "ytdlp-downloader"
 
@@ -75,7 +76,7 @@ def make_streams_forgiving(*streams: TextIO | Any) -> None:
                 reconfigure(errors="replace")
 
 
-def _print_settings_issues(issues: Sequence[SettingsIssue]) -> None:
+def _print_settings_issues(ui: UI, issues: Sequence[SettingsIssue]) -> None:
     """Tell the user which settings could not be used, by name."""
     for issue in issues:
         if issue.fallback is None:
@@ -87,7 +88,7 @@ def _print_settings_issues(issues: Sequence[SettingsIssue]) -> None:
                 problem=issue.problem,
                 fallback=issue.fallback,
             )
-        console_print(paint(text, Colors.YELLOW))
+        ui.print(paint(text, Colors.YELLOW))
 
 
 def _folders_for_audit(
@@ -169,7 +170,7 @@ def run(argv: Sequence[str] | None = None) -> int:
 
         issues: list[SettingsIssue] = []
         settings = load_settings(_cfg, issues)
-        _print_settings_issues(issues)
+        _print_settings_issues(ui, issues)
         register_proxy(settings.download.proxy)
 
         session = InteractiveSession(ui, user_config, paths, settings, _cfg)

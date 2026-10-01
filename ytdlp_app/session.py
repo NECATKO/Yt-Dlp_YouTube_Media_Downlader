@@ -67,8 +67,10 @@ from .validators import validate_url
 from .yt_dlp import CommandBuilder
 
 if TYPE_CHECKING:
+    import threading
     from collections.abc import Callable
 
+    from .exec import OutputSink
     from .preflight import GuardedListing
     from .ui import UI
 
@@ -107,6 +109,9 @@ class InteractiveSession:
         paths: AppPaths,
         settings: AppSettings | None = None,
         cfg: dict[str, Any] | None = None,
+        *,
+        sink: OutputSink | None = None,
+        cancel: threading.Event | None = None,
     ) -> None:
         """Initialize the session.
 
@@ -117,12 +122,18 @@ class InteractiveSession:
             settings: Advanced settings from config.json; defaults when omitted.
             cfg: The raw config.json contents, which the settings menu edits and
                 persists. An empty dict is used when omitted.
+            sink: Where the yt-dlp output is shown; None is the console.
+            cancel: Set from another thread to stop the running command, listing,
+                probe or speed test as Ctrl+C would. Cleared at the start of each
+                cycle. None leaves Ctrl+C as the only way to cancel.
         """
         self.ui = ui
         self.config = config
         self.paths = paths
         self.settings = settings if settings is not None else AppSettings()
         self.cfg = cfg if cfg is not None else {}
+        self.sink = sink
+        self.cancel = cancel
         self.log_path: Path | None = None
         # Anything logged or shown must not reveal the proxy password.
         register_proxy(self.settings.download.proxy)
@@ -271,6 +282,9 @@ class InteractiveSession:
             Exit code (0 on a clean exit, 1 if the session ended on an error).
         """
         while True:
+            # A cancel belongs to the cycle it was given in.
+            if self.cancel is not None:
+                self.cancel.clear()
             # The try sits inside the loop so that a failed cycle can return to
             # the URL prompt when the user asks to keep going.
             try:
@@ -457,7 +471,9 @@ class InteractiveSession:
                 lambda: fetch_listing(
                     url,
                     network.listing_args(archive=archive_mode),
-                    lambda cmd: run_capture(cmd, timeout=LISTING_TIMEOUT_SECONDS),
+                    lambda cmd: run_capture(
+                        cmd, timeout=LISTING_TIMEOUT_SECONDS, cancel=self.cancel
+                    ),
                 ),
                 archive_mode=archive_mode,
             )
@@ -569,7 +585,7 @@ class InteractiveSession:
             ui=self.ui,
             settings=self.settings,
             persist_default=lambda height: self._persist_default_height(mode, height),
-            measure=measure_speed,
+            measure=self._measure_speed,
             disk_free=free_bytes,
         )
         if preflight.action is PreflightAction.CANCEL:
@@ -640,6 +656,10 @@ class InteractiveSession:
             return CycleOutcome.CONTINUE
         # Leaving after a run that left items undone must not look like a clean exit.
         return CycleOutcome.EXIT_FAILURE if partial else CycleOutcome.EXIT_SUCCESS
+
+    def _measure_speed(self, proxy: str | None) -> float | None:
+        """The speed test, cancellable like the commands."""
+        return measure_speed(proxy, cancel=self.cancel)
 
     def _print_outcome(self, outcome: RunOutcome) -> None:
         """Show the success, partial-success or failure lines of a run."""
@@ -728,7 +748,9 @@ class InteractiveSession:
         codes: list[int] = []
 
         def run(cmd: list[str], *, stop_on_ban: bool = False) -> int:
-            rc = run_cmd_tee(cmd, log_path, stop_on_ban=stop_on_ban)
+            rc = run_cmd_tee(
+                cmd, log_path, stop_on_ban=stop_on_ban, sink=self.sink, cancel=self.cancel
+            )
             codes.append(rc)
             return rc
 
@@ -818,7 +840,7 @@ class InteractiveSession:
         self.ui.print(t("playlist_analyzing"))
 
         def bounded(cmd: list[str]) -> tuple[int, str, str]:
-            return run_capture(cmd, timeout=PROBE_TIMEOUT_SECONDS)
+            return run_capture(cmd, timeout=PROBE_TIMEOUT_SECONDS, cancel=self.cancel)
 
         for e in skipped:
             result = probe_item(e.watch_url, plan.probe_args, bounded)

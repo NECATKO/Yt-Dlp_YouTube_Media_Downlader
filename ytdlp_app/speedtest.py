@@ -42,6 +42,9 @@ MIN_MEASURED_BYTES = 65_536
 
 _CHUNK_BYTES = 65_536
 
+#: How often a cancellable measurement looks at its cancel event while it waits.
+_CANCEL_POLL = 0.05
+
 UrlOpener = Callable[[urllib.request.Request, float], AbstractContextManager[IO[bytes]]]
 
 
@@ -82,11 +85,27 @@ class _Transfer:
     error: BaseException | None = None
 
 
+def _wait_for(worker: threading.Thread, cancel: threading.Event | None) -> None:
+    """Wait for the transfer until the budget runs out; raise KeyboardInterrupt on cancel."""
+    if cancel is None:
+        worker.join(timeout=TOTAL_BUDGET_SECONDS)
+        return
+    deadline = time.monotonic() + TOTAL_BUDGET_SECONDS
+    while worker.is_alive() and not cancel.is_set():
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return
+        worker.join(timeout=min(left, _CANCEL_POLL))
+    if cancel.is_set():
+        raise KeyboardInterrupt
+
+
 def measure_speed(
     proxy: str | None,
     *,
     open_url: UrlOpener | None = None,
     clock: Callable[[], float] = time.monotonic,
+    cancel: threading.Event | None = None,
 ) -> float | None:
     """Measure the download speed in bytes per second.
 
@@ -94,13 +113,16 @@ def measure_speed(
         proxy: The configured proxy, or None.
         open_url: Opens the request; replaced in tests.
         clock: Monotonic seconds; replaced in tests.
+        cancel: When set (from another thread), the measurement is abandoned as for
+            Ctrl+C. None leaves Ctrl+C as the only way to cancel.
 
     Returns:
         Bytes per second, or None when it could not be measured within
         TOTAL_BUDGET_SECONDS (or the connection gave too little data to say).
 
     Raises:
-        KeyboardInterrupt: the user pressed Ctrl+C during the measurement.
+        KeyboardInterrupt: the user pressed Ctrl+C (or set ``cancel``) during the
+            measurement.
     """
     if proxy and _is_socks(proxy):
         return None
@@ -129,7 +151,7 @@ def measure_speed(
     worker = threading.Thread(target=work, name="speed-test", daemon=True)
     worker.start()
     try:
-        worker.join(timeout=TOTAL_BUDGET_SECONDS)
+        _wait_for(worker, cancel)
     except BaseException:
         transfer.stop = True
         raise
