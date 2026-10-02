@@ -636,9 +636,12 @@ class InteractiveSession:
             if outcome.missing:
                 # Recorded as done, file gone: only the archive tools bring it back.
                 self.ui.print(paint(t("archive_records_note"), Colors.CYAN))
-            if self.handle_error(log_path):
-                return CycleOutcome.EXIT_FAILURE
-            return CycleOutcome.CONTINUE
+            if outcome.missing and not outcome.failed and not outcome.failed_unknown:
+                # yt-dlp reported nothing wrong, so there is no download error to explain.
+                stop = self.ui.prompt_exit_on_failure()
+            else:
+                stop = self.handle_error(log_path)
+            return CycleOutcome.EXIT_FAILURE if stop else CycleOutcome.CONTINUE
 
         # 10) Report, then the skip report (never in archive mode, see step 8)
         self._print_outcome(outcome)

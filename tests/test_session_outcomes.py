@@ -80,6 +80,7 @@ def test_a_rerun_single_video_whose_file_was_deleted_is_not_already_there(
     picks = iter([int(ModeChoice.AUDIO)])
     # The mode, then "exit" should the run (wrongly) reach the what-next question.
     monkeypatch.setattr(ui, "pick", lambda *_a: next(picks, int(ActionChoice.EXIT)))
+    monkeypatch.setattr(ui, "prompt_exit_on_failure", lambda: False, raising=False)
     monkeypatch.setattr(session, "_execute_download", lambda *args: StageReport((0,)))
     archive = tmp_path / "archives" / "single_audios_mp3.txt"
     archive.parent.mkdir(parents=True)
@@ -94,4 +95,24 @@ def test_a_rerun_single_video_whose_file_was_deleted_is_not_already_there(
     assert t("tasks_completed") not in text
     assert t("outcome_already", count=1) not in text
     assert "dQw4w9WgXcQ" in text
+    assert t("archive_records_note") in text
+
+
+def test_a_missing_file_is_not_reported_as_a_failed_download(monkeypatch, tmp_path: Path) -> None:
+    """Nothing went wrong in yt-dlp: no "download failed" reason is made up from the log."""
+    session, ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+    monkeypatch.setattr(session, "handle_error", InteractiveSession.handle_error.__get__(session))
+    monkeypatch.setattr(ui, "prompt_exit_on_failure", lambda: False, raising=False)
+    monkeypatch.setattr(session, "_execute_download", lambda *args: StageReport((0,)))
+    archive = tmp_path / "archives" / "single_audios_mp3.txt"
+    archive.parent.mkdir(parents=True)
+    archive.write_text("youtube dQw4w9WgXcQ\n", encoding="utf-8")
+    archive.with_name("single_audios_mp3.files.tsv").write_text(
+        f"dQw4w9WgXcQ\t{tmp_path / 'music' / 'Song [dQw4w9WgXcQ].mp3'}\n", encoding="utf-8"
+    )
+
+    assert session._process_one_cycle() == CycleOutcome.CONTINUE
+
+    text = "\n".join(ui.messages)
+    assert t("download_failed") not in text
     assert t("archive_records_note") in text
