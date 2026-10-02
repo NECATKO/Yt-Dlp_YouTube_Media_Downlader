@@ -245,6 +245,37 @@ class TestDownloadSettings:
 
         assert settings.download.concurrent_fragments == 6
 
+    def test_an_unusable_proxy_or_speed_limit_is_asked_again_not_saved(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        """The menu applies the rules the config loader applies (B09)."""
+        settings = AppSettings()
+        ui = FakeUI(
+            picks=[4, BACK],
+            texts=["invalid proxy url", "http://proxy:3128", "fast", "2M", "", "", ""],
+        )
+
+        _menu(ui, config_file, user_config, settings=settings).run()
+
+        assert settings.download.proxy == "http://proxy:3128"
+        assert settings.download.rate_limit == "2M"
+        reloaded = load_settings(json.loads(config_file.read_text(encoding="utf-8")))
+        assert reloaded.download.proxy == "http://proxy:3128"
+        assert reloaded.download.rate_limit == "2M"
+        assert sum("not usable" in line for line in ui.printed) == 2
+
+    def test_what_the_menu_saves_survives_a_reload_unchanged(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        settings = AppSettings()
+        self._run(
+            ["socks5://127.0.0.1:9050", "1.5M", "", "", ""], config_file, user_config, settings
+        )
+
+        reloaded = load_settings(json.loads(config_file.read_text(encoding="utf-8")))
+        assert reloaded.download.proxy == settings.download.proxy
+        assert reloaded.download.rate_limit == settings.download.rate_limit
+
     def test_max_sleep_below_min_is_corrected(
         self, config_file: Path, user_config: UserConfig
     ) -> None:
@@ -295,6 +326,16 @@ class TestSubtitleSettings:
 
         assert settings.video.write_subtitles is True
         assert settings.video.embed_subtitles is True
+        assert settings.video.subtitle_languages == "en,tr"
+
+    def test_an_unusable_language_list_is_asked_again(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        settings = AppSettings()
+        ui = FakeUI(picks=[6, 1, 1, BACK], texts=["--exec rm", "en,tr"])
+
+        _menu(ui, config_file, user_config, settings=settings).run()
+
         assert settings.video.subtitle_languages == "en,tr"
 
     def test_declining_subtitles_skips_the_language_prompt(

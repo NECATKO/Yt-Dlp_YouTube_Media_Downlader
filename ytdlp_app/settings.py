@@ -10,7 +10,10 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath, PureWindowsPath
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 #: Audio containers offered for extraction. "best" keeps the source codec.
 AUDIO_FORMATS: Final[tuple[str, ...]] = ("mp3", "m4a", "opus", "flac", "wav", "best")
@@ -165,6 +168,29 @@ def _plain_text(value: object) -> str | None:
     return text
 
 
+# -- the field rules, shared by the config loader and the settings menu ----------
+# A value either passes and is returned (stripped), or None is returned and the caller
+# reports it. Typing a value in the menu and reading it back from config.json give the
+# same answer because both go through these.
+
+
+def check_text(value: object) -> str | None:
+    """A plain value (a subtitle language list): no control characters, no leading "-"."""
+    return _plain_text(value)
+
+
+def check_proxy(value: object) -> str | None:
+    """A proxy URL: a plain value without spaces."""
+    text = _plain_text(value)
+    return None if text is None or re.search(r"\s", text) else text
+
+
+def check_rate_limit(value: object) -> str | None:
+    """A speed limit such as 500K, 1.5M or 2G."""
+    text = _plain_text(value)
+    return text if text is not None and _RATE_LIMIT_RE.match(text) else None
+
+
 def _choice(
     section: dict[str, Any],
     key: str,
@@ -190,22 +216,21 @@ def _optional_text(
     path: str,
     issues: list[SettingsIssue] | None,
     *,
-    pattern: re.Pattern[str] | None = None,
-    no_spaces: bool = False,
+    check: Callable[[object], str | None],
+    numeric: bool = False,
 ) -> str | None:
-    """Read an optional argument value (a proxy, a rate limit); blank means unset."""
+    """Read an optional argument value (a proxy, a rate limit); blank means unset.
+
+    ``numeric`` accepts a JSON number for it (a speed limit of 500000 bytes).
+    """
     if key not in section or section[key] is None:
         return None
     value = section[key]
     if isinstance(value, str) and not value.strip():
         return None
-    if isinstance(value, int | float) and not isinstance(value, bool) and pattern is not None:
+    if numeric and isinstance(value, int | float) and not isinstance(value, bool):
         value = str(int(value)) if float(value).is_integer() else None
-    text = _plain_text(value)
-    if text is not None and no_spaces and re.search(r"\s", text):
-        text = None
-    if text is not None and pattern is not None and not pattern.match(text):
-        text = None
+    text = check(value)
     if text is None:
         _report(issues, path, f"unusable value {section[key]!r}", "unset")
     return text
@@ -220,7 +245,7 @@ def _text(
 ) -> str:
     if key not in section or section[key] is None:
         return default
-    text = _plain_text(section[key])
+    text = check_text(section[key])
     if text is None:
         _report(issues, path, f"unusable value {section[key]!r}", default)
         return default
@@ -396,9 +421,14 @@ class DownloadSettings:
                 data, "fragment_retries", "download.fragment_retries", issues
             ),
             rate_limit=_optional_text(
-                data, "rate_limit", "download.rate_limit", issues, pattern=_RATE_LIMIT_RE
+                data,
+                "rate_limit",
+                "download.rate_limit",
+                issues,
+                check=check_rate_limit,
+                numeric=True,
             ),
-            proxy=_optional_text(data, "proxy", "download.proxy", issues, no_spaces=True),
+            proxy=_optional_text(data, "proxy", "download.proxy", issues, check=check_proxy),
             allow_external_config=_bool(
                 data,
                 "allow_external_config",

@@ -17,7 +17,13 @@ from .i18n import get_available_languages, get_language, get_language_name, set_
 from .logging_utils import Colors, paint
 from .models import UserConfig
 from .redact import redact_secrets, register_proxy
-from .settings import AUDIO_FORMATS, AppSettings
+from .settings import (
+    AUDIO_FORMATS,
+    AppSettings,
+    check_proxy,
+    check_rate_limit,
+    check_text,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -112,26 +118,66 @@ class SettingsMenu:
         if hint:
             self.ui.print(paint(hint, Colors.WHITE))
 
-    def _ask_text(self, label: str, current: str, hint: str = "") -> str | None:
-        """Ask for a required string.
+    def _checked(
+        self, answer: str, check: Callable[[object], str | None] | None, hint: str
+    ) -> str | None:
+        """``answer`` as the setting will hold it, or None after saying why it cannot."""
+        if check is None:
+            return answer
+        value = check(answer)
+        if value is None:
+            # The same rule the config loader applies: a value it would throw away on the
+            # next start must not be saved now.
+            shown = redact_secrets(answer)
+            self.ui.print(paint(t("settings_invalid_value", value=shown, hint=hint), Colors.RED))
+        return value
+
+    def _ask_text(
+        self,
+        label: str,
+        current: str,
+        hint: str = "",
+        check: Callable[[object], str | None] | None = None,
+    ) -> str | None:
+        """Ask for a required string, again until ``check`` accepts it.
 
         Returns:
             The new value, or None if the user pressed Enter to keep it.
         """
-        self._prompt_header(label, current, hint)
-        self.ui.print(paint(t("settings_keep_hint"), Colors.WHITE))
-        return self.ui.ask_text(t("settings_value_prompt")) or None
+        while True:
+            self._prompt_header(label, current, hint)
+            self.ui.print(paint(t("settings_keep_hint"), Colors.WHITE))
+            answer = self.ui.ask_text(t("settings_value_prompt"))
+            if not answer:
+                return None
+            value = self._checked(answer, check, hint)
+            if value is not None:
+                return value
 
-    def _ask_optional_text(self, label: str, current: str | None, hint: str = "") -> str | None:
-        """Ask for a value that may also be cleared.
+    def _ask_optional_text(
+        self,
+        label: str,
+        current: str | None,
+        hint: str = "",
+        check: Callable[[object], str | None] | None = None,
+    ) -> str | None:
+        """Ask for a value that may also be cleared, again until ``check`` accepts it.
 
         Returns:
             The new value, None if the user pressed Enter to keep it, or the
             _CLEAR sentinel if they asked to unset it.
         """
-        self._prompt_header(label, current, hint)
-        self.ui.print(paint(t("settings_clear_hint", clear=_CLEAR), Colors.WHITE))
-        return self.ui.ask_text(t("settings_value_prompt")) or None
+        while True:
+            self._prompt_header(label, current, hint)
+            self.ui.print(paint(t("settings_clear_hint", clear=_CLEAR), Colors.WHITE))
+            answer = self.ui.ask_text(t("settings_value_prompt"))
+            if not answer:
+                return None
+            if answer == _CLEAR:
+                return _CLEAR
+            value = self._checked(answer, check, hint)
+            if value is not None:
+                return value
 
     def _ask_int(self, label: str, current: int, low: int, high: int) -> int | None:
         """Ask for a bounded integer.
@@ -309,7 +355,7 @@ class SettingsMenu:
         download = self.settings.download
 
         proxy = self._ask_optional_text(
-            t("settings_proxy"), download.proxy, t("settings_proxy_hint")
+            t("settings_proxy"), download.proxy, t("settings_proxy_hint"), check_proxy
         )
         if proxy == _CLEAR:
             download.proxy = None
@@ -317,7 +363,10 @@ class SettingsMenu:
             download.proxy = proxy
 
         rate = self._ask_optional_text(
-            t("settings_rate_limit"), download.rate_limit, t("settings_rate_limit_hint")
+            t("settings_rate_limit"),
+            download.rate_limit,
+            t("settings_rate_limit_hint"),
+            check_rate_limit,
         )
         if rate == _CLEAR:
             download.rate_limit = None
@@ -371,7 +420,10 @@ class SettingsMenu:
 
         if video.write_subtitles or video.embed_subtitles:
             langs = self._ask_text(
-                t("settings_sub_langs"), video.subtitle_languages, t("settings_sub_langs_hint")
+                t("settings_sub_langs"),
+                video.subtitle_languages,
+                t("settings_sub_langs_hint"),
+                check_text,
             )
             if langs:
                 video.subtitle_languages = langs
