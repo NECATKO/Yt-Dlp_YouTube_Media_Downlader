@@ -1,6 +1,6 @@
 # Durum — 2 Ekim 2026
 
-Dal `feat/tui` (yalnızca yerel; push/PR yok). 2 Ekim incelemesi (`degerlendirme-raporlari/2026-10-02/`, yerel)
+Tek dal `main` (feat/tui 2 Ekim'de main'e alındı; PR yok, GitHub CI kapalı). 2 Ekim incelemesi (`degerlendirme-raporlari/2026-10-02/`, yerel)
 B01–B16 bulgularını ve Transkript modunu getirdi. Sıra ve çakışma kararları:
 `docs/superpowers/plans/2026-10-02-review-roadmap.md`.
 

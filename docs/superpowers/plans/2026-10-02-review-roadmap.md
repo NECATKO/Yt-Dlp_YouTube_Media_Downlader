@@ -23,7 +23,7 @@ B04 (tek videoda `expected_ids=None`) kodda tek tek doğrulandı.
 | Ç8 | `update.sh`/`update.ps1`'e B01, B10, B12 ve Faz 1 (`.venv`'e textual) dokunuyor. | Güncelleyici işleri Aşama 2'de toplanır. Faz 1 yalnızca gereksinim satırını değiştirir. |
 | Ç9 | B16 oturum çıkış kodunu değiştiriyor; Faz 1'de Ctrl+Q `run_loop` sonucuyla çıkıyor. | B16 önce (Aşama 3). Faz 1 testleri yeni sözleşmeyi doğrular: temiz 0, başarısız/kısmi 1, iptal 130. |
 | Ç10 | TUI açık maddesi: konsola doğrudan yazan yollar (`logging_utils.log_error`) Textual'ı bozar. | Yeni kod (Transkript, menü doğrulaması) tüm çıktıyı `ui.print` ya da Faz 0'ın `sink`'i üzerinden verir; iptal için `cancel` event'ini kullanır. `log_error` düzeltmesi Faz 1'de kalır. `audit` CLI her zaman konsoldur, sorun değil. |
-| Ç11 | Dal: hafızadaki not "main tek dal" diyor; TUI işi ise yalnızca yerel `feat/tui`'de. | İnceleme tabanı `feat/tui` ve Transkript Faz 0'ın `sink`/`cancel`'ına bağlı. Bu yüzden tüm iş `feat/tui`'de, her bulgu grubu ayrı commit olarak ilerler. **Push/PR yok** (TUI spec kuralı). `main`'e alma kararı kullanıcının. |
+| Ç11 | Dal: hafızadaki not "main tek dal" diyor; TUI işi ise `feat/tui`'deydi. | 2 Ekim'de kullanıcı her şeyin `main`'de olmasını istedi: `feat/tui` `main`'e alındı ve silindi. Bundan sonra doğrudan `main`'e commit edilir; PR yok, GitHub CI kapalı (`gh workflow disable CI`). |
 | Ç12 | Master prompt bir yerde "TUI" derken mevcut soru-cevap arayüzünü kastediyor; Faz 1'in "TUI"si Textual. | Bu belgede **konsol arayüzü** = `ConsoleUI`, **TUI** = Textual (`--tui`). |
 
 ## 2. Aşamalar
