@@ -22,6 +22,14 @@ From the 2026-10-02 review (`degerlendirme-raporlari/2026-10-02/`, local). The r
 - **`Run.bat` always waited for a key** (B13), so `Run.bat audit ...` blocked scripts. It now waits only when started without arguments and returns the app's exit code explicitly.
 - `update.ps1` and `Run.bat` are now tested under the real Windows PowerShell 5.1 and cmd.exe (`tests/windows.py`: on Windows, or from WSL through its interop). The Windows CI job requires them (`YTDLP_REQUIRE_WINDOWS_SCRIPTS`).
 
+### Fixed — the app
+- **The exit code forgot an earlier failure** (B16). A failed download followed by an empty URL, or by a later clean download and *exit*, ended the session with 0. The exit code now describes the whole session: 0 when everything went well, 1 when any download failed or left items undone, 130 when cancelled.
+- **Menus crashed on input such as `²`** (B15), which `str.isdigit()` accepts and `int()` does not, and on numbers too long to convert; at the first language question that stopped the app from starting. Such input is now an ordinary invalid choice. A config with `"retries": "²"` no longer crashes the settings load either.
+- **Panels overflowed with CJK titles and emoji** (B14): widths counted characters, not screen columns (a 40-column CJK panel was 76 columns wide). Widths are now counted in cells (wide characters 2, combining marks 0) with the standard library, wrapping and title shortening never split a mark from its letter, and below 20 columns panels and menus are printed as plain lines.
+- **The settings menu saved a proxy or speed limit the next start would throw away** (B09). The menu now applies the config loader's rules (one shared check per field), says why a value is unusable and asks again. The download entry no longer promises "retries", which it never asked for.
+- **WAV failed with the default cover setting** (B03): yt-dlp cannot embed a cover in WAV, so the item was never archived and every retry failed. With WAV the cover is saved as a `.jpg` beside the file, and the app says so. Every audio format is now downloaded with the default cover settings in the engine contract.
+- **The minimum yt-dlp did not have the options the app passes** (B06). 2025.03.21 answers `no such option: --js-runtimes`; the minimum is now 2025.11.12 (pyproject and the portable runtime ask for the same string, so the portable runtime upgrades once). The option is spelled `--js-runtimes`. An older yt-dlp on the PATH is reported before a download starts. The engine contract passed on 2025.11.12.
+
 ## [0.4.0] - 2026-09-30
 
 Pre-release hardening, from the 2026-09-30 application review (`degerlendirme-raporlari/`). Where a fix concerns what yt-dlp or ffmpeg does with a file or the download archive, it is checked against the real yt-dlp and ffmpeg on generated media (offline), and the regression tests fail when the fix is taken out.

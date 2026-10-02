@@ -67,5 +67,6 @@ planlar önceden yazılmaz.
 |---|---|
 | 1 | tamam (B02, B04, B05) |
 | 2 | tamam (B01, B10, B11, B12, B13) |
-| 3–5, 7 | bekliyor |
+| 3 | tamam (B03, B06, B09, B14, B15, B16) |
+| 4–5, 7 | bekliyor |
 | 6 | onay bekliyor |

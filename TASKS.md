@@ -6,7 +6,7 @@ B01–B16 bulgularını ve Transkript modunu getirdi. Sıra ve çakışma kararl
 
 - [x] **Aşama 1 — Arşiv kanıtı:** B02 (klasör/yan dosya kanıt sayılmıyor), B04 (tek video yeniden verildiğinde dosyası denetleniyor), B05 (program klasörü taşınabilir manifest yolları)
 - [x] **Aşama 2 — Kurulum/güncelleme:** B01 (geri alma başarısızsa kayıt ve yedek korunuyor, başlatıcılar açmıyor), B10, B11, B12, B13. `update.ps1` ve `Run.bat` gerçek Windows PowerShell 5.1 / cmd.exe ile test edildi (WSL interop); macOS yalnızca sahte araçlarla.
-- [ ] Aşama 3 — Uygulama doğruluğu: B03, B06, B09, B14, B15, B16
+- [x] **Aşama 3 — Uygulama doğruluğu:** B03 (WAV'da kapak ayrı dosya), B06 (yt-dlp ≥ 2025.11.12, motor sözleşmesi o sürümde 47/47), B09, B14, B15, B16
 - [ ] Aşama 4 — Komut satırı: B07, B08
 - [ ] Aşama 5 — Transkript modu
 - [ ] Aşama 6 — TUI Faz 1 (`--tui`, Textual) — **kullanıcı onayı bekliyor**

@@ -21,7 +21,7 @@ A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs
 2. You are asked once for base download folders (defaults: `downloads/Videos` and `downloads/Music` inside the program folder). Choices are saved to `config.json`.
 3. Each session: enter a URL, choose Video (MP4), Audio (in the format set in the settings, MP3 by default) or Archive (see [Archive mode](#archive-mode)), decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
 4. yt-dlp runs with resume/retry flags (`--continue`, `--retries infinite`, `--fragment-retries infinite`); a download that keeps failing skips to the next playlist item, but a failed conversion, merge or embedding step, or a fragment that stays missing, leaves the item **undone** (it is not written to the download archive) so the next run retries it; a log captures the full command output.
-5. When the run ends you get one of three verdicts: *all done*, *finished with problems* (some items downloaded, some not; the ones that did not are listed) or *nothing was downloaded*. After a partly failed run, leaving the app returns exit code 1.
+5. When the run ends you get one of three verdicts: *all done*, *finished with problems* (some items downloaded, some not; the ones that did not are listed) or *nothing was downloaded*. The exit code describes the whole session: 0 when everything went well, 1 when any download failed or left items undone (even if a later one succeeded), 130 when you cancelled with Ctrl+C.
 6. When a playlist is used, items that were not downloaded are probed and the reasons are printed (private, region blocked, age-restricted, members-only, copyright, etc.). The probing stops at once on Ctrl+C or when YouTube starts blocking.
 7. After finishing, you can immediately start another download from the same session.
 
@@ -61,7 +61,7 @@ File names carry the video id, so two different videos with the same title are t
 ## Audio mode
 - Downloads best available audio (`bestaudio/best`)
 - Converts to the chosen format (`mp3`, `m4a`, `opus`, `flac`, `wav`, or `best` to keep the source codec; `s` → *Audio*); the mode menu, the summary and the messages name that format
-- Embeds metadata, thumbnail (converted to JPG)
+- Embeds metadata, thumbnail (converted to JPG). WAV cannot hold a cover, so with `wav` the cover is saved as a separate `.jpg` next to the file (the app says so)
 
 ## Archive mode
 For preserving a channel that may disappear. Pick **Archive** as the mode and enter a channel URL (`https://www.youtube.com/@name`, `/channel/UC...`, or a tab such as `/@name/videos`), a playlist, or a single video.
@@ -216,6 +216,7 @@ An update is one transaction:
 - **Windows**: 64-bit Windows 10 (version 1803 or newer) or Windows 11. Nothing else.
 - **Linux**: x86_64 or aarch64 with glibc (not Alpine/musl), plus `curl` or `wget`, `tar` and `sha256sum` (present on practically every distribution). Updating also needs `unzip`, `python3` or `bsdtar` (the bundled Python counts).
 - **macOS**: Homebrew; Python 3.11+. A Python 3.11 or newer on the PATH (`python3.12`, `python3`, ...) is used; if there is none, `python@3.12` is installed with Homebrew and the `.venv` is made with that interpreter by its path.
+- yt-dlp 2025.11.12 or newer (the portable runtime and the `.venv` install keep it current; an older one on the PATH is reported before a download starts)
 - Internet connection for the first launch and for downloads
 
 ## Troubleshooting
@@ -264,7 +265,7 @@ yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, 
 2. İlk seferde video/müzik klasörlerini sorar (varsayılan: program klasöründeki `downloads/Videos` ve `downloads/Music`). Tercihler `config.json` içine kaydedilir.
 3. Her oturumda: URL girin, Video (MP4), Ses (ayarlarda seçilen biçimde, varsayılan MP3) veya Arşiv (bkz. *Arşiv modu*) seçin, oynatma listesi URL'si için tüm liste mi tek video mu karar verin, MP4 ise profil seçin.
 4. yt-dlp devam/yeniden dene bayraklarıyla (`--continue`, `--retries infinite`, `--fragment-retries infinite`) çalışır; sürekli başarısız olan bir indirme listedeki sonraki öğeye geçer, ama başarısız bir dönüştürme, birleştirme ya da gömme adımı ya da eksik kalan bir parça öğeyi **tamamlanmamış** bırakır (indirme arşivine yazılmaz) ve sonraki çalıştırma yeniden dener; konsol çıktısı günlüğe yazılır.
-5. Çalıştırma bittiğinde üç sonuçtan biri verilir: *her şey tamam*, *sorunlarla tamamlandı* (bazı öğeler indi, bazıları inmedi; inmeyenler listelenir) ya da *hiçbir şey indirilemedi*. Kısmen başarısız bir çalıştırmadan sonra uygulamadan çıkış, 1 çıkış kodu döndürür.
+5. Çalıştırma bittiğinde üç sonuçtan biri verilir: *her şey tamam*, *sorunlarla tamamlandı* (bazı öğeler indi, bazıları inmedi; inmeyenler listelenir) ya da *hiçbir şey indirilemedi*. Çıkış kodu oturumun tamamını anlatır: her şey yolunda gittiyse 0, herhangi bir indirme başarısız olduysa ya da öğe eksik bıraktıysa (sonraki bir indirme başarılı olsa bile) 1, Ctrl+C ile iptal edildiyse 130.
 6. Oynatma listesi kullanıldığında indirilmeyen öğeler için neden yoklaması yapılır ve ekrana yazılır (gizli, bölge kısıtı, yaş kısıtı, üyelik gerekli, telif hakkı, vb.). Yoklama, Ctrl+C'de ya da YouTube engellemeye başladığında hemen durur.
 7. İndirme bitince aynı oturumda hemen yeni URL indirebilirsiniz.
 
@@ -304,7 +305,7 @@ Dosya adları video kimliğini taşır; böylece aynı başlıklı iki farklı v
 ### Ses modu
 - Mevcut en iyi sesi indirir (`bestaudio/best`)
 - Seçilen biçime dönüştürür (`mp3`, `m4a`, `opus`, `flac`, `wav` ya da kaynak codec'ini korumak için `best`; `s` → *Ses*); mod menüsü, özet ve iletiler bu biçimi adıyla söyler
-- Metaveri ve kapak resmi (JPG'ye dönüştürülmüş) gömer
+- Metaveri ve kapak resmi (JPG'ye dönüştürülmüş) gömer. WAV kapak taşıyamadığı için `wav` seçiliyken kapak, dosyanın yanına ayrı bir `.jpg` olarak kaydedilir (uygulama bunu söyler)
 
 ### Arşiv modu
 Silinme riski olan bir kanalı korumak için. Mod olarak **Arşiv**'i seçin ve bir kanal URL'si (`https://www.youtube.com/@isim`, `/channel/UC...` ya da `/@isim/videos` gibi bir sekme), bir oynatma listesi veya tek bir video girin.
@@ -459,6 +460,7 @@ Bir güncelleme tek bir işlemdir:
 - **Windows**: 64 bit Windows 10 (1803 veya üzeri) ya da Windows 11. Başka bir şey gerekmez.
 - **Linux**: glibc'li x86_64 veya aarch64 (Alpine/musl değil), ayrıca `curl` veya `wget`, `tar` ve `sha256sum` (hemen her dağıtımda bulunur). Güncelleme ayrıca `unzip`, `python3` ya da `bsdtar` gerektirir (paketle gelen Python sayılır).
 - **macOS**: Homebrew; Python 3.11+. PATH'te 3.11 veya daha yeni bir Python (`python3.12`, `python3`, ...) varsa o kullanılır; yoksa Homebrew ile `python@3.12` kurulur ve `.venv` o yorumlayıcıyla, yolu üzerinden oluşturulur.
+- yt-dlp 2025.11.12 veya daha yenisi (taşınabilir çalışma ortamı ve `.venv` kurulumu onu güncel tutar; PATH'teki daha eski bir sürüm indirme başlamadan bildirilir)
 - İlk açılış ve indirmeler için internet bağlantısı
 
 ### Sorun giderme
