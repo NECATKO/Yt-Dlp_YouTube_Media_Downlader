@@ -20,6 +20,7 @@
   "container_mp4": "MP4 (bazı codec'lerle çalışmayabilir)",
   "status_cancelled": "İşlem iptal edildi.",
   "error_ytdlp_not_found": "yt-dlp bulunamadı. Lütfen önce yükleyiciyi çalıştırın.",
+  "error_ytdlp_too_old": "yt-dlp {version} bu uygulama için çok eski; {minimum} veya daha yenisi gerekiyor. yt-dlp'yi güncelleyip yeniden deneyin (Linux/macOS: bash update.sh; taşınabilir çalışma ortamı: python -m ytdlp_app.portable update-ytdlp).",
   "error_ffmpeg_not_found": "ffmpeg bulunamadı. Lütfen önce yükleyiciyi çalıştırın.",
   "error_invalid_url": "Geçersiz URL. Lütfen geçerli bir video veya oynatma listesi URL'si girin.",
   "error_url_invalid_input": "Bu kullanılabilir bir bağlantıya benzemiyor. http:// veya https:// ile başlayan tam bir adres girin.",

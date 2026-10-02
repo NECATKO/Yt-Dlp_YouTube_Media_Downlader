@@ -197,3 +197,35 @@ def test_audio_mode_in_wav_with_a_cover_says_where_the_cover_goes(
     session._process_one_cycle()
 
     assert t("audio_wav_cover_note") in "\n".join(ui.messages)
+
+
+def test_a_yt_dlp_too_old_for_the_app_is_reported_before_downloading(
+    monkeypatch, tmp_path: Path
+) -> None:
+    session, ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+    monkeypatch.setattr(session_module, "ytdlp_version", lambda: "2025.03.21")
+    started: list[object] = []
+    monkeypatch.setattr(session, "_execute_download", lambda *args: started.append(args))
+
+    assert session._process_one_cycle() == CycleOutcome.EXIT_FAILURE
+
+    assert started == []
+    text = "\n".join(ui.messages)
+    assert "2025.03.21" in text
+    assert "2025.11.12" in text
+
+
+def test_an_unknown_yt_dlp_version_does_not_block_the_download(monkeypatch, tmp_path: Path) -> None:
+    session, _ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+    monkeypatch.setattr(session_module, "ytdlp_version", lambda: None)
+    started: list[object] = []
+
+    def download(*args):
+        started.append(args)
+        return StageReport((1,))
+
+    monkeypatch.setattr(session, "_execute_download", download)
+
+    session._process_one_cycle()
+
+    assert started

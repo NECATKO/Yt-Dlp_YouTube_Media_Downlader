@@ -6,10 +6,21 @@ like ffmpeg, yt-dlp, and Deno.
 
 from __future__ import annotations
 
+import importlib.metadata
 import importlib.util
+import re
 import shutil
+import subprocess
 import sys
 from functools import lru_cache
+from typing import Final
+
+#: The oldest yt-dlp the app works with: the first release with both options every call
+#: passes, ``--js-runtimes`` and ``--remote-components`` (older ones reject the command).
+#: pyproject.toml and portable.YTDLP_REQUIREMENT ask for the same minimum.
+MIN_YTDLP_VERSION: Final = "2025.11.12"
+
+_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)")
 
 
 @lru_cache(maxsize=1)
@@ -57,6 +68,43 @@ def impersonation_available() -> bool | None:
     return importlib.util.find_spec("curl_cffi") is not None
 
 
+@lru_cache(maxsize=1)
+def ytdlp_version() -> str | None:
+    """The installed yt-dlp's version, or None when it cannot be told.
+
+    The yt-dlp of this interpreter is read from its package metadata (nothing is
+    imported); a separate executable is asked with ``--version``.
+    """
+    command = ytdlp_command()
+    if command is None:
+        return None
+    if command[0] == sys.executable:
+        try:
+            return importlib.metadata.version("yt-dlp")
+        except importlib.metadata.PackageNotFoundError:
+            return None
+    try:
+        done = subprocess.run(
+            [*command, "--version"], capture_output=True, text=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    text = (done.stdout or "").strip()
+    return text if done.returncode == 0 and text else None
+
+
+def _version_key(version: str) -> tuple[int, int, int] | None:
+    match = _VERSION_RE.match(version)
+    return (int(match[1]), int(match[2]), int(match[3])) if match else None
+
+
+def ytdlp_too_old(version: str | None) -> bool:
+    """Whether a known yt-dlp version is below MIN_YTDLP_VERSION (unknown is not)."""
+    found = _version_key(version) if version else None
+    minimum = _version_key(MIN_YTDLP_VERSION)
+    return found is not None and minimum is not None and found < minimum
+
+
 def yt_dlp_available() -> bool:
     """Check if yt-dlp can be launched.
 
@@ -91,4 +139,5 @@ def refresh_tool_cache() -> None:
     """
     ffmpeg_available.cache_clear()
     ytdlp_command.cache_clear()
+    ytdlp_version.cache_clear()
     deno_available.cache_clear()

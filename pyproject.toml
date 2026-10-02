@@ -40,9 +40,10 @@ classifiers = [
 dependencies = [
     # curl-cffi: yt-dlp requests YouTube subtitles with browser impersonation,
     # and without it YouTube answers them with HTTP 429.
-    # 2025.03.21 is the first release whose --plugin-dirs loads the bundled
-    # ytdlp_app/plugins layout archive mode relies on.
-    "yt-dlp[default,curl-cffi]>=2025.03.21",
+    # 2025.11.12 is the first release with --js-runtimes and --remote-components,
+    # which every call passes (it also loads the bundled ytdlp_app/plugins layout,
+    # new in 2025.03.21). Keep this equal to portable.YTDLP_REQUIREMENT.
+    "yt-dlp[default,curl-cffi]>=2025.11.12",
 ]
 
 [project.optional-dependencies]

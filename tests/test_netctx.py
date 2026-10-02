@@ -44,8 +44,8 @@ class TestEveryCallShares:
         assert "--proxy" not in context().probe_args()
 
     def test_deno_only_when_available(self) -> None:
-        assert "--js-runtime" in context(deno=True).probe_args()
-        assert "--js-runtime" not in context(deno=False).probe_args()
+        assert "--js-runtimes" in context(deno=True).probe_args()
+        assert "--js-runtimes" not in context(deno=False).probe_args()
 
 
 class TestConfigPolicy:

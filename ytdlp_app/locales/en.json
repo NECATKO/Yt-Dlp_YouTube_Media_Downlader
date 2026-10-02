@@ -20,6 +20,7 @@
   "container_mp4": "MP4 (may fail with some codecs)",
   "status_cancelled": "Operation cancelled.",
   "error_ytdlp_not_found": "yt-dlp not found. Please run the installer first.",
+  "error_ytdlp_too_old": "yt-dlp {version} is too old for this app, which needs {minimum} or newer. Update yt-dlp (Linux/macOS: bash update.sh; the portable runtime: python -m ytdlp_app.portable update-ytdlp) and try again.",
   "error_ffmpeg_not_found": "ffmpeg not found. Please run the installer first.",
   "error_invalid_url": "Invalid URL. Please enter a valid video or playlist URL.",
   "error_url_invalid_input": "That does not look like a usable link. Enter a full http:// or https:// URL.",

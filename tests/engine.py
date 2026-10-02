@@ -184,11 +184,24 @@ def builder(folder: Path, settings: Any = None, *, is_playlist: bool = False) ->
     )
 
 
-def engine_has_module(name: str) -> bool:
-    """Whether the Python that runs yt-dlp in these tests can import ``name``."""
+def engine_program(cmd: list[str]) -> list[str]:
+    """``cmd`` with "yt-dlp" replaced as the app replaces it, or by YTDLP_ENGINE_PYTHON.
+
+    YTDLP_ENGINE_PYTHON names another interpreter whose yt-dlp runs the engine tests
+    (an older release, to check the minimum version; a runtime with every extra).
+    """
     from ytdlp_app.exec import resolve_program  # noqa: PLC0415
 
-    program = resolve_program(["yt-dlp"])
+    program = resolve_program(cmd)
+    other = os.environ.get("YTDLP_ENGINE_PYTHON")
+    if other and program[1:3] == ["-m", "yt_dlp"]:
+        program = [other, *program[1:]]
+    return program
+
+
+def engine_has_module(name: str) -> bool:
+    """Whether the Python that runs yt-dlp in these tests can import ``name``."""
+    program = engine_program(["yt-dlp"])
     if len(program) < 3 or program[1:3] != ["-m", "yt_dlp"]:
         return False
     found = subprocess.run([program[0], "-c", f"import {name}"], capture_output=True, check=False)
@@ -207,10 +220,8 @@ def run_engine(
     The trailing URL is swapped for ``--load-info-json``; everything else is exactly
     what the app would run, including the launcher substitution of ``resolve_program``.
     """
-    from ytdlp_app.exec import resolve_program  # noqa: PLC0415
-
     assert cmd[-1] == "placeholder"
-    real = resolve_program(
+    real = engine_program(
         [
             *cmd[:-1],
             "--enable-file-urls",

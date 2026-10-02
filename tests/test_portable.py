@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from ytdlp_app import portable
+from ytdlp_app import portable, system
 from ytdlp_app.portable import (
     LockEntry,
     PortableError,
@@ -367,6 +367,18 @@ class TestEnsureYtdlp:
 
         assert runner.pip_calls == 1
         assert state["ytdlp_requirement"] == portable.YTDLP_REQUIREMENT
+
+    def test_the_portable_install_asks_for_what_the_package_requires(self) -> None:
+        """One requirement for both installs: the extras and the minimum version (B06)."""
+        import tomllib  # noqa: PLC0415
+
+        pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        dependencies = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"][
+            "dependencies"
+        ]
+
+        assert portable.YTDLP_REQUIREMENT in dependencies
+        assert portable.YTDLP_REQUIREMENT.endswith(f">={system.MIN_YTDLP_VERSION}")
 
     def test_requirement_includes_impersonation(self) -> None:
         """Without curl-cffi YouTube rejects every subtitle request with HTTP 429."""

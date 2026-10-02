@@ -109,7 +109,7 @@ class TestCommandShape:
         assert "--yes-playlist" in playlist_builder.common_args
 
     def test_deno_runtime_is_requested_when_available(self, builder: CommandBuilder) -> None:
-        assert builder.js_args[:2] == ["--js-runtime", "deno"]
+        assert builder.js_args[:2] == ["--js-runtimes", "deno"]
 
     def test_deno_runtime_is_omitted_when_missing(self, tmp_path: Path) -> None:
         no_deno = CommandBuilder(
@@ -119,7 +119,7 @@ class TestCommandShape:
             is_playlist=False,
             use_deno=False,
         )
-        assert "--js-runtime" not in no_deno.js_args
+        assert "--js-runtimes" not in no_deno.js_args
 
 
 class TestSettingsAreApplied:
@@ -180,7 +180,7 @@ def archive_default(tmp_path: Path) -> list[str]:
     return [
         "yt-dlp",
         "--ignore-config",
-        "--js-runtime",
+        "--js-runtimes",
         "deno",
         "--remote-components",
         "ejs:github",

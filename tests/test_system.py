@@ -1,5 +1,6 @@
 """Tests for how yt-dlp is located and launched."""
 
+import functools
 import sys
 
 import pytest
@@ -70,3 +71,52 @@ class TestImpersonationAvailable:
         monkeypatch.setattr(system.importlib.util, "find_spec", lambda _name: None)
         monkeypatch.setattr(system.shutil, "which", lambda _name: "/usr/bin/yt-dlp")
         assert system.impersonation_available() is None
+
+
+def launcher(*command: str):
+    """A stand-in for ytdlp_command, cached like it (the module fixture clears caches)."""
+    return functools.lru_cache(maxsize=1)(lambda: command)
+
+
+class TestYtDlpVersion:
+    """Which yt-dlp is installed, and whether it is new enough (B06)."""
+
+    def test_the_module_version_is_read_from_its_metadata(self, monkeypatch) -> None:
+        monkeypatch.setattr(system, "ytdlp_command", launcher(sys.executable, "-m", "yt_dlp"))
+        monkeypatch.setattr(system.importlib.metadata, "version", lambda _name: "2026.08.19")
+
+        assert system.ytdlp_version() == "2026.08.19"
+
+    def test_an_executable_is_asked_for_its_version(self, monkeypatch) -> None:
+        class Done:
+            returncode = 0
+            stdout = "2025.03.21\n"
+
+        monkeypatch.setattr(system, "ytdlp_command", launcher("/usr/bin/yt-dlp"))
+        monkeypatch.setattr(system.subprocess, "run", lambda *_a, **_k: Done())
+
+        assert system.ytdlp_version() == "2025.03.21"
+
+    def test_an_unreadable_version_is_none(self, monkeypatch) -> None:
+        def broken(*_a, **_k):
+            raise OSError("cannot run")
+
+        monkeypatch.setattr(system, "ytdlp_command", launcher("/usr/bin/yt-dlp"))
+        monkeypatch.setattr(system.subprocess, "run", broken)
+
+        assert system.ytdlp_version() is None
+
+    @pytest.mark.parametrize(
+        ("version", "old"),
+        [
+            ("2025.03.21", True),
+            ("2025.11.11", True),
+            ("2025.11.12", False),
+            ("2025.11.12.234512", False),
+            ("2026.08.19", False),
+            (None, False),
+            ("garbage", False),
+        ],
+    )
+    def test_too_old_means_known_and_below_the_minimum(self, version, old: bool) -> None:
+        assert system.ytdlp_too_old(version) is old

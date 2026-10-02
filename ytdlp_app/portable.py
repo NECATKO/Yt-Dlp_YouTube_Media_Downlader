@@ -51,7 +51,7 @@ YTDLP_UPDATE_DAYS = 7
 #: yt-dlp recommends, including its JS challenge solver scripts. "curl-cffi"
 #: adds browser impersonation: yt-dlp requests every YouTube subtitle with it,
 #: and without it YouTube answers those requests with HTTP 429.
-YTDLP_REQUIREMENT = "yt-dlp[default,curl-cffi]"
+YTDLP_REQUIREMENT = "yt-dlp[default,curl-cffi]>=2025.11.12"
 
 #: Components downloaded from runtime.lock by this module. Python is fetched by
 #: the launcher scripts, since nothing can run this module before it exists.

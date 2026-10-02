@@ -59,11 +59,14 @@ from .settings_menu import run_settings_menu
 from .skip_probe import ProbeStatus, probe_item
 from .speedtest import measure_speed
 from .system import (
+    MIN_YTDLP_VERSION,
     deno_available,
     ffmpeg_available,
     impersonation_available,
     refresh_tool_cache,
     yt_dlp_available,
+    ytdlp_too_old,
+    ytdlp_version,
 )
 from .validators import validate_url
 from .yt_dlp import CommandBuilder
@@ -383,6 +386,17 @@ class InteractiveSession:
             self.ui.print(
                 f"{paint(t('label_error'), Colors.RED, Colors.BOLD)} "
                 f"{paint(t('error_ytdlp_not_found'), Colors.RED)}"
+            )
+            return CycleOutcome.EXIT_FAILURE
+
+        # An older yt-dlp rejects options every command passes; say so before starting
+        # rather than fail with its usage message. An unknown version is let through.
+        version = ytdlp_version()
+        if ytdlp_too_old(version):
+            self.had_failure = True
+            message = t("error_ytdlp_too_old", version=version, minimum=MIN_YTDLP_VERSION)
+            self.ui.print(
+                f"{paint(t('label_error'), Colors.RED, Colors.BOLD)} {paint(message, Colors.RED)}"
             )
             return CycleOutcome.EXIT_FAILURE
 

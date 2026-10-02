@@ -39,7 +39,7 @@ def js_runtime_args(use_deno: bool) -> list[str]:
     base = ["--remote-components", "ejs:github"]
     if not use_deno:
         return base
-    return ["--js-runtime", "deno", *base]
+    return ["--js-runtimes", "deno", *base]
 
 
 @dataclass(frozen=True, slots=True)
