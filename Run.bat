@@ -19,6 +19,21 @@ if not defined YTDLP_NO_AUTO_UPDATE (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" -Quiet
 )
 
+REM --- An update that did not finish ---
+REM The journal stays while an update's rollback is incomplete: the package here may be
+REM part old, part new, so it must not be started. update.ps1 puts the old one back.
+if exist ".update-in-progress" (
+    echo.
+    echo ERROR: An update did not finish, so the app may be incomplete.
+    echo The previous version is kept in:
+    type ".update-in-progress"
+    echo.
+    echo Run this to restore it, then start the app again:
+    echo   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1"
+    pause
+    exit /b 1
+)
+
 echo ==========================================
 echo   YouTube Downloader - One Click Launch
 echo ==========================================
@@ -52,8 +67,13 @@ echo.
 
 REM --- Run program ---
 "runtime\python\python.exe" -s "%~dp0downloader.py" %*
+set "APP_RC=%ERRORLEVEL%"
 
-echo.
-echo Application closed.
-pause
-endlocal
+REM A double-click (no arguments) keeps the window open to read the output; a command
+REM line run (downloader.py audit ...) must not wait, and passes the app's exit code on.
+if "%~1"=="" (
+    echo.
+    echo Application closed.
+    pause
+)
+endlocal & exit /b %APP_RC%
