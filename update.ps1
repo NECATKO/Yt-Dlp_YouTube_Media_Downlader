@@ -1,6 +1,6 @@
 # update.ps1 - transactional updater for the Windows portable app
 #
-#   powershell -File update.ps1            update if a newer release exists
+#   powershell -File update.ps1            update if a newer release exists (asks first)
 #   powershell -File update.ps1 -CheckOnly only say whether one exists
 #   powershell -File update.ps1 -Quiet     what Run.bat does at every launch: silent unless it
 #                                          acts, and it never blocks the launch (exits 0)
@@ -13,8 +13,9 @@
 #      exist is each old file moved into a backup folder and the new one moved in,
 #   4. app_version.txt is written last, so it never names a version that was not installed,
 #   5. any failure moves every old file back and leaves the previous version running.
-# The previous version stays in .previous-version\ afterwards. An update killed half way is
-# undone the next time this script starts.
+# The previous version stays in .previous-version\ afterwards. An update killed half way, or
+# one whose rollback failed, is undone the next time this script starts: the journal and the
+# backup are only removed once every old file is back.
 #
 # Never touched: config.json, logs, archives, runtime, cache, downloads, .venv.
 # Not replaced: Run.bat. It is the running script's own launcher: cmd.exe reads a batch
@@ -129,12 +130,40 @@ function Exit-Lock {
 }
 
 # --- undoing what an interrupted or failed update moved ------------------------
+# The journal's first line is the backup folder (all that 0.4.0 wrote); each "+<name>" line
+# after it is an item the update added that did not exist before.
 
+function Get-JournalBackup {
+  $first = Get-Content -LiteralPath $Journal -TotalCount 1
+  if ($first) { return ([string]$first).Trim() }
+  return ""
+}
+
+function Get-JournalAdded {
+  return @(Get-Content -LiteralPath $Journal | Where-Object { $_ -like "+*" } | ForEach-Object { $_.Substring(1).Trim() })
+}
+
+# Put the previous version back: remove what the update added, then move every file in the
+# backup back. Restored files leave the backup, so running it again after a partial failure
+# only moves what is still missing. Returns $false when anything could not be restored.
 function Restore-FromBackup([string]$Backup) {
   $ok = $true
+  foreach ($name in Get-JournalAdded) {
+    # Only names an update installs: a damaged journal must not delete the user's files.
+    if (-not (($ReplaceItems + "app_version.txt") -contains $name)) { continue }
+    if (Test-Path -LiteralPath (Join-Path $Backup $name)) { continue }
+    try {
+      $target = Join-Path $AppDir $name
+      if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+    } catch {
+      $ok = $false
+    }
+  }
   foreach ($entry in Get-ChildItem -LiteralPath $Backup -Force) {
     $target = Join-Path $AppDir $entry.Name
     try {
+      # A test hook: fail restoring this item, to exercise a rollback that fails itself.
+      if ($env:YTDLP_UPDATE_RESTORE_FAULT_AT -eq $entry.Name) { throw "Injected failure while restoring $($entry.Name)." }
       if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
       Move-Item -LiteralPath $entry.FullName -Destination $target -Force
     } catch {
@@ -146,11 +175,11 @@ function Restore-FromBackup([string]$Backup) {
 
 function Restore-Interrupted {
   if (-not (Test-Path $Journal)) { return $true }
-  $backup = (Get-Content $Journal -Raw).Trim()
+  $backup = Get-JournalBackup
   if ($backup -and (Test-Path -LiteralPath $backup)) {
     Warn "A previous update was interrupted; restoring the previous version..."
     if (-not (Restore-FromBackup $backup)) {
-      Fail "Could not restore everything; the files are in $backup"
+      Fail "Could not restore everything; the files are in $backup. Run update.ps1 again to retry."
       return $false
     }
     Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
@@ -253,18 +282,21 @@ function Install-Package([string]$Root, [string]$Tag) {
   $staging = Join-Path $AppDir ".update-new-$stamp"
   New-Item -ItemType Directory -Force -Path $backup, $staging | Out-Null
   # From here on a crash is recoverable: the journal says where the old files are.
-  Set-Content -Path $Journal -Value $backup -Encoding UTF8 -NoNewline
+  Set-Content -LiteralPath $Journal -Value $backup -Encoding UTF8
 
   $abort = {
     param([string]$Reason)
     Fail $Reason
     Warn "Rolling back to the previous version..."
-    if (-not (Restore-FromBackup $backup)) { Fail "Rollback was incomplete; the old files are in $backup" }
     Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item $Journal -Force -ErrorAction SilentlyContinue
-    if (-not (Get-ChildItem -LiteralPath $backup -Force -ErrorAction SilentlyContinue)) {
-      Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath "$VersionFile.new" -Force -ErrorAction SilentlyContinue
+    if (-not (Restore-FromBackup $backup)) {
+      # Keep the journal and the backup: they are the only way back now.
+      Fail "The rollback was incomplete; the old files are in $backup. Run update.ps1 again to finish restoring them; do not start the app before that."
+      return
     }
+    Remove-Item $Journal -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
   }
 
   try {
@@ -288,12 +320,19 @@ function Install-Package([string]$Root, [string]$Tag) {
       $current = Join-Path $AppDir $item
       if (Test-Path -LiteralPath $current) {
         Move-Item -LiteralPath $current -Destination (Join-Path $backup $item) -Force
+      } else {
+        # New in this release: noted before it appears, so a rollback removes it.
+        Add-Content -LiteralPath $Journal -Value "+$item" -Encoding UTF8
       }
+      # A test hook: fail once the old $item is out of the way, to exercise the rollback.
+      if ($env:YTDLP_UPDATE_FAULT_AT -eq $item) { throw "Injected failure while installing $item." }
       Move-Item -LiteralPath $new -Destination $current -Force
     }
     # 3) The version last, so it only ever names what is really installed.
     if (Test-Path $VersionFile) {
       Move-Item -LiteralPath $VersionFile -Destination (Join-Path $backup "app_version.txt") -Force
+    } else {
+      Add-Content -LiteralPath $Journal -Value "+app_version.txt" -Encoding UTF8
     }
     $temp = "$VersionFile.new"
     Set-Content -Path $temp -Value $Tag -Encoding UTF8
@@ -425,6 +464,17 @@ try {
   }
 
   Say "New version found: $local -> $tag" "Cyan"
+  if (-not $Quiet) {
+    # Started by hand: say what would change and ask; anything but "y" (or no answer at
+    # all, when there is no console to answer from) keeps the installed version.
+    # The question is written by hand: Read-Host leaves its prompt out when input is piped.
+    Write-Host "Download and install update? (y/N): " -NoNewline
+    try { $answer = Read-Host } catch { $answer = "" }
+    if ("$answer".Trim() -notmatch '^[Yy]$') {
+      Say "Update skipped; $local stays installed." "Yellow"
+      exit 0
+    }
+  }
   if (-not (Install-Release $release $tag $local)) {
     if ($Quiet) { Warn "The update was not installed; continuing with $local."; exit 0 }
     exit 1

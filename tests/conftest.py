@@ -1,5 +1,7 @@
 """Test configuration and fixtures for ytdlp_app tests."""
 
+import shutil
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -46,3 +48,15 @@ def _no_speed_test(monkeypatch: pytest.MonkeyPatch) -> None:
     import ytdlp_app.session as session_module  # noqa: PLC0415
 
     monkeypatch.setattr(session_module, "measure_speed", lambda _proxy, cancel=None: None)
+
+
+@pytest.fixture
+def windows_scratch() -> Iterator[Path]:
+    """A fresh folder on the Windows file system, removed afterwards (see tests/windows.py)."""
+    from tests.windows import make_scratch  # noqa: PLC0415
+
+    folder = make_scratch()
+    try:
+        yield folder
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
