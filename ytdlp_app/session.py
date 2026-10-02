@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from .archive_audit import run_menu as run_archive_tools
 from .config import save_settings
+from .evidence import MediaIndex, locate
 from .exceptions import ValidationError
 from .exec import BAN_RETURN_CODE, run_capture, run_cmd_tee
 from .i18n import t
@@ -42,6 +43,7 @@ from .playlist import (
     is_playlist_url,
     is_youtube_host,
     read_archive_ids,
+    video_id_from_url,
 )
 from .preflight import (
     ListingStatus,
@@ -596,14 +598,24 @@ class InteractiveSession:
         # 9) DOWNLOAD, judged by what it left behind rather than by an exit code
         archive_before = read_archive_ids(archive_path)
         report = self._execute_download(plan, cmd_builder)
+        expected_ids: list[str] | None
+        if plan.is_playlist:
+            expected_ids = [e.id for e in entries if e.id] if listing else None
+        else:
+            # A single video's id comes from its URL, so a rerun the archive skipped is
+            # checked against that video's file rather than taken on trust.
+            single_id = video_id_from_url(url)
+            expected_ids = [single_id] if single_id else None
+        media = MediaIndex([plan.base_dir])
         outcome = evaluate(
             stage_codes=report.codes,
             archive_before=archive_before,
             archive_after=read_archive_ids(archive_path),
             manifest=read_manifest(cmd_builder.manifest_path),
-            expected_ids=[e.id for e in entries if e.id] if plan.is_playlist and listing else None,
+            expected_ids=expected_ids,
             banned=report.banned,
             cancelled=report.cancelled,
+            locate=lambda ident, path: locate(ident, path, mode=mode, index=media).status,
         )
         append_log(
             log_path,
@@ -611,7 +623,7 @@ class InteractiveSession:
             f"DOWNLOAD_FINISHED status={outcome.status} stage_codes={list(report.codes)} "
             f"completed={outcome.completed} already_present={outcome.already_present} "
             f"failed={list(outcome.failed)} missing={list(outcome.missing)} "
-            f"failed_unknown={outcome.failed_unknown}\n",
+            f"failed_unknown={outcome.failed_unknown} unverified={outcome.unverified}\n",
         )
 
         status = outcome.status
@@ -621,6 +633,9 @@ class InteractiveSession:
             return self._stop_after_ban()
         if status is RunStatus.FAILED:
             self._print_outcome(outcome)
+            if outcome.missing:
+                # Recorded as done, file gone: only the archive tools bring it back.
+                self.ui.print(paint(t("archive_records_note"), Colors.CYAN))
             if self.handle_error(log_path):
                 return CycleOutcome.EXIT_FAILURE
             return CycleOutcome.CONTINUE
@@ -636,7 +651,7 @@ class InteractiveSession:
         self.ui.print(f"{t('info_config')} {self.paths.config_file}")
 
         # What "already in the archive" means when the target changes.
-        if outcome.already_present:
+        if outcome.already_present or outcome.unverified or outcome.missing:
             self.ui.print(paint(t("archive_records_note"), Colors.CYAN))
 
         partial = status is RunStatus.PARTIAL

@@ -217,6 +217,7 @@
   "outcome_cancelled": "Cancelled before everything was downloaded.",
   "outcome_completed": "{count} downloaded",
   "outcome_already": "{count} already in the archive (skipped)",
+  "outcome_unverified": "{count} already in the archive (skipped), but the file could not be checked",
   "outcome_failed_items": "{count} not downloaded: {ids}",
   "outcome_missing_items": "{count} recorded as done but the file is missing: {ids}",
   "outcome_failed_unknown": "{count} failed (see the log for the reason)",

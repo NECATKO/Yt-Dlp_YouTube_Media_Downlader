@@ -304,7 +304,8 @@ class TestArchive:
             raise AssertionError("a single video must not be listed")
 
         ui = ScriptedUI([ARCHIVE, 1, EXIT])
-        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, Recorder())
+        runner = Recorder(archive_writes=["dQw4w9WgXcQ"])
+        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
         monkeypatch.setattr(session_module, "fetch_listing", forbidden)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS

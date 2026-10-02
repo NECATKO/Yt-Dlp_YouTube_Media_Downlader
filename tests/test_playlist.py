@@ -15,6 +15,7 @@ from ytdlp_app.playlist import (
     is_channel_url,
     is_playlist_url,
     read_archive_ids,
+    video_id_from_url,
 )
 
 
@@ -503,3 +504,23 @@ class TestForeignExtractorEntries:
         entry = self.make({"_type": "url", "ie_key": "Youtube", "id": "abcDEF12345"})
 
         assert entry.watch_url == "https://www.youtube.com/watch?v=abcDEF12345"
+
+
+class TestVideoIdFromUrl:
+    @pytest.mark.parametrize(
+        ("url", "ident"),
+        [
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL1", "dQw4w9WgXcQ"),
+            ("https://youtu.be/dQw4w9WgXcQ?t=3", "dQw4w9WgXcQ"),
+            ("https://www.youtube.com/shorts/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://www.youtube.com/live/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://m.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://www.youtube.com/@chan/live", None),
+            ("https://www.youtube.com/playlist?list=PL1", None),
+            ("https://www.youtube.com/watch?v=short", None),
+            ("https://vimeo.com/12345678901", None),
+        ],
+    )
+    def test_the_id_a_single_video_url_names(self, url: str, ident: str | None) -> None:
+        assert video_id_from_url(url) == ident

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from ytdlp_app.evidence import EvidenceStatus
 from ytdlp_app.i18n import set_language, t
 from ytdlp_app.outcome import (
     RunOutcome,
@@ -121,9 +122,7 @@ class TestEvaluate:
         assert outcome.already_present == 0
         assert outcome.status is RunStatus.FAILED
 
-    def test_an_old_record_without_manifest_entry_cannot_be_checked_and_counts_as_present(
-        self,
-    ) -> None:
+    def test_an_old_record_without_manifest_entry_cannot_be_checked(self) -> None:
         outcome = evaluate(
             stage_codes=(0,),
             archive_before={"a"},
@@ -132,8 +131,47 @@ class TestEvaluate:
             expected_ids=["a"],
         )
 
-        assert outcome.already_present == 1
+        assert (outcome.already_present, outcome.unverified) == (0, 1)
         assert outcome.status is RunStatus.SUCCESS
+
+    def test_a_single_video_rerun_whose_file_was_deleted_is_missing(self, tmp_path: Path) -> None:
+        """The archive skipped it, but the recorded file is gone."""
+        outcome = evaluate(
+            stage_codes=(0,),
+            archive_before={"dQw4w9WgXcQ"},
+            archive_after={"dQw4w9WgXcQ"},
+            manifest={"dQw4w9WgXcQ": tmp_path / "T [dQw4w9WgXcQ].mp4"},
+            expected_ids=["dQw4w9WgXcQ"],
+        )
+
+        assert outcome.missing == ("dQw4w9WgXcQ",)
+        assert outcome.already_present == 0
+        assert outcome.status is RunStatus.FAILED
+
+    def test_a_known_single_video_left_unarchived_at_exit_code_0_is_a_failure(self) -> None:
+        outcome = evaluate(
+            stage_codes=(0,),
+            archive_before=set(),
+            archive_after=set(),
+            manifest={},
+            expected_ids=["dQw4w9WgXcQ"],
+        )
+
+        assert outcome.failed == ("dQw4w9WgXcQ",)
+        assert outcome.status is RunStatus.FAILED
+
+    def test_the_locator_decides_what_is_on_disk(self) -> None:
+        verdicts = {"a": EvidenceStatus.PRESENT, "b": EvidenceStatus.MISSING}
+        outcome = evaluate(
+            stage_codes=(0,),
+            archive_before={"a", "b", "c"},
+            archive_after={"a", "b", "c"},
+            manifest={},
+            expected_ids=["a", "b", "c"],
+            locate=lambda ident, _path: verdicts.get(ident, EvidenceStatus.UNVERIFIED),
+        )
+
+        assert (outcome.already_present, outcome.missing, outcome.unverified) == (1, ("b",), 1)
 
     def test_a_single_video_that_finished_is_completed(self, tmp_path: Path) -> None:
         files = make(tmp_path, ["a"])
@@ -149,7 +187,7 @@ class TestEvaluate:
         assert outcome.completed == 1
         assert outcome.status is RunStatus.SUCCESS
 
-    def test_a_single_video_skipped_by_the_archive_is_already_present(self) -> None:
+    def test_a_single_item_of_unknown_id_skipped_by_the_archive_is_unverified(self) -> None:
         outcome = evaluate(
             stage_codes=(0,),
             archive_before={"a"},
@@ -158,8 +196,7 @@ class TestEvaluate:
             expected_ids=None,
         )
 
-        assert outcome.completed == 0
-        assert outcome.already_present == 1
+        assert (outcome.completed, outcome.already_present, outcome.unverified) == (0, 0, 1)
         assert outcome.status is RunStatus.SUCCESS
 
     def test_a_single_video_with_an_error_and_nothing_new_is_a_failure(self) -> None:
@@ -353,6 +390,9 @@ class TestDescribe:
     def test_cancelled_and_banned_have_their_own_headlines(self) -> None:
         assert t("outcome_cancelled") in self.lines(RunOutcome(cancelled=True, completed=1))
         assert t("outcome_banned") in self.lines(RunOutcome(banned=True))
+
+    def test_unverified_items_get_their_own_line(self) -> None:
+        assert ("info", t("outcome_unverified", count=2)) in describe(RunOutcome(unverified=2))
 
     def test_unidentified_failures_are_counted(self) -> None:
         assert "1" in self.lines(RunOutcome(failed_unknown=1))

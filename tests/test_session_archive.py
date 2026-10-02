@@ -139,7 +139,7 @@ EXIT = int(ActionChoice.EXIT)
 class TestArchiveDownload:
     def test_single_video(self, monkeypatch, tmp_path: Path, paths: AppPaths) -> None:
         ui = ScriptedUI([ARCHIVE, 1, EXIT])
-        runner = Recorder()
+        runner = Recorder(archive_writes=["dQw4w9WgXcQ"])
         session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS

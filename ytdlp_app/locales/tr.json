@@ -217,6 +217,7 @@
   "outcome_cancelled": "Her şey indirilmeden iptal edildi.",
   "outcome_completed": "{count} öğe indirildi",
   "outcome_already": "{count} öğe arşivde zaten kayıtlı (atlandı)",
+  "outcome_unverified": "{count} öğe arşivde zaten kayıtlı (atlandı), ancak dosyası denetlenemedi",
   "outcome_failed_items": "{count} öğe indirilemedi: {ids}",
   "outcome_missing_items": "{count} öğe tamamlandı olarak kayıtlı ama dosyası yok: {ids}",
   "outcome_failed_unknown": "{count} öğe başarısız oldu (nedeni için günlüğe bakın)",

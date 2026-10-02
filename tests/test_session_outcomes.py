@@ -4,7 +4,7 @@ from pathlib import Path
 
 import ytdlp_app.session as session_module
 from ytdlp_app.i18n import t
-from ytdlp_app.models import AppPaths, ModeChoice, UserConfig
+from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, UserConfig
 from ytdlp_app.outcome import StageReport
 from ytdlp_app.session import CycleOutcome, InteractiveSession
 
@@ -70,3 +70,28 @@ def test_run_loop_propagates_failure_exit_code(monkeypatch, tmp_path: Path) -> N
     monkeypatch.setattr(session, "_process_one_cycle", lambda: next(outcomes))
 
     assert session.run_loop() == 1
+
+
+def test_a_rerun_single_video_whose_file_was_deleted_is_not_already_there(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """yt-dlp skips it (exit 0, nothing new) because the archive holds it; the file is gone."""
+    session, ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+    picks = iter([int(ModeChoice.AUDIO)])
+    # The mode, then "exit" should the run (wrongly) reach the what-next question.
+    monkeypatch.setattr(ui, "pick", lambda *_a: next(picks, int(ActionChoice.EXIT)))
+    monkeypatch.setattr(session, "_execute_download", lambda *args: StageReport((0,)))
+    archive = tmp_path / "archives" / "single_audios_mp3.txt"
+    archive.parent.mkdir(parents=True)
+    archive.write_text("youtube dQw4w9WgXcQ\n", encoding="utf-8")
+    archive.with_name("single_audios_mp3.files.tsv").write_text(
+        f"dQw4w9WgXcQ\t{tmp_path / 'music' / 'Song [dQw4w9WgXcQ].mp3'}\n", encoding="utf-8"
+    )
+
+    session._process_one_cycle()
+
+    text = "\n".join(ui.messages)
+    assert t("tasks_completed") not in text
+    assert t("outcome_already", count=1) not in text
+    assert "dQw4w9WgXcQ" in text
+    assert t("archive_records_note") in text

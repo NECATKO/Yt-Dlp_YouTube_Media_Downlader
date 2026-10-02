@@ -18,6 +18,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .evidence import EvidenceStatus
 from .i18n import t
 
 if TYPE_CHECKING:
@@ -48,6 +49,9 @@ class RunOutcome:
         missing: Ids recorded as done whose file is not on disk.
         failed_unknown: Failures that cannot be tied to an id (a single video whose id
             was never learned, or an error code nothing else explains).
+        unverified: Items the archive already held whose file could not be checked: no
+            recorded path and no id in a file name, or a single item whose id is not
+            known. Not a failure, but not proof the file is there either.
         not_attempted: Items left undone because the run was stopped (ban or cancel).
         banned: The run was stopped because YouTube started blocking.
         cancelled: The user cancelled.
@@ -59,6 +63,7 @@ class RunOutcome:
     missing: tuple[str, ...] = ()
     failed_unknown: int = 0
     not_attempted: int = 0
+    unverified: int = 0
     banned: bool = False
     cancelled: bool = False
 
@@ -116,6 +121,13 @@ def read_manifest(path: Path) -> dict[str, Path]:
     return entries
 
 
+def _by_existence(_ident: str, path: Path | None) -> EvidenceStatus:
+    """The plain check: a recorded path that exists is present, one that does not is missing."""
+    if path is None:
+        return EvidenceStatus.UNVERIFIED
+    return EvidenceStatus.PRESENT if path.exists() else EvidenceStatus.MISSING
+
+
 def evaluate(
     *,
     stage_codes: tuple[int, ...],
@@ -125,7 +137,7 @@ def evaluate(
     expected_ids: Iterable[str] | None,
     banned: bool = False,
     cancelled: bool = False,
-    path_exists: Callable[[Path], bool] = Path.exists,
+    locate: Callable[[str, Path | None], EvidenceStatus] | None = None,
 ) -> RunOutcome:
     """Judge a run.
 
@@ -134,45 +146,52 @@ def evaluate(
         archive_before: Ids in the download archive before the run.
         archive_after: Ids in it after the run.
         manifest: Where each finished item's file was written (see read_manifest).
-        expected_ids: The ids the run was meant to cover (the listing), or None when
-            they are not known (a single video).
+        expected_ids: The ids the run was meant to cover (the listing, or the single
+            video's id taken from its URL), or None when they are not known.
         banned: The run was stopped by the ban guard.
         cancelled: The user cancelled.
-        path_exists: Whether a file is on disk; replaced in tests.
+        locate: Decides whether an item's file is on disk, given its id and recorded
+            path (see evidence.locate). Defaults to whether the recorded path exists.
     """
     before, after = set(archive_before), set(archive_after)
     new = sorted(after - before)
     expected = list(dict.fromkeys(expected_ids)) if expected_ids is not None else None
 
+    check = locate or _by_existence
+
     completed = 0
     missing: list[str] = []
     for ident in new:
-        path = manifest.get(ident)
-        # A new record with no manifest line cannot be checked; it is taken as finished.
-        if path is not None and not path_exists(path):
+        # A new record that cannot be checked was just written by yt-dlp, after every
+        # step succeeded; it is taken as finished. Only a recorded file that is gone is not.
+        if check(ident, manifest.get(ident)) is EvidenceStatus.MISSING:
             missing.append(ident)
         else:
             completed += 1
 
     already_present = 0
+    unverified = 0
     failed: list[str] = []
     not_attempted = 0
     if expected is not None:
         for ident in expected:
             if ident in before:
-                path = manifest.get(ident)
-                if path is not None and not path_exists(path):
+                status = check(ident, manifest.get(ident))
+                if status is EvidenceStatus.MISSING:
                     missing.append(ident)
-                else:
+                elif status is EvidenceStatus.PRESENT:
                     already_present += 1
+                else:
+                    unverified += 1
             elif ident not in after:
                 failed.append(ident)
         if banned or cancelled:
             not_attempted, failed = len(failed), []
     elif not new and not banned and not cancelled and stage_codes and stage_codes[-1] == 0:
-        # A single video that yt-dlp skipped because the archive already holds it.
+        # A single item of unknown id that yt-dlp skipped, presumably because the archive
+        # holds it: which record that is, and so where its file is, cannot be told.
         if all(code == 0 for code in stage_codes):
-            already_present = 1
+            unverified = 1
 
     failed_unknown = 0
     if not banned and not cancelled:
@@ -183,7 +202,7 @@ def evaluate(
             # An earlier stage failed and the last one produced nothing either: the
             # clean exit code of the last stage does not make the item done.
             failed_unknown = 1
-            already_present = 0
+            unverified = 0
 
     return RunOutcome(
         completed=completed,
@@ -192,6 +211,7 @@ def evaluate(
         missing=tuple(missing),
         failed_unknown=failed_unknown,
         not_attempted=not_attempted,
+        unverified=unverified,
         banned=banned,
         cancelled=cancelled,
     )
@@ -221,6 +241,8 @@ def describe(outcome: RunOutcome) -> list[tuple[str, str]]:
         lines.append(("info", t("outcome_completed", count=outcome.completed)))
     if outcome.already_present:
         lines.append(("info", t("outcome_already", count=outcome.already_present)))
+    if outcome.unverified:
+        lines.append(("info", t("outcome_unverified", count=outcome.unverified)))
     if outcome.failed:
         lines.append(
             (

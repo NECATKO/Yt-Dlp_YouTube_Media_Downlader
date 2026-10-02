@@ -44,6 +44,12 @@ _SINGLE_VIDEO_TABS = ("live",)
 # YouTube channel ids: "UC" followed by 22 URL-safe base64 characters.
 _CHANNEL_ID_PATTERN = re.compile(r"^UC[\w-]{22}$")
 
+# A YouTube video id: 11 URL-safe base64 characters.
+_VIDEO_ID_PATTERN = re.compile(r"^[\w-]{11}$")
+
+# Path forms that carry a video id as their second segment ("/shorts/<id>", "/live/<id>").
+_VIDEO_PATH_KINDS = ("shorts", "live", "embed", "v", "e")
+
 # Anything outside this set is replaced when an id is used in a file name.
 _UNSAFE_FILENAME_CHARS = re.compile(r"[^\w.-]")
 
@@ -123,6 +129,28 @@ def get_playlist_id(url: str) -> str:
         return segment.lstrip("@") if segment.startswith("@") else segment
 
     return "unknown_playlist"
+
+
+def video_id_from_url(url: str) -> str | None:
+    """The id of the video a single-video YouTube URL names, or None.
+
+    None for other sites, playlists and channels, and for a channel's ``/live`` address
+    (its video is only known once it redirects).
+    """
+    if not is_youtube_host(url):
+        return None
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    parts = [p for p in parsed.path.split("/") if p]
+    query = parse_qs(parsed.query)
+    candidate: str | None = None
+    if host == "youtu.be" or host.endswith(".youtu.be"):
+        candidate = parts[0] if parts else None
+    elif "v" in query:
+        candidate = query["v"][0]
+    elif len(parts) >= 2 and parts[0].lower() in _VIDEO_PATH_KINDS:
+        candidate = parts[1]
+    return candidate if candidate and _VIDEO_ID_PATTERN.match(candidate) else None
 
 
 def is_channel_url(url: str) -> bool:
