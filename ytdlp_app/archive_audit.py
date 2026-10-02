@@ -7,10 +7,12 @@ video's) is still "done" and is skipped for ever.
 
 Since the manifest (``<archive>.files.tsv``, written by the DownloadLedger plugin) records
 the final path of every item finished from now on, the check can say for those items whether
-the file is there. Older records have no path; for them the check looks for the id in a file
-or folder name (``... [id]``), and when even that finds nothing it says *cannot be checked*,
-never *missing*: a file called after its title cannot be matched to an id, and nothing is
-repaired on a guess.
+the file is there. Older records have no path; for them the check looks for a media file with
+the id in its name or its folder's (``... [id]``), and when even that finds nothing it says
+*cannot be checked*, never *missing*: a file called after its title cannot be matched to an
+id, and nothing is repaired on a guess. Only a finished media file of the archive's mode is
+evidence: a leftover folder, info JSON, thumbnail, ``.part`` file or another mode's file of
+the same video is not (see evidence.py).
 
 Everything here that changes a file is opt-in: reports and previews write nothing, applying
 needs an explicit request, and the archive is copied to ``archives/backups/`` first.
@@ -19,15 +21,13 @@ needs an explicit request, and the archive is copied to ``archives/backups/`` fi
 from __future__ import annotations
 
 import argparse
-import os
-import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from .atomic import atomic_write_text
+from .evidence import EvidenceStatus, MediaIndex, is_media_file, locate, mode_of_archive
 from .exceptions import ValidationError
 from .i18n import t
 from .logging_utils import Colors, console_print, paint
@@ -41,8 +41,6 @@ if TYPE_CHECKING:
     from .models import AppPaths, UserConfig
     from .ui import UI
 
-_BRACKET_ID = re.compile(r"\[([^\[\]/\\]+)\]")
-
 #: Backups of archives changed by a repair live here, inside the archives folder.
 BACKUP_DIR_NAME = "backups"
 
@@ -50,12 +48,9 @@ BACKUP_DIR_NAME = "backups"
 _MAX_LISTED = 12
 
 
-class FindingStatus(StrEnum):
-    """What the check could establish about one archive record."""
-
-    PRESENT = "present"
-    MISSING = "missing"
-    UNVERIFIED = "unverified"
+#: What the check could establish about one archive record (kept under its old name for the
+#: report and its callers).
+FindingStatus = EvidenceStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,27 +121,6 @@ class RepairResult:
     backup: Path | None
 
 
-class _IdIndex:
-    """The ids that appear in file and folder names under the download folders (built lazily)."""
-
-    def __init__(self, roots: Iterable[Path]) -> None:
-        self._roots = [r for r in roots if r.is_dir()]
-        self._ids: set[str] | None = None
-
-    def _build(self) -> set[str]:
-        found: set[str] = set()
-        for root in self._roots:
-            for _dir, dirs, files in os.walk(root):
-                for name in (*dirs, *files):
-                    found.update(_BRACKET_ID.findall(name))
-        return found
-
-    def __contains__(self, ident: str) -> bool:
-        if self._ids is None:
-            self._ids = self._build()
-        return ident in self._ids
-
-
 def _archive_lines(archive: Path) -> list[str]:
     return archive.read_text(encoding="utf-8", errors="replace").splitlines()
 
@@ -161,25 +135,21 @@ def _manifest_of(archive: Path) -> Path:
 
 
 def audit_archive(
-    archive: Path, roots: Sequence[Path], *, index: _IdIndex | None = None
+    archive: Path, roots: Sequence[Path], *, index: MediaIndex | None = None
 ) -> ArchiveReport:
     """Check every record of one archive against the disk. Writes nothing."""
     ids = list(dict.fromkeys(i for i in map(_id_of, _archive_lines(archive)) if i))
     manifest = read_manifest(_manifest_of(archive))
-    names = index if index is not None else _IdIndex(roots)
+    media = index if index is not None else MediaIndex(roots)
+    mode = mode_of_archive(archive)
 
     findings: list[Finding] = []
     for ident in ids:
-        path = manifest.get(ident)
-        if (path is not None and path.exists()) or ident in names:
-            findings.append(Finding(ident, FindingStatus.PRESENT, path))
-        elif path is not None:
-            findings.append(Finding(ident, FindingStatus.MISSING, path))
-        else:
-            findings.append(Finding(ident, FindingStatus.UNVERIFIED))
+        evidence = locate(ident, manifest.get(ident), mode=mode, index=media)
+        findings.append(Finding(ident, evidence.status, evidence.path))
 
     known = set(ids)
-    unarchived = tuple(i for i, p in manifest.items() if i not in known and p.exists())
+    unarchived = tuple(i for i, p in manifest.items() if i not in known and is_media_file(p, mode))
     return ArchiveReport(archive, tuple(findings), unarchived)
 
 
@@ -196,7 +166,7 @@ def find_archives(archives_dir: Path) -> list[Path]:
 
 def audit_all(archives_dir: Path, roots: Sequence[Path]) -> list[ArchiveReport]:
     """Check every archive in the folder, scanning the download folders at most once."""
-    index = _IdIndex(roots)
+    index = MediaIndex(roots)
     return [audit_archive(a, roots, index=index) for a in find_archives(archives_dir)]
 
 

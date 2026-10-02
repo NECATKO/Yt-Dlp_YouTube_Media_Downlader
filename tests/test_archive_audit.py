@@ -91,6 +91,85 @@ class TestAudit:
 
         assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.PRESENT}
 
+    def test_a_folder_and_side_files_without_media_do_not_prove_a_record(
+        self, world: dict[str, Path]
+    ) -> None:
+        """The video was deleted; its folder and info JSON were left behind."""
+        folder = world["videos"] / "yt-dlp" / "Chan" / "20260101 - T [dQw4w9WgXcQ]"
+        archive = write_archive(world, "channel_UC1_archive.txt", ["dQw4w9WgXcQ"])
+        write_manifest(archive, {"dQw4w9WgXcQ": folder / "T.mkv"})
+        touch(folder / "T.info.json")
+        touch(folder / "T.jpg")
+
+        report = audit_archive(archive, [world["videos"], world["music"]])
+
+        assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
+
+    def test_an_old_record_with_only_a_folder_left_is_unverified(
+        self, world: dict[str, Path]
+    ) -> None:
+        archive = write_archive(world, "channel_UC1_archive.txt", ["dQw4w9WgXcQ"])
+        touch(world["videos"] / "yt-dlp" / "Chan" / "20260101 - T [dQw4w9WgXcQ]" / "T.info.json")
+
+        report = audit_archive(archive, [world["videos"]])
+
+        assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.UNVERIFIED}
+
+    def test_an_mp3_of_the_same_video_does_not_hide_a_missing_mp4(
+        self, world: dict[str, Path]
+    ) -> None:
+        archive = write_archive(world, "single_videos_mp4.txt", ["dQw4w9WgXcQ"])
+        write_manifest(archive, {"dQw4w9WgXcQ": world["videos"] / "T [dQw4w9WgXcQ].mp4"})
+        touch(world["music"] / "T [dQw4w9WgXcQ].mp3")
+
+        report = audit_archive(archive, [world["videos"], world["music"]])
+
+        assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
+
+    def test_a_part_file_is_not_the_download(self, world: dict[str, Path]) -> None:
+        archive = write_archive(world, "single_videos_mp4.txt", ["dQw4w9WgXcQ"])
+        write_manifest(archive, {"dQw4w9WgXcQ": world["videos"] / "T [dQw4w9WgXcQ].mp4"})
+        touch(world["videos"] / "T [dQw4w9WgXcQ].mp4.part")
+
+        report = audit_archive(archive, [world["videos"]])
+
+        assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
+
+    def test_a_manifest_path_that_is_a_folder_is_missing(self, world: dict[str, Path]) -> None:
+        archive = write_archive(world, "single_videos_mp4.txt", ["aaa"])
+        folder = world["videos"] / "a.mp4"
+        folder.mkdir()
+        write_manifest(archive, {"aaa": folder})
+
+        report = audit_archive(archive, [world["videos"]])
+
+        assert statuses(report) == {"aaa": FindingStatus.MISSING}
+
+    def test_a_manifest_file_that_is_not_media_is_not_reported_unarchived(
+        self, world: dict[str, Path]
+    ) -> None:
+        archive = write_archive(world, "single_videos_mp4.txt", ["aaa"])
+        write_manifest(
+            archive,
+            {
+                "aaa": touch(world["videos"] / "a.mp4"),
+                "zzz": touch(world["videos"] / "z.info.json"),
+            },
+        )
+
+        report = audit_archive(archive, [world["videos"]])
+
+        assert report.unarchived == ()
+
+    def test_repair_plans_only_proven_missing_records(self, world: dict[str, Path]) -> None:
+        archive = write_archive(world, "channel_UC1_archive.txt", ["gone1", "old1"])
+        write_manifest(archive, {"gone1": world["videos"] / "x [gone1]" / "x.mkv"})
+        touch(world["videos"] / "y [old1]" / "y.info.json")
+
+        plan = plan_repair(audit_archive(archive, [world["videos"]]))
+
+        assert plan.remove == ("gone1",)
+
     def test_an_old_record_with_no_evidence_is_unverified_not_missing(
         self, world: dict[str, Path]
     ) -> None:
