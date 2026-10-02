@@ -680,6 +680,37 @@ class TestAutoMode:
         assert "continuing with" in result.stderr
 
 
+class TestYtDlpUpdate:
+    """The yt-dlp step at the end of a manual run (the app is already up to date here)."""
+
+    def fake_pip(self, site: Site, code: int) -> Path:
+        calls = site.tmp / "pip.calls"
+        pip = site.install / ".venv" / "bin" / "pip"
+        pip.write_text(f'#!/bin/bash\necho "$@" >> "{calls}"\nexit {code}\n', encoding="utf-8")
+        pip.chmod(0o755)
+        return calls
+
+    def test_a_failed_pip_is_reported_and_exits_1(self, site: Site) -> None:
+        self.fake_pip(site, 7)
+        site.publish("v0.3.1")
+
+        result = site.run(stdin="y\n")
+
+        assert result.returncode == 1
+        assert "updated successfully" not in result.stdout
+        assert "could not be updated" in result.stderr
+
+    def test_a_working_pip_keeps_the_extras(self, site: Site) -> None:
+        calls = self.fake_pip(site, 0)
+        site.publish("v0.3.1")
+
+        result = site.run(stdin="y\n")
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "yt-dlp updated successfully!" in result.stdout
+        assert "yt-dlp[default,curl-cffi]" in calls.read_text(encoding="utf-8")
+
+
 class TestUnpacking:
     def test_a_missing_zip_tool_is_reported_before_anything_is_downloaded_or_changed(
         self, site: Site

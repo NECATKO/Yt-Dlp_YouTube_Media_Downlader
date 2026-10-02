@@ -391,6 +391,17 @@ class TestEnsureYtdlp:
 
         assert state["ytdlp_updated_at"] == old
 
+    def test_a_failed_update_asked_for_by_the_user_is_an_error(self, tmp_path: Path) -> None:
+        """ "Update yt-dlp now" must not report success when pip failed."""
+        runner = FakePip(installed=True, pip_ok=False)
+        old = NOW.isoformat()
+        state = {"ytdlp_updated_at": old}
+
+        with pytest.raises(PortableError, match="could not be updated"):
+            ensure_ytdlp(self._layout(tmp_path), state, now=NOW, runner=runner, force_update=True)
+
+        assert state["ytdlp_updated_at"] == old
+
     def test_forced_update(self, tmp_path: Path) -> None:
         runner = FakePip(installed=True)
         state = {"ytdlp_updated_at": NOW.isoformat()}

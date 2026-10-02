@@ -495,8 +495,13 @@ def ensure_ytdlp(
     launch rather than a week later.
 
     A failed first install is fatal: the app cannot work without yt-dlp. A
-    failed upgrade is not, since the installed copy may still work (and the
-    machine may simply be offline).
+    failed scheduled upgrade is not, since the installed copy may still work (and
+    the machine may simply be offline). A failed upgrade the user asked for
+    (``force_update``) is an error, so "update yt-dlp now" never reports success
+    when nothing was updated.
+
+    Raises:
+        PortableError: The first install, or a forced upgrade, failed.
     """
     current = now or datetime.now()
     python_exe = layout.python_exe
@@ -518,6 +523,10 @@ def ensure_ytdlp(
             return
         print("Updating yt-dlp...", flush=True)
         if not _pip_install(python_exe, runner):
+            if force_update:
+                raise PortableError(
+                    "yt-dlp could not be updated; the installed version is unchanged"
+                )
             print("WARNING: yt-dlp could not be updated; using the installed version.", flush=True)
             return
 

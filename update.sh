@@ -564,20 +564,42 @@ install_release() {
 # yt-dlp
 # ==============================================================================
 
+# What the app installs yt-dlp as (with its extras: curl-cffi is what lets YouTube serve
+# subtitles), asked from the installed app so this script never drifts from it.
+ytdlp_requirement() {
+    local py requirement=""
+    py="$(python_for_checks)"
+    if [[ -n "$py" ]]; then
+        requirement="$("$py" -s -c 'from ytdlp_app.portable import YTDLP_REQUIREMENT as r; print(r)' \
+            2> /dev/null)"
+    fi
+    echo "${requirement:-yt-dlp[default,curl-cffi]}"
+}
+
+# Update yt-dlp now, because the user asked. Unlike the weekly check at launch (which carries
+# on with the installed copy when offline), a failure here is reported and returns 1.
 update_ytdlp() {
+    local status
     echo -e "${YELLOW}Updating yt-dlp...${NC}"
 
     if [[ -x "runtime/python/bin/python3" ]]; then
         PYTHONNOUSERSITE=1 runtime/python/bin/python3 -s -m ytdlp_app.portable update-ytdlp
+        status=$?
     elif [[ -f ".venv/bin/pip" ]]; then
-        .venv/bin/pip install --upgrade yt-dlp
+        .venv/bin/pip install --upgrade "$(ytdlp_requirement)"
+        status=$?
     elif [[ -f ".venv/Scripts/pip.exe" ]]; then
-        .venv/Scripts/pip.exe install --upgrade yt-dlp
+        .venv/Scripts/pip.exe install --upgrade "$(ytdlp_requirement)"
+        status=$?
     else
-        echo -e "${RED}Virtual environment not found.${NC}"
+        fail "Virtual environment not found."
         return 1
     fi
 
+    if [[ $status -ne 0 ]]; then
+        fail "yt-dlp could not be updated; the installed version is unchanged."
+        return 1
+    fi
     echo -e "${GREEN}yt-dlp updated successfully!${NC}"
 }
 
@@ -658,7 +680,7 @@ main() {
     # Always offer to update yt-dlp
     read -r -p "Update yt-dlp to latest version? (y/N): " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
-        update_ytdlp
+        update_ytdlp || return 1
     fi
 
     echo ""
