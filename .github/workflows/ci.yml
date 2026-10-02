@@ -82,9 +82,12 @@ jobs:
       # Ubuntu's ffmpeg has every encoder the engine tests need, so there a missing tool
       # or encoder is a failure, not a skip. Other ffmpeg builds differ (Homebrew's has no
       # libaom-av1), so on macOS and Windows those tests skip themselves.
+      # On Windows, update.ps1 and Run.bat run under the real PowerShell and cmd.exe
+      # (tests/windows.py); there a missing tool is a failure, not a skip.
       - name: Run tests with coverage
         env:
           YTDLP_REQUIRE_ENGINE: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
+          YTDLP_REQUIRE_WINDOWS_SCRIPTS: ${{ matrix.os == 'windows-latest' && '1' || '0' }}
         run: pytest --cov=ytdlp_app --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov

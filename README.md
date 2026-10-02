@@ -145,8 +145,8 @@ On Windows (x64) and Linux (x86_64, aarch64; glibc-based distributions) everythi
 
 ## Updating
 The app package (the `ytdlp_app` folder and the scripts) is updated from GitHub releases by the same transaction on every platform, but started differently:
-- **Windows:** `Run.bat` runs `update.ps1 -Quiet` at every launch; nothing is asked, being offline is fine, and it never stops the launch. Set `YTDLP_NO_AUTO_UPDATE=1` to skip it, or run `update.ps1` yourself to be asked first.
-- **Linux/macOS:** `run.sh` does **not** check for updates. Run `bash update.sh` when you want one (it asks first); `bash update.sh --check-only` only says whether a newer release exists.
+- **Windows:** `Run.bat` runs `update.ps1 -Quiet` at every launch; nothing is asked, being offline is fine, and it never stops the launch. Set `YTDLP_NO_AUTO_UPDATE=1` to skip it. Run `update.ps1` yourself to see the new version and be asked first (*y* installs it; anything else, or no answer, keeps the installed version).
+- **Linux/macOS:** `run.sh` does **not** check for updates. Run `bash update.sh` when you want one (it asks first, then offers to update yt-dlp; if that fails it says so and exits with 1, and the installed yt-dlp stays); `bash update.sh --check-only` only says whether a newer release exists.
 
 An update is one transaction:
 1. The release ZIP is downloaded to a private temporary folder inside the app folder (unique per run) and unpacked there. `unzip` is used if present, otherwise the bundled Python or `python3`, then `bsdtar`; if none exists the update stops before downloading anything and says so.
@@ -155,6 +155,7 @@ An update is one transaction:
 4. Every new file is first copied next to its place; only when all copies exist is each old file moved into a backup folder and the new one moved in.
 5. `app_version.txt` is written last, so it never names a version that was not installed. If anything fails at any point, everything moved is put back and the previous version keeps running. The old version stays in `.previous-version/`.
 6. Only one update runs at a time (a lock), and an update that was killed half way is undone the next time the updater starts.
+7. If even putting the old files back fails, the journal (`.update-in-progress`) and the backup folder are kept: `Run.bat` and `run.sh` then refuse to start the app, say where the previous version is, and running the updater again finishes the restore. Files a release added are removed by a rollback.
 
 `config.json`, `logs/`, `archives/`, `downloads/`, `cache/`, `runtime/` and `.venv/` are never touched. **`Run.bat` itself is not replaced** by the auto-update (cmd.exe reads a batch file while it runs, so swapping it underneath the launch could derail it): when a release changes `Run.bat`, copy it over by hand. The Linux/macOS updater replaces `run.sh` safely (a rename; the running script keeps its old copy). A ZIP download does not preserve the executable bit of `run.sh`, `install.sh` and `update.sh`; use `bash run.sh`, or `chmod +x run.sh install.sh update.sh` once.
 
@@ -176,7 +177,7 @@ An update is one transaction:
 ## Files in this folder
 | File | Description |
 |------|-------------|
-| `Run.bat` / `run.sh` | One-click start (Windows / Linux, macOS). Sets up or refreshes the portable runtime and launches the app; `Run.bat` also updates quietly first. |
+| `Run.bat` / `run.sh` | One-click start (Windows / Linux, macOS). Sets up or refreshes the portable runtime and launches the app; `Run.bat` also updates quietly first. Both return the app's exit code; `Run.bat` waits for a key only when started without arguments, so `Run.bat audit ...` works in scripts. |
 | `install.ps1` / `install.sh` | Sets up the portable runtime in `runtime/` (macOS: Homebrew + `.venv`). Safe to rerun. |
 | `update.ps1` / `update.sh` | Transactional app updater (see [Updating](#updating)). |
 | `runtime.lock` | Pinned URLs and SHA-256 checksums of the portable Python, ffmpeg and Deno. |
@@ -214,7 +215,7 @@ An update is one transaction:
 ## Requirements
 - **Windows**: 64-bit Windows 10 (version 1803 or newer) or Windows 11. Nothing else.
 - **Linux**: x86_64 or aarch64 with glibc (not Alpine/musl), plus `curl` or `wget`, `tar` and `sha256sum` (present on practically every distribution). Updating also needs `unzip`, `python3` or `bsdtar` (the bundled Python counts).
-- **macOS**: Homebrew; Python 3.11+ is installed through it if missing.
+- **macOS**: Homebrew; Python 3.11+. A Python 3.11 or newer on the PATH (`python3.12`, `python3`, ...) is used; if there is none, `python@3.12` is installed with Homebrew and the `.venv` is made with that interpreter by its path.
 - Internet connection for the first launch and for downloads
 
 ## Troubleshooting
@@ -226,6 +227,7 @@ An update is one transaction:
 | yt-dlp/ffmpeg not found | Run `install.ps1` (Windows) or `bash install.sh` (Linux/macOS) again. |
 | A video stopped working after a YouTube change | Update yt-dlp: `runtime/python/python -m ytdlp_app.portable update-ytdlp`. |
 | An update failed | The previous version was restored; read the message, fix the cause (often a missing `unzip`) and run `bash update.sh` again. The previous version is also in `.previous-version/`. |
+| "An update did not finish" at launch | Putting the old files back failed part way. Run `bash update.sh` (Windows: `update.ps1`); it finishes the restore. The message names the folder that holds the old files. |
 | Change download folders | Type `s` at the URL prompt and pick the folder to change. |
 | Change the interface language | Type `s` at the URL prompt and pick "Interface language". |
 | Download something again / a file was deleted | Type `a` at the URL prompt (archive tools) or run `downloader.py audit`; see [What "already downloaded" means](#what-already-downloaded-means). Deleting an archive file by hand also works, but forgets everything in it. |
@@ -386,8 +388,8 @@ Windows (x64) ve Linux'ta (x86_64, aarch64; glibc tabanlı dağıtımlar) uygula
 
 ### Güncelleme
 Uygulama paketi (`ytdlp_app` klasörü ve betikler) GitHub sürümlerinden her platformda aynı işlemle güncellenir, ama farklı başlatılır:
-- **Windows:** `Run.bat` her açılışta `update.ps1 -Quiet` çalıştırır; hiçbir şey sorulmaz, internetsiz olmak sorun değildir ve açılışı asla engellemez. Atlamak için `YTDLP_NO_AUTO_UPDATE=1` tanımlayın; önce sorulmasını istiyorsanız `update.ps1` komutunu kendiniz çalıştırın.
-- **Linux/macOS:** `run.sh` güncelleme **denetlemez**. İstediğinizde `bash update.sh` çalıştırın (önce sorar); `bash update.sh --check-only` yalnızca yeni sürüm olup olmadığını söyler.
+- **Windows:** `Run.bat` her açılışta `update.ps1 -Quiet` çalıştırır; hiçbir şey sorulmaz, internetsiz olmak sorun değildir ve açılışı asla engellemez. Atlamak için `YTDLP_NO_AUTO_UPDATE=1` tanımlayın. `update.ps1`'i kendiniz çalıştırırsanız yeni sürümü gösterir ve önce sorar (*y* kurar; başka her yanıt ya da yanıtsızlık kurulu sürümü korur).
+- **Linux/macOS:** `run.sh` güncelleme **denetlemez**. İstediğinizde `bash update.sh` çalıştırın (önce sorar, ardından yt-dlp'yi güncellemeyi önerir; bu başarısız olursa bunu söyler ve 1 ile çıkar, kurulu yt-dlp kalır); `bash update.sh --check-only` yalnızca yeni sürüm olup olmadığını söyler.
 
 Bir güncelleme tek bir işlemdir:
 1. Sürüm ZIP'i, uygulama klasörünün içinde, her çalıştırmaya özgü geçici bir klasöre indirilir ve orada açılır. `unzip` varsa o, yoksa paketle gelen Python ya da `python3`, sonra `bsdtar` kullanılır; hiçbiri yoksa güncelleme bir şey indirmeden durur ve bunu söyler.
@@ -396,6 +398,7 @@ Bir güncelleme tek bir işlemdir:
 4. Her yeni dosya önce yerinin yanına kopyalanır; yalnızca tüm kopyalar varsa her eski dosya bir yedek klasöre taşınır ve yenisi yerine konur.
 5. `app_version.txt` en son yazılır; böylece kurulmamış bir sürümü asla adıyla anmaz. Herhangi bir noktada bir şey başarısız olursa taşınan her şey geri konur ve önceki sürüm çalışmaya devam eder. Eski sürüm `.previous-version/` içinde kalır.
 6. Aynı anda yalnızca bir güncelleme çalışır (bir kilit) ve yarıda kesilmiş bir güncelleme, güncelleyici bir sonraki başladığında geri alınır.
+7. Eski dosyaları geri koymak bile başarısız olursa kayıt dosyası (`.update-in-progress`) ve yedek klasörü korunur: `Run.bat` ve `run.sh` uygulamayı başlatmaz, önceki sürümün nerede olduğunu söyler; güncelleyiciyi yeniden çalıştırmak geri yüklemeyi tamamlar. Bir sürümün eklediği dosyalar geri almada kaldırılır.
 
 `config.json`, `logs/`, `archives/`, `downloads/`, `cache/`, `runtime/` ve `.venv/`'e asla dokunulmaz. **`Run.bat`'ın kendisi otomatik güncellemeyle değiştirilmez** (cmd.exe bir toplu iş dosyasını çalışırken okur; altından değiştirmek açılışı bozabilir): bir sürüm `Run.bat`'ı değiştirirse elle kopyalayın. Linux/macOS güncelleyicisi `run.sh`'ı güvenle değiştirir (bir yeniden adlandırma; çalışan betik eski kopyasını korur). ZIP indirmesi `run.sh`, `install.sh` ve `update.sh` dosyalarının çalıştırılabilir bitini korumaz; `bash run.sh` kullanın ya da bir kez `chmod +x run.sh install.sh update.sh` yapın.
 
@@ -417,7 +420,7 @@ Bir güncelleme tek bir işlemdir:
 ### Bu klasördeki dosyalar
 | Dosya | Açıklama |
 |-------|----------|
-| `Run.bat` / `run.sh` | Tek tıkla başlatma (Windows / Linux, macOS). Taşınabilir çalışma ortamını kurar veya yeniler, uygulamayı başlatır; `Run.bat` ayrıca önce sessizce günceller. |
+| `Run.bat` / `run.sh` | Tek tıkla başlatma (Windows / Linux, macOS). Taşınabilir çalışma ortamını kurar veya yeniler, uygulamayı başlatır; `Run.bat` ayrıca önce sessizce günceller. İkisi de uygulamanın çıkış kodunu döndürür; `Run.bat` yalnızca argümansız başlatıldığında tuşa basılmasını bekler, bu yüzden `Run.bat audit ...` betiklerde çalışır. |
 | `install.ps1` / `install.sh` | Taşınabilir çalışma ortamını `runtime/` içine kurar (macOS: Homebrew + `.venv`). Yeniden çalıştırmak güvenlidir. |
 | `update.ps1` / `update.sh` | İşlem bütünlüklü uygulama güncelleyicisi (bkz. *Güncelleme*). |
 | `runtime.lock` | Taşınabilir Python, ffmpeg ve Deno için sabitlenmiş adresler ve SHA-256 değerleri. |
@@ -455,7 +458,7 @@ Bir güncelleme tek bir işlemdir:
 ### Gereksinimler
 - **Windows**: 64 bit Windows 10 (1803 veya üzeri) ya da Windows 11. Başka bir şey gerekmez.
 - **Linux**: glibc'li x86_64 veya aarch64 (Alpine/musl değil), ayrıca `curl` veya `wget`, `tar` ve `sha256sum` (hemen her dağıtımda bulunur). Güncelleme ayrıca `unzip`, `python3` ya da `bsdtar` gerektirir (paketle gelen Python sayılır).
-- **macOS**: Homebrew; Python 3.11+ yoksa onunla kurulur.
+- **macOS**: Homebrew; Python 3.11+. PATH'te 3.11 veya daha yeni bir Python (`python3.12`, `python3`, ...) varsa o kullanılır; yoksa Homebrew ile `python@3.12` kurulur ve `.venv` o yorumlayıcıyla, yolu üzerinden oluşturulur.
 - İlk açılış ve indirmeler için internet bağlantısı
 
 ### Sorun giderme
@@ -467,6 +470,7 @@ Bir güncelleme tek bir işlemdir:
 | yt-dlp/ffmpeg bulunamıyor | `install.ps1` (Windows) veya `bash install.sh` (Linux/macOS) dosyasını yeniden çalıştırın. |
 | YouTube değişikliğinden sonra video inmiyor | yt-dlp'yi güncelleyin: `runtime/python/python -m ytdlp_app.portable update-ytdlp`. |
 | Güncelleme başarısız oldu | Önceki sürüm geri yüklendi; iletiyi okuyun, nedeni giderin (çoğunlukla eksik `unzip`) ve `bash update.sh`'ı yeniden çalıştırın. Önceki sürüm ayrıca `.previous-version/` içindedir. |
+| Açılışta "An update did not finish" | Eski dosyaları geri koyma yarıda kaldı. `bash update.sh` (Windows: `update.ps1`) çalıştırın; geri yüklemeyi tamamlar. İleti, eski dosyaların bulunduğu klasörü söyler. |
 | İndirme klasörlerini değiştirme | URL isteminde `s` yazın ve değiştirmek istediğiniz klasörü seçin. |
 | Arayüz dilini değiştirme | URL isteminde `s` yazın ve "Arayüz dili" seçeneğini seçin. |
 | Bir şeyi yeniden indirme / bir dosya silindi | URL isteminde `a` yazın (arşiv araçları) ya da `downloader.py audit` çalıştırın; bkz. *"Zaten indirilmiş" ne demek*. Bir arşiv dosyasını elle silmek de işe yarar, ama içindeki her şeyi unutturur. |
