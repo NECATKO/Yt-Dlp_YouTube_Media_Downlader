@@ -466,6 +466,62 @@ class TestRollback:
         assert site.version() == "v0.3.1"
         assert site.marker() == "old"
 
+    def test_a_failed_restore_keeps_the_journal_and_the_backup(self, site: Site) -> None:
+        """The rollback itself failed: the way back must not be thrown away with it."""
+        site.publish("v0.4.0")
+
+        result = site.run(
+            stdin="y\nn\n",
+            env={
+                "YTDLP_UPDATE_FAULT_AT": "update.sh",
+                "YTDLP_UPDATE_RESTORE_FAULT_AT": "ytdlp_app",
+            },
+        )
+
+        assert result.returncode != 0
+        journal = site.install / ".update-in-progress"
+        assert journal.exists()
+        backup = Path(journal.read_text(encoding="utf-8").splitlines()[0])
+        assert "'old'" in (backup / "ytdlp_app" / "app.py").read_text(encoding="utf-8")
+        assert "update.sh again" in result.stderr
+        assert site.user_data_untouched()
+
+    def test_the_next_run_finishes_a_restore_that_failed(self, site: Site) -> None:
+        site.publish("v0.4.0")
+        site.run(
+            stdin="y\nn\n",
+            env={
+                "YTDLP_UPDATE_FAULT_AT": "update.sh",
+                "YTDLP_UPDATE_RESTORE_FAULT_AT": "ytdlp_app",
+            },
+        )
+
+        result = site.run(stdin="n\nn\n")
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert site.marker() == "old"
+        assert site.version() == "v0.3.1"
+        assert (site.install / "downloader.py").read_text(
+            encoding="utf-8"
+        ) == "print('downloader')\n"
+        assert site.leftovers() == []
+        assert site.user_data_untouched()
+
+    def test_a_file_the_update_added_is_removed_by_the_rollback(self, site: Site) -> None:
+        package = site.tmp / "pkg-added"
+        write_package(package, "0.4.0", marker="new")
+        (package / "README.md").write_text("new readme\n", encoding="utf-8")
+        (package / "LICENSE").write_text("new license\n", encoding="utf-8")
+        site.publish("v0.4.0", package)
+
+        result = site.run(stdin="y\nn\n", env={"YTDLP_UPDATE_FAULT_AT": "LICENSE"})
+
+        assert result.returncode != 0
+        assert not (site.install / "README.md").exists()
+        assert not (site.install / "LICENSE").exists()
+        assert site.marker() == "old"
+        assert site.leftovers() == []
+
 
 class TestVersionOrdering:
     @pytest.mark.parametrize(

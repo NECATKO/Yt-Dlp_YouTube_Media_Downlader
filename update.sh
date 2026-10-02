@@ -342,12 +342,44 @@ validate_package() {
 # The transaction
 # ==============================================================================
 
-# Put everything in a backup folder back, and clear the partial state.
+# The journal: its first line is the backup folder (all an older version wrote), and each
+# "+<name>" line after it is an item the update added that did not exist before.
+journal_backup() {
+    head -n 1 "$JOURNAL"
+}
+
+journal_added() {
+    sed -n 's/^+//p' "$JOURNAL"
+}
+
+# Whether a name is one an update may install (so a damaged journal cannot delete anything
+# of the user's).
+is_replaced_item() {
+    local name="$1" item
+    for item in $REPLACE_DIRS $REPLACE_FILES app_version.txt; do
+        [[ "$name" == "$item" ]] && return 0
+    done
+    return 1
+}
+
+# Put the previous version back: remove what the update added, then move every file in the
+# backup folder back. Restored files leave the backup, so running it again after a partial
+# failure only moves what is still missing. Returns 1 when anything could not be restored.
 restore_from_backup() {
     local backup="$1" entry name status=0
+    while IFS= read -r name; do
+        [[ -n "$name" ]] && is_replaced_item "$name" || continue
+        [[ -e "$backup/$name" ]] && continue
+        rm -rf "${SCRIPT_DIR:?}/$name" || status=1
+    done < <(journal_added)
     shopt -s dotglob nullglob
     for entry in "$backup"/*; do
         name="$(basename "$entry")"
+        # A test hook: fail restoring $name, to exercise a rollback that fails itself.
+        if [[ "${YTDLP_UPDATE_RESTORE_FAULT_AT:-}" == "$name" ]]; then
+            status=1
+            continue
+        fi
         rm -rf "${SCRIPT_DIR:?}/$name"
         if ! mv "$entry" "$SCRIPT_DIR/$name"; then
             status=1
@@ -357,15 +389,16 @@ restore_from_backup() {
     return $status
 }
 
-# A previous update that never finished: undo it.
+# A previous update that never finished (or whose rollback failed): undo it. The journal
+# and the backup stay until everything is back, so this can simply be run again.
 recover_interrupted() {
     [[ -f "$JOURNAL" ]] || return 0
     local backup
-    backup="$(cat "$JOURNAL")"
-    if [[ -d "$backup" ]]; then
+    backup="$(journal_backup)"
+    if [[ -n "$backup" && -d "$backup" ]]; then
         warn "A previous update was interrupted; restoring the previous version..."
         if ! restore_from_backup "$backup"; then
-            fail "Could not restore everything; the files are in $backup"
+            fail "Could not restore everything; the files are in $backup. Run update.sh again to retry."
             return 1
         fi
         rm -rf "$backup"
@@ -380,12 +413,14 @@ recover_interrupted() {
 abort_update() {
     fail "$1"
     warn "Rolling back to the previous version..."
-    restore_from_backup "$backup" || fail "Rollback was incomplete; the old files are in $backup"
-    rm -rf "$staging"
-    rm -f "$JOURNAL" "$SCRIPT_DIR/.app_version.new"
-    if [[ -z "$(ls -A "$backup" 2> /dev/null)" ]]; then
-        rm -rf "$backup"
+    rm -rf "$staging" "$SCRIPT_DIR/.app_version.new"
+    if ! restore_from_backup "$backup"; then
+        # Keep the journal and the backup: they are the only way back now.
+        fail "The rollback was incomplete; the old files are in $backup. Run update.sh again to finish restoring them; do not start the app before that."
+        return 1
     fi
+    rm -f "$JOURNAL"
+    rm -rf "$backup"
     return 1
 }
 
@@ -399,7 +434,7 @@ apply_update() {
     mkdir "$backup" "$staging" || { fail "Cannot create work folders in $SCRIPT_DIR."; return 1; }
 
     # From here on a crash is recoverable: the journal says where the old files are.
-    printf '%s' "$backup" > "$JOURNAL.tmp" && mv "$JOURNAL.tmp" "$JOURNAL" \
+    printf '%s\n' "$backup" > "$JOURNAL.tmp" && mv "$JOURNAL.tmp" "$JOURNAL" \
         || { rm -rf "$backup" "$staging"; fail "Cannot write the update journal."; return 1; }
 
     # 1) Copy every new file next to its place. Nothing of the install changes yet.
@@ -414,6 +449,10 @@ apply_update() {
         [[ -e "$staging/$item" ]] || continue
         if [[ -e "$item" || -L "$item" ]]; then
             mv "$item" "$backup/$item" || { abort_update "Could not move $item aside."; return 1; }
+        else
+            # New in this release: noted before it appears, so a rollback removes it.
+            printf '+%s\n' "$item" >> "$JOURNAL" \
+                || { abort_update "Cannot write the update journal."; return 1; }
         fi
         # A test hook: fail once the old $item is out of the way, to exercise the rollback.
         if [[ "${YTDLP_UPDATE_FAULT_AT:-}" == "$item" ]]; then
@@ -430,6 +469,9 @@ apply_update() {
     if [[ -e app_version.txt ]]; then
         mv app_version.txt "$backup/app_version.txt" \
             || { abort_update "Could not move app_version.txt aside."; return 1; }
+    else
+        printf '+%s\n' app_version.txt >> "$JOURNAL" \
+            || { abort_update "Cannot write the update journal."; return 1; }
     fi
     if ! { printf '%s\n' "$tag" > .app_version.new && mv .app_version.new app_version.txt; }; then
         abort_update "Could not record the new version."

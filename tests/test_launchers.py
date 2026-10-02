@@ -64,6 +64,23 @@ class TestRunSh:
         assert not (folder / "update.calls").exists()
         assert "-s downloader.py" in (folder / "python.calls").read_text()
 
+    def test_a_half_restored_update_stops_the_launch(self, folder: Path) -> None:
+        """Running a package an update left half replaced could do anything."""
+        fake_python(folder)
+        script(folder / "install.sh", "exit 0\n")
+        script(folder / "update.sh", f'echo ran >> "{folder}/update.calls"\n')
+        backup = folder / ".update-backup-x"
+        backup.mkdir()
+        (folder / ".update-in-progress").write_text(f"{backup}\n", encoding="utf-8")
+
+        result = self.run(folder)
+
+        assert result.returncode == 1
+        assert not (folder / "python.calls").exists()
+        assert not (folder / "update.calls").exists()
+        assert str(backup) in result.stderr
+        assert "bash update.sh" in result.stderr
+
     def test_python_is_told_to_use_utf8(self, folder: Path) -> None:
         fake_python(folder)
         script(folder / "install.sh", "exit 0\n")

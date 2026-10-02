@@ -30,6 +30,15 @@ export PYTHONIOENCODING=utf-8
 # There is no update check here: on Linux/macOS the app is updated on request with
 # "bash update.sh" (Run.bat, on Windows, still checks at launch).
 
+# An update that stopped half way, or whose rollback failed, left a journal: the package in
+# this folder may be part old, part new. Do not start it; update.sh puts the old one back.
+if [[ -f ".update-in-progress" ]]; then
+    echo -e "${RED}An update did not finish, so the app may be incomplete.${NC}" >&2
+    echo -e "${YELLOW}The previous version is kept in: $(head -n 1 .update-in-progress)${NC}" >&2
+    echo -e "${YELLOW}Run ${CYAN}bash update.sh${YELLOW} to restore it, then start the app again.${NC}" >&2
+    exit 1
+fi
+
 if [[ "$(uname -s)" == "Linux" ]]; then
     PYTHON="runtime/python/bin/python3"
     if [[ ! -x "$PYTHON" ]]; then
