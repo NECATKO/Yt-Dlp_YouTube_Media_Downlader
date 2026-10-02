@@ -1,3 +1,19 @@
+# Durum — 2 Ekim 2026
+
+Dal `feat/tui` (yalnızca yerel; push/PR yok). 2 Ekim incelemesi (`degerlendirme-raporlari/2026-10-02/`, yerel)
+B01–B16 bulgularını ve Transkript modunu getirdi. Sıra ve çakışma kararları:
+`docs/superpowers/plans/2026-10-02-review-roadmap.md`.
+
+- [x] **Aşama 1 — Arşiv kanıtı:** B02 (klasör/yan dosya kanıt sayılmıyor), B04 (tek video yeniden verildiğinde dosyası denetleniyor), B05 (program klasörü taşınabilir manifest yolları)
+- [ ] Aşama 2 — Kurulum/güncelleme: B01, B10, B11, B12, B13
+- [ ] Aşama 3 — Uygulama doğruluğu: B03, B06, B09, B14, B15, B16
+- [ ] Aşama 4 — Komut satırı: B07, B08
+- [ ] Aşama 5 — Transkript modu
+- [ ] Aşama 6 — TUI Faz 1 (`--tui`, Textual) — **kullanıcı onayı bekliyor**
+- [ ] Aşama 7 — Teslim raporu, sürüm kararı
+
+---
+
 # Durum — 30 Eylül 2026
 
 Sürüm **0.4.0** (henüz tag/release yok; güncelleyici release'leri çektiği için yayın kararı ayrı).

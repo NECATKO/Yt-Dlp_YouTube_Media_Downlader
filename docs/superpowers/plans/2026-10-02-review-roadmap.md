@@ -65,6 +65,6 @@ planlar önceden yazılmaz.
 
 | Aşama | Durum |
 |---|---|
-| 1 | başladı |
+| 1 | tamam (B02, B04, B05) |
 | 2–5, 7 | bekliyor |
 | 6 | onay bekliyor |

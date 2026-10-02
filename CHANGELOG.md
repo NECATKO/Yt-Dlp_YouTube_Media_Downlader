@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+From the 2026-10-02 review (`degerlendirme-raporlari/2026-10-02/`, local). The roadmap is in `docs/superpowers/plans/2026-10-02-review-roadmap.md`.
+
+### Fixed — archive evidence
+- **The archive check counted a deleted video as present** when its folder, info JSON or thumbnail was left behind, and an MP3 of the same video hid a missing MP4 record (B02). Only a finished media file of the archive's mode is evidence now: folders, side files, `.part`/`.temp` files, unmerged format streams (`.f137.mp4`) and another mode's file are not. A record whose recorded file is gone is *missing* (repairable); an old record without a recorded path and without a matching media file stays *cannot be checked* and is never repaired on a guess. The archive check and the download result use the same rule (`evidence.py`).
+- **Giving the same single video again said "already in the archive" although its file had been deleted** (B04). The video id is taken from the URL and its recorded (or moved) file is checked: a deleted one is reported as missing with a pointer to the archive tools, and an id yt-dlp left unarchived at exit code 0 is a failure. Records whose file cannot be checked (no recorded path, or another site's single item, or a channel's `/live`) are shown on their own line instead of as "already in the archive".
+- **Moving the program folder made every recorded download look missing** (B05). Files inside the program folder are now recorded in the manifest relative to it (the manifest gains a `# ytdlp_app download manifest v2` header); files in an outside download folder keep their absolute path. Existing manifests are read as before and new lines may be appended to them.
+
 ## [0.4.0] - 2026-09-30
 
 Pre-release hardening, from the 2026-09-30 application review (`degerlendirme-raporlari/`). Where a fix concerns what yt-dlp or ffmpeg does with a file or the download archive, it is checked against the real yt-dlp and ffmpeg on generated media (offline), and the regression tests fail when the fix is taken out.
