@@ -168,7 +168,10 @@ class TestLocate:
     def test_a_moved_file_is_found_by_its_id(self, tmp_path: Path) -> None:
         moved = touch(tmp_path / "new" / "T [a].mkv")
         found = locate(
-            "a", tmp_path / "old" / "T [a].mkv", mode=DownloadMode.VIDEO, index=MediaIndex([tmp_path])
+            "a",
+            tmp_path / "old" / "T [a].mkv",
+            mode=DownloadMode.VIDEO,
+            index=MediaIndex([tmp_path]),
         )
         assert (found.status, found.path) == (EvidenceStatus.PRESENT, moved)
 
@@ -314,9 +317,7 @@ class MediaIndex:
         """The media files that carry ``ident`` and suit ``mode``."""
         if self._files is None:
             self._files = self._build()
-        return tuple(
-            p for p in self._files.get(ident, ()) if _is_media_name(p.name, mode)
-        )
+        return tuple(p for p in self._files.get(ident, ()) if _is_media_name(p.name, mode))
 
 
 def locate(
@@ -366,68 +367,69 @@ __all__ = [
 - [ ] **Adım 1: Başarısız testleri `TestAudit`'e ekle**
 
 ```python
-    def test_a_folder_and_side_files_without_media_do_not_prove_a_record(
-        self, world: dict[str, Path]
-    ) -> None:
-        """B02: the video was deleted, its folder and info JSON were left behind."""
-        folder = world["videos"] / "yt-dlp" / "Chan" / "20260101 - T [dQw4w9WgXcQ]"
-        archive = write_archive(world, "channel_UC1_archive.txt", ["dQw4w9WgXcQ"])
-        write_manifest(archive, {"dQw4w9WgXcQ": folder / "T.mkv"})
-        touch(folder / "T.info.json")
-        touch(folder / "T.jpg")
+def test_a_folder_and_side_files_without_media_do_not_prove_a_record(
+    self, world: dict[str, Path]
+) -> None:
+    """B02: the video was deleted, its folder and info JSON were left behind."""
+    folder = world["videos"] / "yt-dlp" / "Chan" / "20260101 - T [dQw4w9WgXcQ]"
+    archive = write_archive(world, "channel_UC1_archive.txt", ["dQw4w9WgXcQ"])
+    write_manifest(archive, {"dQw4w9WgXcQ": folder / "T.mkv"})
+    touch(folder / "T.info.json")
+    touch(folder / "T.jpg")
 
-        report = audit_archive(archive, [world["videos"], world["music"]])
+    report = audit_archive(archive, [world["videos"], world["music"]])
 
-        assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
+    assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
 
-    def test_an_old_record_with_only_a_folder_left_is_unverified(
-        self, world: dict[str, Path]
-    ) -> None:
-        archive = write_archive(world, "channel_UC1_archive.txt", ["dQw4w9WgXcQ"])
-        touch(world["videos"] / "yt-dlp" / "Chan" / "20260101 - T [dQw4w9WgXcQ]" / "T.info.json")
 
-        report = audit_archive(archive, [world["videos"]])
+def test_an_old_record_with_only_a_folder_left_is_unverified(self, world: dict[str, Path]) -> None:
+    archive = write_archive(world, "channel_UC1_archive.txt", ["dQw4w9WgXcQ"])
+    touch(world["videos"] / "yt-dlp" / "Chan" / "20260101 - T [dQw4w9WgXcQ]" / "T.info.json")
 
-        assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.UNVERIFIED}
+    report = audit_archive(archive, [world["videos"]])
 
-    def test_an_mp3_of_the_same_video_does_not_hide_a_missing_mp4(
-        self, world: dict[str, Path]
-    ) -> None:
-        archive = write_archive(world, "single_videos_mp4.txt", ["dQw4w9WgXcQ"])
-        write_manifest(archive, {"dQw4w9WgXcQ": world["videos"] / "T [dQw4w9WgXcQ].mp4"})
-        touch(world["music"] / "T [dQw4w9WgXcQ].mp3")
+    assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.UNVERIFIED}
 
-        report = audit_archive(archive, [world["videos"], world["music"]])
 
-        assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
+def test_an_mp3_of_the_same_video_does_not_hide_a_missing_mp4(self, world: dict[str, Path]) -> None:
+    archive = write_archive(world, "single_videos_mp4.txt", ["dQw4w9WgXcQ"])
+    write_manifest(archive, {"dQw4w9WgXcQ": world["videos"] / "T [dQw4w9WgXcQ].mp4"})
+    touch(world["music"] / "T [dQw4w9WgXcQ].mp3")
 
-    def test_a_part_file_is_not_the_download(self, world: dict[str, Path]) -> None:
-        archive = write_archive(world, "single_videos_mp4.txt", ["dQw4w9WgXcQ"])
-        write_manifest(archive, {"dQw4w9WgXcQ": world["videos"] / "T [dQw4w9WgXcQ].mp4"})
-        touch(world["videos"] / "T [dQw4w9WgXcQ].mp4.part")
+    report = audit_archive(archive, [world["videos"], world["music"]])
 
-        report = audit_archive(archive, [world["videos"]])
+    assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
 
-        assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
 
-    def test_a_manifest_path_that_is_a_folder_is_missing(self, world: dict[str, Path]) -> None:
-        archive = write_archive(world, "single_videos_mp4.txt", ["aaa"])
-        folder = world["videos"] / "a.mp4"
-        folder.mkdir()
-        write_manifest(archive, {"aaa": folder})
+def test_a_part_file_is_not_the_download(self, world: dict[str, Path]) -> None:
+    archive = write_archive(world, "single_videos_mp4.txt", ["dQw4w9WgXcQ"])
+    write_manifest(archive, {"dQw4w9WgXcQ": world["videos"] / "T [dQw4w9WgXcQ].mp4"})
+    touch(world["videos"] / "T [dQw4w9WgXcQ].mp4.part")
 
-        report = audit_archive(archive, [world["videos"]])
+    report = audit_archive(archive, [world["videos"]])
 
-        assert statuses(report) == {"aaa": FindingStatus.MISSING}
+    assert statuses(report) == {"dQw4w9WgXcQ": FindingStatus.MISSING}
 
-    def test_repair_plans_only_proven_missing_records(self, world: dict[str, Path]) -> None:
-        archive = write_archive(world, "channel_UC1_archive.txt", ["gone1", "old1"])
-        write_manifest(archive, {"gone1": world["videos"] / "x [gone1]" / "x.mkv"})
-        touch(world["videos"] / "y [old1]" / "y.info.json")
 
-        plan = plan_repair(audit_archive(archive, [world["videos"]]))
+def test_a_manifest_path_that_is_a_folder_is_missing(self, world: dict[str, Path]) -> None:
+    archive = write_archive(world, "single_videos_mp4.txt", ["aaa"])
+    folder = world["videos"] / "a.mp4"
+    folder.mkdir()
+    write_manifest(archive, {"aaa": folder})
 
-        assert plan.remove == ("gone1",)
+    report = audit_archive(archive, [world["videos"]])
+
+    assert statuses(report) == {"aaa": FindingStatus.MISSING}
+
+
+def test_repair_plans_only_proven_missing_records(self, world: dict[str, Path]) -> None:
+    archive = write_archive(world, "channel_UC1_archive.txt", ["gone1", "old1"])
+    write_manifest(archive, {"gone1": world["videos"] / "x [gone1]" / "x.mkv"})
+    touch(world["videos"] / "y [old1]" / "y.info.json")
+
+    plan = plan_repair(audit_archive(archive, [world["videos"]]))
+
+    assert plan.remove == ("gone1",)
 ```
 
 Mevcut `test_an_id_in_a_folder_name_counts_as_present` (klasörde `T.mkv` var) ve `test_a_moved_file_is_found_by_its_id` aynen geçmeli.
@@ -456,9 +458,7 @@ def audit_archive(
         findings.append(Finding(ident, evidence.status, evidence.path))
 
     known = set(ids)
-    unarchived = tuple(
-        i for i, p in manifest.items() if i not in known and is_media_file(p, mode)
-    )
+    unarchived = tuple(i for i, p in manifest.items() if i not in known and is_media_file(p, mode))
     return ArchiveReport(archive, tuple(findings), unarchived)
 ```
 
@@ -490,119 +490,124 @@ def audit_archive(
 `TestLedger`'a ekle; `test_appends_one_line_per_finished_item` beklentisi başlık satırıyla güncellenir (biçim bilerek sürümlendi):
 
 ```python
-    def test_appends_one_line_per_finished_item(self, tmp_path: Path) -> None:
-        module = _ledger_module()
-        manifest = tmp_path / "state" / "a.files.tsv"
-        pp = module.DownloadLedgerPP(None, str(manifest))
+def test_appends_one_line_per_finished_item(self, tmp_path: Path) -> None:
+    module = _ledger_module()
+    manifest = tmp_path / "state" / "a.files.tsv"
+    pp = module.DownloadLedgerPP(None, str(manifest))
 
-        pp.run({"id": "X1", "filepath": "/v/one.mkv"})
-        pp.run({"id": "X2", "filepath": "/v/two.mkv"})
+    pp.run({"id": "X1", "filepath": "/v/one.mkv"})
+    pp.run({"id": "X2", "filepath": "/v/two.mkv"})
 
-        assert manifest.read_text(encoding="utf-8").splitlines() == [
-            module.MANIFEST_HEADER,
-            "X1\t/v/one.mkv",
-            "X2\t/v/two.mkv",
-        ]
+    assert manifest.read_text(encoding="utf-8").splitlines() == [
+        module.MANIFEST_HEADER,
+        "X1\t/v/one.mkv",
+        "X2\t/v/two.mkv",
+    ]
 
-    def test_a_file_inside_the_program_folder_is_recorded_relative(self, tmp_path: Path) -> None:
-        module = _ledger_module()
-        manifest = tmp_path / "archives" / "a.files.tsv"
-        media = tmp_path / "downloads" / "Videos" / "T [X1].mkv"
 
-        module.DownloadLedgerPP(None, str(manifest), str(tmp_path)).run(
-            {"id": "X1", "filepath": str(media)}
-        )
+def test_a_file_inside_the_program_folder_is_recorded_relative(self, tmp_path: Path) -> None:
+    module = _ledger_module()
+    manifest = tmp_path / "archives" / "a.files.tsv"
+    media = tmp_path / "downloads" / "Videos" / "T [X1].mkv"
 
-        assert manifest.read_text(encoding="utf-8").splitlines()[1] == (
-            "X1\t../downloads/Videos/T [X1].mkv"
-        )
+    module.DownloadLedgerPP(None, str(manifest), str(tmp_path)).run(
+        {"id": "X1", "filepath": str(media)}
+    )
 
-    def test_a_file_outside_the_program_folder_stays_absolute(self, tmp_path: Path) -> None:
-        module = _ledger_module()
-        app = tmp_path / "app"
-        manifest = app / "archives" / "a.files.tsv"
-        media = tmp_path / "elsewhere" / "T [X1].mkv"
+    assert manifest.read_text(encoding="utf-8").splitlines()[1] == (
+        "X1\t../downloads/Videos/T [X1].mkv"
+    )
 
-        module.DownloadLedgerPP(None, str(manifest), str(app)).run(
-            {"id": "X1", "filepath": str(media)}
-        )
 
-        assert manifest.read_text(encoding="utf-8").splitlines()[1] == f"X1\t{media}"
+def test_a_file_outside_the_program_folder_stays_absolute(self, tmp_path: Path) -> None:
+    module = _ledger_module()
+    app = tmp_path / "app"
+    manifest = app / "archives" / "a.files.tsv"
+    media = tmp_path / "elsewhere" / "T [X1].mkv"
 
-    def test_a_path_relpath_cannot_express_stays_absolute(self, tmp_path: Path, monkeypatch) -> None:
-        """Windows: a file on another drive than the program has no relative path."""
-        module = _ledger_module()
-        manifest = tmp_path / "archives" / "a.files.tsv"
-        media = tmp_path / "downloads" / "T [X1].mkv"
+    module.DownloadLedgerPP(None, str(manifest), str(app)).run({"id": "X1", "filepath": str(media)})
 
-        def no_relpath(*_a, **_k):
-            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+    assert manifest.read_text(encoding="utf-8").splitlines()[1] == f"X1\t{media}"
 
-        monkeypatch.setattr(module.os.path, "relpath", no_relpath)
-        module.DownloadLedgerPP(None, str(manifest), str(tmp_path)).run(
-            {"id": "X1", "filepath": str(media)}
-        )
 
-        assert manifest.read_text(encoding="utf-8").splitlines()[1] == f"X1\t{media}"
+def test_a_path_relpath_cannot_express_stays_absolute(self, tmp_path: Path, monkeypatch) -> None:
+    """Windows: a file on another drive than the program has no relative path."""
+    module = _ledger_module()
+    manifest = tmp_path / "archives" / "a.files.tsv"
+    media = tmp_path / "downloads" / "T [X1].mkv"
 
-    def test_an_old_manifest_gets_no_second_header(self, tmp_path: Path) -> None:
-        module = _ledger_module()
-        manifest = tmp_path / "a.files.tsv"
-        manifest.write_text("X0\t/v/zero.mkv\n", encoding="utf-8")
+    def no_relpath(*_a, **_k):
+        raise ValueError("path is on mount 'D:', start on mount 'C:'")
 
-        module.DownloadLedgerPP(None, str(manifest)).run({"id": "X1", "filepath": "/v/one.mkv"})
+    monkeypatch.setattr(module.os.path, "relpath", no_relpath)
+    module.DownloadLedgerPP(None, str(manifest), str(tmp_path)).run(
+        {"id": "X1", "filepath": str(media)}
+    )
 
-        assert manifest.read_text(encoding="utf-8").splitlines() == [
-            "X0\t/v/zero.mkv",
-            "X1\t/v/one.mkv",
-        ]
+    assert manifest.read_text(encoding="utf-8").splitlines()[1] == f"X1\t{media}"
+
+
+def test_an_old_manifest_gets_no_second_header(self, tmp_path: Path) -> None:
+    module = _ledger_module()
+    manifest = tmp_path / "a.files.tsv"
+    manifest.write_text("X0\t/v/zero.mkv\n", encoding="utf-8")
+
+    module.DownloadLedgerPP(None, str(manifest)).run({"id": "X1", "filepath": "/v/one.mkv"})
+
+    assert manifest.read_text(encoding="utf-8").splitlines() == [
+        "X0\t/v/zero.mkv",
+        "X1\t/v/one.mkv",
+    ]
 ```
 
 `tests/test_outcome.py` (read_manifest sınıfına):
 
 ```python
-    def test_relative_paths_resolve_against_the_manifest_folder(self, tmp_path: Path) -> None:
-        manifest = tmp_path / "archives" / "a.files.tsv"
-        manifest.parent.mkdir()
-        manifest.write_text(
-            "# ytdlp_app download manifest v2\nv1\t../downloads/T [v1].mkv\n", encoding="utf-8"
-        )
+def test_relative_paths_resolve_against_the_manifest_folder(self, tmp_path: Path) -> None:
+    manifest = tmp_path / "archives" / "a.files.tsv"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        "# ytdlp_app download manifest v2\nv1\t../downloads/T [v1].mkv\n", encoding="utf-8"
+    )
 
-        assert read_manifest(manifest) == {"v1": tmp_path / "archives" / "../downloads/T [v1].mkv"}
+    assert read_manifest(manifest) == {"v1": tmp_path / "archives" / "../downloads/T [v1].mkv"}
 
-    def test_old_absolute_and_new_relative_lines_mix(self, tmp_path: Path) -> None:
-        manifest = tmp_path / "archives" / "a.files.tsv"
-        manifest.parent.mkdir()
-        old = tmp_path / "old" / "a.mkv"
-        manifest.write_text(f"a\t{old}\nb\t../downloads/b.mkv\n", encoding="utf-8")
 
-        entries = read_manifest(manifest)
+def test_old_absolute_and_new_relative_lines_mix(self, tmp_path: Path) -> None:
+    manifest = tmp_path / "archives" / "a.files.tsv"
+    manifest.parent.mkdir()
+    old = tmp_path / "old" / "a.mkv"
+    manifest.write_text(f"a\t{old}\nb\t../downloads/b.mkv\n", encoding="utf-8")
 
-        assert entries["a"] == old
-        assert entries["b"] == tmp_path / "archives" / "../downloads/b.mkv"
+    entries = read_manifest(manifest)
 
-    def test_a_moved_program_folder_keeps_its_relative_records(self, tmp_path: Path) -> None:
-        """B05: the whole folder moved; the relative line still finds the file."""
-        moved = tmp_path / "moved"
-        manifest = moved / "archives" / "a.files.tsv"
-        media = moved / "downloads" / "T [v1].mkv"
-        media.parent.mkdir(parents=True)
-        media.write_bytes(b"x")
-        manifest.parent.mkdir(parents=True)
-        manifest.write_text("v1\t../downloads/T [v1].mkv\n", encoding="utf-8")
+    assert entries["a"] == old
+    assert entries["b"] == tmp_path / "archives" / "../downloads/b.mkv"
 
-        assert read_manifest(manifest)["v1"].resolve() == media.resolve()
+
+def test_a_moved_program_folder_keeps_its_relative_records(self, tmp_path: Path) -> None:
+    """B05: the whole folder moved; the relative line still finds the file."""
+    moved = tmp_path / "moved"
+    manifest = moved / "archives" / "a.files.tsv"
+    media = moved / "downloads" / "T [v1].mkv"
+    media.parent.mkdir(parents=True)
+    media.write_bytes(b"x")
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("v1\t../downloads/T [v1].mkv\n", encoding="utf-8")
+
+    assert read_manifest(manifest)["v1"].resolve() == media.resolve()
 ```
 
 `tests/test_yt_dlp.py`'ye:
 
 ```python
-    def test_the_program_folder_is_passed_to_the_ledger(self, tmp_path: Path) -> None:
-        value = ledger_args(tmp_path / "a.files.tsv", tmp_path / "app;x")[1]
-        assert value.endswith(";root=" + str(tmp_path / "app%3Bx"))
+def test_the_program_folder_is_passed_to_the_ledger(self, tmp_path: Path) -> None:
+    value = ledger_args(tmp_path / "a.files.tsv", tmp_path / "app;x")[1]
+    assert value.endswith(";root=" + str(tmp_path / "app%3Bx"))
 
-    def test_without_a_program_folder_there_is_no_root(self, tmp_path: Path) -> None:
-        assert ";root=" not in ledger_args(tmp_path / "a.files.tsv")[1]
+
+def test_without_a_program_folder_there_is_no_root(self, tmp_path: Path) -> None:
+    assert ";root=" not in ledger_args(tmp_path / "a.files.tsv")[1]
 ```
 
 - [ ] **Adım 2: Çalıştır, başarısızlığı gör.**
@@ -613,6 +618,7 @@ Eklenti (`DownloadLedgerPP`):
 
 ```python
 import os
+
 ...
 #: First line of a manifest this version creates. Lines are "<id>\t<path>"; a path inside
 #: the program folder is relative to the manifest's folder (so the folder can be moved),
@@ -709,7 +715,9 @@ def read_manifest(path: Path) -> dict[str, Path]:
 
 ```python
 def first_record(manifest: Path) -> str:
-    return next(l for l in manifest.read_text(encoding="utf-8").splitlines() if not l.startswith("#"))
+    return next(
+        l for l in manifest.read_text(encoding="utf-8").splitlines() if not l.startswith("#")
+    )
 ```
 
 Satır ~501'deki `lines` okuması da `#` satırlarını atlamalı. Değişikliğin nedeni commit mesajına yazılır.
@@ -760,72 +768,75 @@ class TestVideoIdFromUrl:
 `tests/test_outcome.py`: iki mevcut testin beklentisi bilerek değişir (inceleme B04: kimliği/yolu bilinmeyen kayıt "denetlenemedi" olarak sunulur):
 
 ```python
-    def test_an_old_record_without_manifest_entry_cannot_be_checked(self) -> None:
-        outcome = evaluate(
-            stage_codes=(0,),
-            archive_before={"a"},
-            archive_after={"a"},
-            manifest={},
-            expected_ids=["a"],
-        )
+def test_an_old_record_without_manifest_entry_cannot_be_checked(self) -> None:
+    outcome = evaluate(
+        stage_codes=(0,),
+        archive_before={"a"},
+        archive_after={"a"},
+        manifest={},
+        expected_ids=["a"],
+    )
 
-        assert (outcome.already_present, outcome.unverified) == (0, 1)
-        assert outcome.status is RunStatus.SUCCESS
+    assert (outcome.already_present, outcome.unverified) == (0, 1)
+    assert outcome.status is RunStatus.SUCCESS
 
-    def test_a_single_item_of_unknown_id_skipped_by_the_archive_is_unverified(self) -> None:
-        outcome = evaluate(
-            stage_codes=(0,),
-            archive_before={"a"},
-            archive_after={"a"},
-            manifest={},
-            expected_ids=None,
-        )
 
-        assert (outcome.completed, outcome.already_present, outcome.unverified) == (0, 0, 1)
-        assert outcome.status is RunStatus.SUCCESS
+def test_a_single_item_of_unknown_id_skipped_by_the_archive_is_unverified(self) -> None:
+    outcome = evaluate(
+        stage_codes=(0,),
+        archive_before={"a"},
+        archive_after={"a"},
+        manifest={},
+        expected_ids=None,
+    )
+
+    assert (outcome.completed, outcome.already_present, outcome.unverified) == (0, 0, 1)
+    assert outcome.status is RunStatus.SUCCESS
 ```
 
 Yeni testler:
 
 ```python
-    def test_a_single_video_rerun_whose_file_was_deleted_is_missing(self, tmp_path: Path) -> None:
-        """B04: the archive skipped it, but the recorded file is gone."""
-        outcome = evaluate(
-            stage_codes=(0,),
-            archive_before={"dQw4w9WgXcQ"},
-            archive_after={"dQw4w9WgXcQ"},
-            manifest={"dQw4w9WgXcQ": tmp_path / "T [dQw4w9WgXcQ].mp4"},
-            expected_ids=["dQw4w9WgXcQ"],
-        )
+def test_a_single_video_rerun_whose_file_was_deleted_is_missing(self, tmp_path: Path) -> None:
+    """B04: the archive skipped it, but the recorded file is gone."""
+    outcome = evaluate(
+        stage_codes=(0,),
+        archive_before={"dQw4w9WgXcQ"},
+        archive_after={"dQw4w9WgXcQ"},
+        manifest={"dQw4w9WgXcQ": tmp_path / "T [dQw4w9WgXcQ].mp4"},
+        expected_ids=["dQw4w9WgXcQ"],
+    )
 
-        assert outcome.missing == ("dQw4w9WgXcQ",)
-        assert outcome.already_present == 0
-        assert outcome.status is RunStatus.FAILED
+    assert outcome.missing == ("dQw4w9WgXcQ",)
+    assert outcome.already_present == 0
+    assert outcome.status is RunStatus.FAILED
 
-    def test_the_locator_decides_what_is_on_disk(self) -> None:
-        verdicts = {"a": EvidenceStatus.PRESENT, "b": EvidenceStatus.MISSING}
-        outcome = evaluate(
-            stage_codes=(0,),
-            archive_before={"a", "b", "c"},
-            archive_after={"a", "b", "c"},
-            manifest={},
-            expected_ids=["a", "b", "c"],
-            locate=lambda ident, _path: verdicts.get(ident, EvidenceStatus.UNVERIFIED),
-        )
 
-        assert (outcome.already_present, outcome.missing, outcome.unverified) == (1, ("b",), 1)
+def test_the_locator_decides_what_is_on_disk(self) -> None:
+    verdicts = {"a": EvidenceStatus.PRESENT, "b": EvidenceStatus.MISSING}
+    outcome = evaluate(
+        stage_codes=(0,),
+        archive_before={"a", "b", "c"},
+        archive_after={"a", "b", "c"},
+        manifest={},
+        expected_ids=["a", "b", "c"],
+        locate=lambda ident, _path: verdicts.get(ident, EvidenceStatus.UNVERIFIED),
+    )
 
-    def test_unverified_items_get_their_own_line(self) -> None:
-        lines = describe(RunOutcome(unverified=2))
-        assert ("info", t("outcome_unverified", count=2)) in lines
+    assert (outcome.already_present, outcome.missing, outcome.unverified) == (1, ("b",), 1)
+
+
+def test_unverified_items_get_their_own_line(self) -> None:
+    lines = describe(RunOutcome(unverified=2))
+    assert ("info", t("outcome_unverified", count=2)) in lines
 ```
 
 `tests/test_session_outcomes.py`: tek video, arşivde kayıtlı, manifestteki dosya silinmiş, yt-dlp 0 dönüyor. Bu oturum başarı mesajı vermemeli, eksik dosyayı söylemeli ve arşiv araçlarına yönlendirmeli. Testi dosyadaki mevcut tek-video yardımcılarıyla yaz (`ScriptedUI`, `Recorder(rc=0, archive_writes=[])`, arşive önceden `youtube dQw4w9WgXcQ` satırı ve manifestte silinmiş yol). Beklenenler:
 
 ```python
-        assert t("tasks_completed") not in ui.text()
-        assert "dQw4w9WgXcQ" in ui.text()          # outcome_missing_items lists it
-        assert t("archive_records_note") in ui.text()
+assert t("tasks_completed") not in ui.text()
+assert "dQw4w9WgXcQ" in ui.text()  # outcome_missing_items lists it
+assert t("archive_records_note") in ui.text()
 ```
 
 - [ ] **Adım 2: Çalıştır, başarısızlığı gör.**
