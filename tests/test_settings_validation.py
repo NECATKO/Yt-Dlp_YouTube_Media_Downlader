@@ -111,7 +111,7 @@ class TestRetries:
         assert args[args.index("--retries") + 1] == expected
         assert args[args.index("--fragment-retries") + 1] == expected
 
-    @pytest.mark.parametrize("bad", [-1, 2.5, True, "many", [], None, math.inf, 10**7])
+    @pytest.mark.parametrize("bad", [-1, 2.5, True, "many", [], None, math.inf, 10**7, "²"])
     def test_anything_else_falls_back_to_infinite(self, bad: object) -> None:
         settings, issues = load({"download": {"retries": bad}})
 

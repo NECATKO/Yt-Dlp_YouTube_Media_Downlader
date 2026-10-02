@@ -2,6 +2,7 @@
 
 import io
 import shutil
+import unicodedata
 
 import pytest
 
@@ -179,3 +180,90 @@ class TestPanelsFitTheTerminal:
         lines = capsys.readouterr().out.splitlines()
         assert max(visible_len(line) for line in lines) <= 36
         assert any("Two" in line for line in lines)
+
+
+def cells(text: str) -> int:
+    """Screen columns of a line, counted independently of the code under test."""
+    total = 0
+    for ch in strip_ansi(text):
+        if unicodedata.combining(ch) or ch in "‍️︎":
+            continue
+        total += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return total
+
+
+class TestWideCharacters:
+    """CJK, emoji and combining marks take 2, 2 and 0 columns, not one per character."""
+
+    def use_width(self, monkeypatch: pytest.MonkeyPatch, columns: int) -> None:
+        monkeypatch.setattr(
+            shutil, "get_terminal_size", lambda *_a, **_k: shutil.os.terminal_size((columns, 24))
+        )
+
+    def test_visible_len_counts_screen_cells(self) -> None:
+        assert visible_len("中文") == 4
+        assert visible_len("é") == 1
+        assert visible_len("🎵 ok") == 5
+        assert visible_len(f"{RED}中{RESET}") == 2
+
+    def test_a_cjk_panel_fits_a_40_column_terminal(self, monkeypatch, capsys, env) -> None:
+        self.use_width(monkeypatch, 40)
+
+        ConsoleUI().print_panel("中文測試標題" * 10, title="Video")
+
+        lines = capsys.readouterr().out.splitlines()
+        assert max(cells(line) for line in lines) <= 40
+
+    def test_an_emoji_and_cjk_title_is_shortened_to_fit(self, monkeypatch, capsys, env) -> None:
+        self.use_width(monkeypatch, 30)
+
+        ConsoleUI().print_panel("body", title="🎵 中文測試標題 " * 4)
+
+        lines = capsys.readouterr().out.splitlines()
+        assert max(cells(line) for line in lines) <= 30
+
+    def test_a_combining_mark_stays_with_its_letter_when_wrapping(self) -> None:
+        word = "é" * 30
+
+        lines = wrap_ansi(word, 7)
+
+        assert all(not line.startswith("́") for line in lines)
+        assert "".join(lines) == word
+
+    def test_a_menu_with_wide_options_fits(self, monkeypatch, capsys, env) -> None:
+        self.use_width(monkeypatch, 36)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        ConsoleUI().pick("選択してください", ["中文測試標題" * 4, "Two"])
+
+        assert max(cells(line) for line in capsys.readouterr().out.splitlines()) <= 36
+
+    def test_a_terminal_too_narrow_for_a_box_gets_plain_lines(
+        self, monkeypatch, capsys, env
+    ) -> None:
+        self.use_width(monkeypatch, 12)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "2")
+
+        ConsoleUI().print_panel("some text", title="T")
+        choice = ConsoleUI().pick("Pick", ["One", "Two"])
+
+        out = capsys.readouterr().out
+        assert choice == 2
+        assert not any(ch in out for ch in "╭╮╰╯│┌┐└┘")
+        assert "some text" in out and "1. One" in out
+
+
+class TestNumericInput:
+    """Input that looks numeric to str.isdigit() but is not a number (B15)."""
+
+    @pytest.mark.parametrize(
+        "odd", ["²", "9" * 5000, "-1", "1.5"], ids=["superscript", "huge", "negative", "decimal"]
+    )
+    def test_odd_input_is_an_invalid_choice_and_is_asked_again(
+        self, monkeypatch, capsys, odd: str
+    ) -> None:
+        answers = iter([odd, "2"])
+        monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+        assert ConsoleUI().pick("Pick", ["One", "Two"]) == 2
+        assert "1-2" in capsys.readouterr().out

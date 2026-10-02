@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import unicodedata
 from typing import Protocol
 
 from .i18n import t
@@ -22,18 +23,47 @@ _TOKEN_RE = re.compile(r"\x1b\[[0-9;]*m|.", re.DOTALL)
 #: Width assumed when the output is not a terminal (and COLUMNS is unset).
 _FALLBACK_COLUMNS = 100
 
-#: Never squeeze a panel narrower than this, however small the terminal reports.
+#: Below this many columns boxes are not drawn at all: the text is printed plain.
 _MIN_COLUMNS = 20
+
+#: Characters that join or modify the one before them and take no column of their own:
+#: the zero-width joiner of emoji sequences and the variation selectors.
+_ZERO_WIDTH = frozenset({"\u200b", "\u200c", "\u200d", "\u2060"}) | frozenset(
+    chr(c) for c in range(0xFE00, 0xFE10)
+)
+
+
+def cell_width(ch: str) -> int:
+    """How many terminal columns one character takes: 0, 1 or 2.
+
+    Combining marks and joiners take none, East Asian wide and full-width characters
+    (CJK, most emoji) take two, everything else one. Terminals differ on some emoji
+    sequences; this is the common reading.
+    """
+    if ch in _ZERO_WIDTH or unicodedata.combining(ch):
+        return 0
+    if unicodedata.category(ch) in ("Cc", "Cf"):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
 
 
 def visible_len(text: str) -> int:
-    """Return the on-screen width of a string, ignoring ANSI color codes."""
-    return len(_ANSI_RE.sub("", text))
+    """Return the on-screen width of a string in columns, ignoring ANSI color codes."""
+    return sum(cell_width(ch) for ch in _ANSI_RE.sub("", text))
+
+
+def _raw_columns() -> int:
+    return shutil.get_terminal_size(fallback=(_FALLBACK_COLUMNS, 24)).columns
 
 
 def terminal_columns() -> int:
-    """The width of the terminal in columns."""
-    return max(shutil.get_terminal_size(fallback=(_FALLBACK_COLUMNS, 24)).columns, _MIN_COLUMNS)
+    """The width of the terminal in columns (never below the narrowest box)."""
+    return max(_raw_columns(), _MIN_COLUMNS)
+
+
+def too_narrow_for_boxes() -> bool:
+    """Whether the terminal is too narrow to draw boxes in."""
+    return _raw_columns() < _MIN_COLUMNS
 
 
 def _is_code(token: str) -> bool:
@@ -41,7 +71,29 @@ def _is_code(token: str) -> bool:
 
 
 def _columns(tokens: list[str]) -> int:
-    return sum(1 for token in tokens if not _is_code(token))
+    return sum(cell_width(token) for token in tokens if not _is_code(token))
+
+
+def truncate_cells(text: str, limit: int) -> str:
+    """Plain text cut to at most ``limit`` columns, ending in "…" when it was cut.
+
+    Marks that combine with the last kept character stay with it.
+    """
+    plain = strip_ansi(text)
+    if visible_len(plain) <= limit:
+        return plain
+    kept: list[str] = []
+    used = 0
+    for ch in plain:
+        width = cell_width(ch)
+        if used + width > limit - 1:
+            if width == 0 and kept:
+                kept.append(ch)
+                continue
+            break
+        kept.append(ch)
+        used += width
+    return "".join(kept) + "…"
 
 
 def wrap_ansi(text: str, width: int) -> list[str]:
@@ -78,10 +130,12 @@ def wrap_ansi(text: str, width: int) -> list[str]:
             used = 0
             for token in word:
                 if not _is_code(token):
-                    if used == width:
+                    cells = cell_width(token)
+                    # A zero-width mark never starts a line: it stays with its letter.
+                    if cells and used + cells > width:
                         rows.append(chunk)
                         chunk, used = [], 0
-                    used += 1
+                    used += cells
                 chunk.append(token)
             row = chunk
         elif not row:
@@ -194,11 +248,18 @@ class ConsoleUI:
             title: Optional title for the panel.
             color: Color code for the border.
         """
+        if too_narrow_for_boxes():
+            # No room for a frame: plain lines read better than a broken box.
+            if title:
+                self.print(paint(strip_ansi(title), Colors.BOLD))
+            for line in text.split("\n"):
+                self.print(line)
+            return
         # The box spends 4 columns on its borders and padding; the rest is text.
         limit = terminal_columns() - 4
         lines = [wrapped for line in text.split("\n") for wrapped in wrap_ansi(line, limit)]
         if title and visible_len(title) > limit - 4:
-            title = strip_ansi(title)[: max(limit - 5, 1)] + "…"
+            title = truncate_cells(title, max(limit - 4, 2))
         title_len = visible_len(title) if title else 0
         width = max((visible_len(line) for line in lines), default=0)
         width = max(width, title_len + 4 if title else 0)
@@ -243,6 +304,14 @@ class ConsoleUI:
             raise ValueError("pick() requires at least one option")
 
         while True:
+            if too_narrow_for_boxes():
+                self.print(f"\n{paint(prompt, Colors.BOLD)}")
+                for i, opt in enumerate(options, start=1):
+                    self.print(f"{paint(f'{i}.', Colors.YELLOW)} {opt}")
+                n = self._read_choice(len(options))
+                if n is not None:
+                    return n
+                continue
             # The box has one column of border on each side plus a space of padding.
             avail = terminal_columns() - 2
             option_lines = []
@@ -280,14 +349,23 @@ class ConsoleUI:
 
             self.print(f"{Colors.CYAN}└{'─' * max_len}┘{Colors.RESET}")
 
-            ans = input(
-                self._plain(f"{Colors.GREEN}{t('prompt_select', max=len(options))}{Colors.RESET}")
-            ).strip()
-            if ans.isdigit():
-                n = int(ans)
-                if 1 <= n <= len(options):
-                    return n
-            self.print(f"{Colors.RED}{t('error_invalid_choice', max=len(options))}{Colors.RESET}")
+            n = self._read_choice(len(options))
+            if n is not None:
+                return n
+
+    def _read_choice(self, count: int) -> int | None:
+        """Read one answer to a menu: its number, or None after saying it was invalid."""
+        ans = input(self._plain(f"{Colors.GREEN}{t('prompt_select', max=count)}{Colors.RESET}"))
+        try:
+            # int() rather than str.isdigit(): "²" passes isdigit() and then int() fails,
+            # and a number too long to convert fails the same way.
+            n = int(ans.strip())
+        except ValueError:
+            n = 0
+        if 1 <= n <= count:
+            return n
+        self.print(f"{Colors.RED}{t('error_invalid_choice', max=count)}{Colors.RESET}")
+        return None
 
     def ask_text(self, prompt: str) -> str:
         """Ask the user for text input with colored prompt.

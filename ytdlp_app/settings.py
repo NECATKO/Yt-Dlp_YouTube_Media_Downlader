@@ -142,7 +142,11 @@ def _retries(
         if isinstance(value, int):
             number = float(value)
         elif isinstance(value, str) and value.strip().isdigit():
-            number = float(value.strip())
+            # isdigit() also passes "²", which is not a number: float() decides.
+            try:
+                number = float(value.strip())
+            except ValueError:
+                number = None
     if number is None or not 0 <= number <= MAX_RETRIES:
         _report(
             issues, path, f"expected 0-{MAX_RETRIES} or 'infinite', found {value!r}", "infinite"
