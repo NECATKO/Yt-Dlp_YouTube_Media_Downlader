@@ -283,6 +283,44 @@ class TestManifest:
 
         assert read_manifest(path) == {"x": Path("/ok.mkv")}
 
+    def test_comment_lines_are_skipped(self, tmp_path: Path) -> None:
+        path = tmp_path / "a.files.tsv"
+        path.write_text("# ytdlp_app download manifest v2\nx\t/ok.mkv\n", encoding="utf-8")
+
+        assert read_manifest(path) == {"x": Path("/ok.mkv")}
+
+    def test_relative_paths_resolve_against_the_manifest_folder(self, tmp_path: Path) -> None:
+        manifest = tmp_path / "archives" / "a.files.tsv"
+        manifest.parent.mkdir()
+        manifest.write_text(
+            "# ytdlp_app download manifest v2\nv1\t../downloads/T [v1].mkv\n", encoding="utf-8"
+        )
+
+        assert read_manifest(manifest) == {"v1": tmp_path / "archives" / "../downloads/T [v1].mkv"}
+
+    def test_old_absolute_and_new_relative_lines_mix(self, tmp_path: Path) -> None:
+        manifest = tmp_path / "archives" / "a.files.tsv"
+        manifest.parent.mkdir()
+        old = tmp_path / "old" / "a.mkv"
+        manifest.write_text(f"a\t{old}\nb\t../downloads/b.mkv\n", encoding="utf-8")
+
+        entries = read_manifest(manifest)
+
+        assert entries["a"] == old
+        assert entries["b"] == tmp_path / "archives" / "../downloads/b.mkv"
+
+    def test_a_moved_program_folder_keeps_its_relative_records(self, tmp_path: Path) -> None:
+        """The whole program folder moved; the relative line still finds the file."""
+        moved = tmp_path / "moved"
+        manifest = moved / "archives" / "a.files.tsv"
+        media = moved / "downloads" / "T [v1].mkv"
+        media.parent.mkdir(parents=True)
+        media.write_bytes(b"x")
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("v1\t../downloads/T [v1].mkv\n", encoding="utf-8")
+
+        assert read_manifest(manifest)["v1"].resolve() == media.resolve()
+
 
 class TestDescribe:
     def lines(self, outcome: RunOutcome) -> str:

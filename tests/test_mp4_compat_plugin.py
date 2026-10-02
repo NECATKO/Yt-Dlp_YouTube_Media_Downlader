@@ -116,8 +116,64 @@ class TestLedger:
         pp.run({"id": "X2", "filepath": "/v/two.mkv"})
 
         assert manifest.read_text(encoding="utf-8").splitlines() == [
+            module.MANIFEST_HEADER,
             "X1\t/v/one.mkv",
             "X2\t/v/two.mkv",
+        ]
+
+    def test_a_file_inside_the_program_folder_is_recorded_relative(self, tmp_path: Path) -> None:
+        module = _ledger_module()
+        manifest = tmp_path / "archives" / "a.files.tsv"
+        media = tmp_path / "downloads" / "Videos" / "T [X1].mkv"
+
+        module.DownloadLedgerPP(None, str(manifest), str(tmp_path)).run(
+            {"id": "X1", "filepath": str(media)}
+        )
+
+        assert manifest.read_text(encoding="utf-8").splitlines()[1] == (
+            "X1\t../downloads/Videos/T [X1].mkv"
+        )
+
+    def test_a_file_outside_the_program_folder_stays_absolute(self, tmp_path: Path) -> None:
+        module = _ledger_module()
+        app = tmp_path / "app"
+        manifest = app / "archives" / "a.files.tsv"
+        media = tmp_path / "elsewhere" / "T [X1].mkv"
+
+        module.DownloadLedgerPP(None, str(manifest), str(app)).run(
+            {"id": "X1", "filepath": str(media)}
+        )
+
+        assert manifest.read_text(encoding="utf-8").splitlines()[1] == f"X1\t{media}"
+
+    def test_a_path_relpath_cannot_express_stays_absolute(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Windows: a file on another drive than the program has no relative path."""
+        module = _ledger_module()
+        manifest = tmp_path / "archives" / "a.files.tsv"
+        media = tmp_path / "downloads" / "T [X1].mkv"
+
+        def no_relpath(*_args: Any, **_kwargs: Any) -> str:
+            raise ValueError("path is on mount 'D:', start on mount 'C:'")
+
+        monkeypatch.setattr(module.os.path, "relpath", no_relpath)
+        module.DownloadLedgerPP(None, str(manifest), str(tmp_path)).run(
+            {"id": "X1", "filepath": str(media)}
+        )
+
+        assert manifest.read_text(encoding="utf-8").splitlines()[1] == f"X1\t{media}"
+
+    def test_an_old_manifest_gets_no_second_header(self, tmp_path: Path) -> None:
+        module = _ledger_module()
+        manifest = tmp_path / "a.files.tsv"
+        manifest.write_text("X0\t/v/zero.mkv\n", encoding="utf-8")
+
+        module.DownloadLedgerPP(None, str(manifest)).run({"id": "X1", "filepath": "/v/one.mkv"})
+
+        assert manifest.read_text(encoding="utf-8").splitlines() == [
+            "X0\t/v/zero.mkv",
+            "X1\t/v/one.mkv",
         ]
 
     def test_decodes_the_escaped_path(self, tmp_path: Path) -> None:

@@ -87,13 +87,22 @@ def mp4_compat_args() -> list[str]:
     return ["--use-postprocessor", "Mp4Compat:when=post_process"]
 
 
-def ledger_args(manifest: Path) -> list[str]:
+def _encode_option(value: Path) -> str:
+    """Percent-encode ";" and "%": yt-dlp splits a post-processor option on ";"."""
+    return str(value).replace("%", "%25").replace(";", "%3B")
+
+
+def ledger_args(manifest: Path, root: Path | None = None) -> list[str]:
     """Arguments that append each finished item to a manifest (see DownloadLedger).
 
-    yt-dlp splits the option on ";", so the path is percent-encoded for ";" and "%".
+    yt-dlp splits the option on ";", so the paths are percent-encoded for ";" and "%".
+    With ``root`` (the program folder) files inside it are recorded relative to the
+    manifest, so moving the whole folder keeps the records valid.
     """
-    encoded = str(manifest).replace("%", "%25").replace(";", "%3B")
-    return ["--use-postprocessor", f"DownloadLedger:when=after_move;path={encoded}"]
+    value = f"DownloadLedger:when=after_move;path={_encode_option(manifest)}"
+    if root is not None:
+        value += f";root={_encode_option(root)}"
+    return ["--use-postprocessor", value]
 
 
 def _height_filter(max_height: int | None) -> str:
@@ -131,6 +140,7 @@ class CommandBuilder:
         is_playlist: bool,
         use_deno: bool = True,
         settings: AppSettings | None = None,
+        app_dir: Path | None = None,
     ) -> None:
         """Initialize the CommandBuilder.
 
@@ -142,12 +152,16 @@ class CommandBuilder:
             use_deno: Whether to use Deno as the JS runtime.
             settings: User settings driving retry, rate limit, proxy, audio
                 format and subtitle behavior. Defaults are used when omitted.
+            app_dir: The program folder. Files downloaded inside it are recorded in the
+                manifest relative to it, so the folder can be moved; None records
+                absolute paths.
         """
         self.url = url
         self.output_template = output_template
         self.archive_path = archive_path
         self.is_playlist = is_playlist
         self.use_deno = use_deno
+        self.app_dir = app_dir
         self.settings = settings if settings is not None else AppSettings()
         self.network = NetworkContext(self.settings, use_deno)
         # The cap chosen for this download, once the user has been asked. Until
@@ -221,7 +235,7 @@ class CommandBuilder:
             *self.build_post_args(mode),
             *plugin_dirs_args(),
             *(extra or []),
-            *ledger_args(self.manifest_path),
+            *ledger_args(self.manifest_path, self.app_dir),
             *self.common_args,
         ]
 
@@ -310,7 +324,7 @@ class CommandBuilder:
             *ARCHIVE_CONTENT_ARGS,
             *original_subs_args(),
             *archive_complete_args(),
-            *ledger_args(self.manifest_path),
+            *ledger_args(self.manifest_path, self.app_dir),
             *self.settings.archive.to_args(),
             *self.common_args,
         ]

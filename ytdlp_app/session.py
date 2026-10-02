@@ -546,6 +546,7 @@ class InteractiveSession:
             is_playlist=is_playlist,
             use_deno=deno_ok,
             settings=self.settings,
+            app_dir=self.paths.app_dir,
         )
 
         plan = DownloadPlan(

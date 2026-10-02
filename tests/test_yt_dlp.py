@@ -515,6 +515,27 @@ class TestCodecAndContainerContract:
         assert value == str(path).replace("%", "%25").replace(";", "%3B")
         assert unquote(value) == str(path)
 
+    def test_the_program_folder_is_passed_to_the_ledger(self, tmp_path: Path) -> None:
+        value = ledger_args(tmp_path / "a.files.tsv", tmp_path / "app;x")[1]
+
+        assert value.endswith(";root=" + str(tmp_path / "app%3Bx"))
+
+    def test_without_a_program_folder_there_is_no_root(self, tmp_path: Path) -> None:
+        assert ";root=" not in ledger_args(tmp_path / "a.files.tsv")[1]
+
+    def test_the_builder_hands_its_program_folder_to_every_ledger(self, tmp_path: Path) -> None:
+        builder = CommandBuilder(
+            url=URL,
+            output_template="%(title)s.%(ext)s",
+            archive_path=tmp_path / "archives" / "archive.txt",
+            is_playlist=False,
+            app_dir=tmp_path,
+        )
+
+        for cmd in (builder.build_mp4_quality_mkv(), builder.build_archive(), builder.build_mp3()):
+            ledger = next(a for a in cmd if a.startswith("DownloadLedger:"))
+            assert ledger.endswith(f";root={tmp_path}")
+
     def test_opting_in_to_external_config_removes_the_isolation(self, tmp_path: Path) -> None:
         settings = AppSettings()
         settings.download.allow_external_config = True

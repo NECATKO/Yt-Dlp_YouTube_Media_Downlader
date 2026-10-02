@@ -26,6 +26,7 @@ from tests.engine import (
     write_info,
     write_playlist,
 )
+from ytdlp_app.outcome import read_manifest
 from ytdlp_app.settings import AppSettings
 
 pytestmark = [requires_media_tools, pytest.mark.integration]
@@ -498,11 +499,28 @@ class TestDownloadManifest:
 
         assert run_engine(b.build_mp4_quality_mkv(), info).returncode == 0
 
-        lines = b.manifest_path.read_text(encoding="utf-8").splitlines()
-        assert len(lines) == 1
-        ident, path = lines[0].split("\t")
-        assert ident == "idAAAAAAAA1"
-        assert Path(path) == only(list(out.glob("*.mkv")))
+        assert read_manifest(b.manifest_path) == {"idAAAAAAAA1": only(list(out.glob("*.mkv")))}
+
+    def test_inside_the_program_folder_the_record_survives_moving_it(
+        self, workspace: tuple[Path, Path], tmp_path: Path
+    ) -> None:
+        src, out = workspace
+        media = make_media(src / "clip.mp4")
+        b = builder(out)
+        b.app_dir = tmp_path
+        info = write_info(src, item("idAAAAAAAA1", "Title", media))
+
+        assert run_engine(b.build_mp4_quality_mkv(), info).returncode == 0
+
+        record = b.manifest_path.read_text(encoding="utf-8").splitlines()[1]
+        assert not Path(record.split("\t")[1]).is_absolute()
+        moved = tmp_path.parent / (tmp_path.name + "-moved")
+        tmp_path.rename(moved)
+        manifest = moved / b.manifest_path.relative_to(tmp_path)
+        assert (
+            read_manifest(manifest)["idAAAAAAAA1"].resolve()
+            == only(list((moved / out.relative_to(tmp_path)).glob("*.mkv"))).resolve()
+        )
 
     def test_an_item_whose_post_processing_failed_is_not_recorded(
         self, workspace: tuple[Path, Path]
@@ -526,7 +544,7 @@ class TestDownloadManifest:
         info = write_info(src, item("idAAAAAAAA1", "Title", media))
 
         assert run_engine(b.build_mp4_quality_remux(), info).returncode == 0
-        assert b.manifest_path.read_text(encoding="utf-8").startswith("idAAAAAAAA1\t")
+        assert list(read_manifest(b.manifest_path)) == ["idAAAAAAAA1"]
 
 
 class TestConfigIsolation:
@@ -713,7 +731,7 @@ class TestAudioMode:
         final = only(list(out.iterdir()))
         assert final.name == f"Song [idAAAAAAAA1]{suffix}"
         assert codecs(final)["audio"] == codec
-        assert b.manifest_path.read_text(encoding="utf-8").split("\t")[0] == "idAAAAAAAA1"
+        assert list(read_manifest(b.manifest_path)) == ["idAAAAAAAA1"]
         assert archive_ids(b.archive_path) == ["idAAAAAAAA1"]
 
     def test_two_songs_with_one_title_are_two_files(self, workspace: tuple[Path, Path]) -> None:

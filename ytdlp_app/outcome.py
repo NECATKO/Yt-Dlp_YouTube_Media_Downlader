@@ -95,16 +95,24 @@ class StageReport:
 
 
 def read_manifest(path: Path) -> dict[str, Path]:
-    """Read a download manifest: ``<id><TAB><final path>`` lines, the last per id wins."""
+    """Read a download manifest: ``<id><TAB><path>`` lines, the last per id wins.
+
+    ``#`` lines are comments (the format header). A relative path is relative to the
+    manifest's folder (a file inside the program folder); an absolute one is used as is.
+    Manifests written before relative paths existed hold absolute paths only.
+    """
     entries: dict[str, Path] = {}
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return entries
     for line in text.splitlines():
+        if line.startswith("#"):
+            continue
         ident, sep, file = line.partition("\t")
         if sep and ident.strip() and file.strip():
-            entries[ident.strip()] = Path(file.strip())
+            recorded = Path(file.strip())
+            entries[ident.strip()] = recorded if recorded.is_absolute() else path.parent / recorded
     return entries
 
 
