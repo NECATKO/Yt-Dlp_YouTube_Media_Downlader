@@ -174,17 +174,25 @@ portable_install() {
 # macOS: system installation (unchanged behavior)
 # ==============================================================================
 
-check_python() {
-    if command -v python3 &> /dev/null; then
-        local version major minor
-        version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-        major=$(echo "$version" | cut -d. -f1)
-        minor=$(echo "$version" | cut -d. -f2)
-        if [[ $major -ge 3 && $minor -ge 11 ]]; then
-            echo -e "${GREEN}Python $version found${NC}"
+# The interpreter the .venv is made with, once found.
+PYTHON_BIN=""
+
+# Whether $1 runs and is Python 3.11 or newer (compared by Python itself, so 4.0 passes).
+python_ok() {
+    "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' &> /dev/null
+}
+
+# The first Python 3.11+ on the PATH, versioned names first: Homebrew links python3.12 and
+# friends onto the PATH, while "python3" may still be an older system or python.org one.
+find_python() {
+    local candidate path
+    for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
+        path="$(command -v "$candidate" 2> /dev/null)" || continue
+        if python_ok "$path"; then
+            PYTHON_BIN="$path"
             return 0
         fi
-    fi
+    done
     return 1
 }
 
@@ -197,12 +205,16 @@ require_brew() {
 }
 
 macos_install() {
-    if ! check_python; then
+    if ! find_python; then
         echo -e "${YELLOW}Installing Python 3.11+...${NC}"
         require_brew
         brew install python@3.12
-        check_python || die "Failed to install Python 3.11+"
+        # Use the interpreter brew just installed, by its own path: installing it does not
+        # change which "python3" comes first on the PATH.
+        PYTHON_BIN="$(brew --prefix python@3.12)/bin/python3.12"
+        python_ok "$PYTHON_BIN" || die "Failed to install Python 3.11+"
     fi
+    echo -e "${GREEN}Using Python: $PYTHON_BIN${NC}"
 
     if command -v ffmpeg &> /dev/null; then
         echo -e "${GREEN}ffmpeg already installed${NC}"
@@ -222,7 +234,7 @@ macos_install() {
 
     echo -e "${YELLOW}Creating virtual environment...${NC}"
     if [[ ! -d ".venv" ]]; then
-        python3 -m venv .venv
+        "$PYTHON_BIN" -m venv .venv
     fi
     .venv/bin/pip install --upgrade pip
     .venv/bin/pip install -e .
