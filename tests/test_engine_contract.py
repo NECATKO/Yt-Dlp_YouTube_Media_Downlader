@@ -17,6 +17,7 @@ from tests.engine import (
     archive_ids,
     builder,
     codecs,
+    engine_has_module,
     item,
     make_media,
     only,
@@ -708,7 +709,65 @@ class TestOptionalPartsInArchiveMode:
         assert not list(out.rglob("*.mkv"))
 
 
+FFMPEG_COVER = (
+    "ffmpeg",
+    "-v",
+    "error",
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=blue:s=32x32",
+    "-frames:v",
+    "1",
+)
+
+
+def cover(path: Path) -> Path:
+    """A small valid PNG to serve as a video's thumbnail."""
+    import subprocess  # noqa: PLC0415
+
+    subprocess.run(
+        [*FFMPEG_COVER, str(path)],
+        check=True,
+    )
+    return path
+
+
+#: Formats whose cover yt-dlp embeds with mutagen (mp3 goes through ffmpeg, wav has none).
+_NEEDS_MUTAGEN = {"m4a", "opus", "flac", "best"}
+
+
 class TestAudioMode:
+    @pytest.mark.parametrize("fmt", ["mp3", "m4a", "opus", "flac", "wav", "best"])
+    def test_every_format_works_with_the_default_cover_settings(
+        self, workspace: tuple[Path, Path], fmt: str
+    ) -> None:
+        """Default metadata and cover settings, a real thumbnail: nothing may fail (B03)."""
+        if fmt in _NEEDS_MUTAGEN and not engine_has_module("mutagen"):
+            pytest.skip("this engine has no mutagen (an incomplete install, not the app)")
+        src, out = workspace
+        media = make_media(src / "clip.mp4")
+        thumb = cover(src / "cover.png")
+        settings = AppSettings()
+        settings.audio.audio_format = fmt
+        b = builder(out, settings)
+        b.output_template = str(out / settings.output.single_audio_template)
+        info = write_info(
+            src,
+            item("idAAAAAAAA1", "Song", media, extra={"thumbnails": [{"url": thumb.as_uri()}]}),
+        )
+
+        result = run_engine(b.build_mp3(), info)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert archive_ids(b.archive_path) == ["idAAAAAAAA1"]
+        names = sorted(p.name for p in out.iterdir())
+        if fmt == "wav":
+            assert names == ["Song [idAAAAAAAA1].jpg", "Song [idAAAAAAAA1].wav"]
+        else:
+            assert len(names) == 1
+
     @pytest.mark.parametrize(
         ("fmt", "suffix", "codec"),
         [("mp3", ".mp3", "mp3"), ("opus", ".opus", "opus"), ("wav", ".wav", "pcm_s16le")],

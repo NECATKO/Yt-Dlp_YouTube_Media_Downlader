@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from ytdlp_app.config import load_settings
-from ytdlp_app.i18n import get_language, set_language
+from ytdlp_app.i18n import get_language, set_language, t
 from ytdlp_app.models import UserConfig
 from ytdlp_app.settings import AppSettings
 from ytdlp_app.settings_menu import AUDIO_FORMATS, SettingsMenu
@@ -302,6 +302,18 @@ class TestAudioSettings:
         assert settings.audio.audio_quality == 5
         assert settings.audio.embed_thumbnail is False
         assert settings.audio.embed_metadata is True
+
+    def test_wav_with_a_cover_says_the_cover_is_kept_beside_it(
+        self, config_file: Path, user_config: UserConfig
+    ) -> None:
+        settings = AppSettings()
+        wav = AUDIO_FORMATS.index("wav") + 1
+        ui = FakeUI(picks=[5, wav, 1, 1, BACK], texts=[""])
+
+        _menu(ui, config_file, user_config, settings=settings).run()
+
+        assert settings.audio.audio_format == "wav"
+        assert any(t("audio_wav_cover_note") in line for line in ui.printed)
 
     def test_quality_is_bounded(self, config_file: Path, user_config: UserConfig) -> None:
         settings = AppSettings()

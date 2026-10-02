@@ -490,11 +490,18 @@ class AudioSettings:
             args.extend(["--embed-metadata", "--add-metadata"])
 
         if self.embed_thumbnail:
-            args.append("--embed-thumbnail")
+            # WAV has no place for a cover, and asking yt-dlp to embed one there fails the
+            # whole item; the cover is kept as an image beside the file instead.
+            args.append("--write-thumbnail" if self.cover_kept_beside else "--embed-thumbnail")
             if self.convert_thumbnails:
                 args.extend(["--convert-thumbnails", self.convert_thumbnails])
 
         return args
+
+    @property
+    def cover_kept_beside(self) -> bool:
+        """The cover is wanted but cannot be embedded in this format (WAV)."""
+        return self.embed_thumbnail and self.audio_format == "wav"
 
     @classmethod
     def from_dict(

@@ -82,6 +82,7 @@
   "settings_value_prompt": "Yeni değer: ",
   "settings_invalid_number": "{min} ile {max} arasında bir tam sayı girin.",
   "settings_invalid_value": "\"{value}\" burada kullanılamaz. {hint}",
+  "audio_wav_cover_note": "WAV kapak resmi taşıyamaz: kapak, ses dosyasının yanına ayrı bir .jpg olarak kaydedilir.",
   "settings_invalid_seconds": "0 ile {max} arasında bir saniye değeri girin (örneğin 1.5).",
   "settings_dir_error": "Bu klasör oluşturulamadı: {error}",
   "settings_proxy": "Vekil sunucu (proxy)",

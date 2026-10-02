@@ -184,6 +184,17 @@ def builder(folder: Path, settings: Any = None, *, is_playlist: bool = False) ->
     )
 
 
+def engine_has_module(name: str) -> bool:
+    """Whether the Python that runs yt-dlp in these tests can import ``name``."""
+    from ytdlp_app.exec import resolve_program  # noqa: PLC0415
+
+    program = resolve_program(["yt-dlp"])
+    if len(program) < 3 or program[1:3] != ["-m", "yt_dlp"]:
+        return False
+    found = subprocess.run([program[0], "-c", f"import {name}"], capture_output=True, check=False)
+    return found.returncode == 0
+
+
 def run_engine(
     cmd: list[str],
     info_file: Path,

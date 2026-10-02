@@ -82,6 +82,7 @@
   "settings_value_prompt": "New value: ",
   "settings_invalid_number": "Enter a whole number between {min} and {max}.",
   "settings_invalid_value": "\"{value}\" is not usable here. {hint}",
+  "audio_wav_cover_note": "WAV cannot hold a cover image: it is saved as a separate .jpg next to the audio file.",
   "settings_invalid_seconds": "Enter a number of seconds between 0 and {max} (for example 1.5).",
   "settings_dir_error": "That folder could not be created: {error}",
   "settings_proxy": "Proxy",

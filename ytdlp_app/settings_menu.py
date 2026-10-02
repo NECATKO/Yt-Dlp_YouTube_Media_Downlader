@@ -409,6 +409,8 @@ class SettingsMenu:
 
         audio.embed_thumbnail = self._ask_bool(t("settings_embed_thumbnail"), audio.embed_thumbnail)
         audio.embed_metadata = self._ask_bool(t("settings_embed_metadata"), audio.embed_metadata)
+        if audio.cover_kept_beside:
+            self.ui.print(paint(t("audio_wav_cover_note"), Colors.YELLOW))
 
         self._persist()
 

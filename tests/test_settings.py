@@ -85,6 +85,27 @@ class TestAudioSettings:
         assert "--embed-metadata" in args
         assert "--embed-thumbnail" in args
 
+    def test_wav_keeps_the_cover_beside_the_file(self) -> None:
+        """WAV cannot carry a cover; asking yt-dlp to embed one fails the item."""
+        args = AudioSettings(audio_format="wav").to_args()
+
+        assert "--embed-thumbnail" not in args
+        assert "--write-thumbnail" in args
+        assert args[args.index("--convert-thumbnails") + 1] == "jpg"
+
+    @pytest.mark.parametrize("fmt", ["mp3", "m4a", "opus", "flac", "best"])
+    def test_other_formats_still_embed_the_cover(self, fmt: str) -> None:
+        args = AudioSettings(audio_format=fmt).to_args()
+
+        assert "--embed-thumbnail" in args
+        assert "--write-thumbnail" not in args
+
+    def test_wav_without_a_cover_writes_none(self) -> None:
+        args = AudioSettings(audio_format="wav", embed_thumbnail=False).to_args()
+
+        assert "--write-thumbnail" not in args
+        assert "--embed-thumbnail" not in args
+
 
 class TestVideoSettings:
     """Tests for VideoSettings dataclass."""

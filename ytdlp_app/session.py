@@ -373,6 +373,8 @@ class InteractiveSession:
         )
         mode = _MODE_BY_CHOICE[ModeChoice(mode_choice)]
         archive_mode = mode == DownloadMode.ARCHIVE
+        if mode == DownloadMode.AUDIO and self.settings.audio.cover_kept_beside:
+            self.ui.print(paint(t("audio_wav_cover_note"), Colors.YELLOW))
 
         # 3) Pre-flight checks
         deno_ok = deno_available()

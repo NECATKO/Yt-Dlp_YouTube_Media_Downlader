@@ -186,3 +186,14 @@ class TestSessionExitCode:
         )
 
         assert session.run_loop() == 130
+
+
+def test_audio_mode_in_wav_with_a_cover_says_where_the_cover_goes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    session, ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+    session.settings.audio.audio_format = "wav"
+
+    session._process_one_cycle()
+
+    assert t("audio_wav_cover_note") in "\n".join(ui.messages)
