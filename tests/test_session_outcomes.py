@@ -116,3 +116,73 @@ def test_a_missing_file_is_not_reported_as_a_failed_download(monkeypatch, tmp_pa
     text = "\n".join(ui.messages)
     assert t("download_failed") not in text
     assert t("archive_records_note") in text
+
+
+def urls(*answers):
+    """An _ask_url stand-in: each answer in turn (None = empty URL); an exception is raised.
+
+    Running out of answers is EOF, which ends the session instead of looping on an error.
+    """
+    queue = list(answers)
+
+    def ask() -> str | None:
+        if not queue:
+            raise EOFError
+        answer = queue.pop(0)
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
+
+    return ask
+
+
+class TestSessionExitCode:
+    """What run_loop returns describes the whole session, not its last cycle."""
+
+    def test_a_clean_session_ends_with_0(self, monkeypatch, tmp_path: Path) -> None:
+        session, _ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+        monkeypatch.setattr(session, "_ask_url", urls(None))
+
+        assert session.run_loop() == 0
+
+    def test_a_failure_earlier_in_the_session_is_not_forgotten(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        session, _ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+        monkeypatch.setattr(session, "_ask_url", urls("https://youtu.be/dQw4w9WgXcQ", None))
+
+        assert session.run_loop() == 1
+
+    def test_a_later_success_does_not_wipe_an_earlier_failure(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        session, _ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+        reports = iter([StageReport((1,)), StageReport((0,))])
+        monkeypatch.setattr(
+            session,
+            "_ask_url",
+            urls("https://youtu.be/dQw4w9WgXcQ", "https://youtu.be/aaaaaaaaaaa", None),
+        )
+        archive = tmp_path / "archives" / "single_audios_mp3.txt"
+        archive.parent.mkdir(parents=True)
+
+        def archived(*args):
+            archive.write_text("youtube aaaaaaaaaaa\n", encoding="utf-8")
+            return next(reports)
+
+        monkeypatch.setattr(session, "_execute_download", archived)
+        answers = {
+            t("prompt_mode"): int(ModeChoice.AUDIO),
+            t("prompt_next"): int(ActionChoice.DOWNLOAD_ANOTHER),
+        }
+        monkeypatch.setattr(_ui, "pick", lambda prompt, _options: answers[prompt])
+
+        assert session.run_loop() == 1
+
+    def test_ctrl_c_is_130_even_after_a_failure(self, monkeypatch, tmp_path: Path) -> None:
+        session, _ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
+        monkeypatch.setattr(
+            session, "_ask_url", urls("https://youtu.be/dQw4w9WgXcQ", KeyboardInterrupt())
+        )
+
+        assert session.run_loop() == 130

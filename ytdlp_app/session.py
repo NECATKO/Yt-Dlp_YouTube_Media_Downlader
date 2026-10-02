@@ -132,6 +132,9 @@ class InteractiveSession:
         self.ui = ui
         self.config = config
         self.paths = paths
+        # Whether any cycle of this session failed or left items undone. A later clean
+        # cycle does not undo it: the exit code describes the whole session.
+        self.had_failure = False
         self.settings = settings if settings is not None else AppSettings()
         self.cfg = cfg if cfg is not None else {}
         self.sink = sink
@@ -223,6 +226,7 @@ class InteractiveSession:
 
     def _stop_after_ban(self) -> CycleOutcome:
         """Report a ban and let the user choose between exiting and a new URL."""
+        self.had_failure = True
         self.report_ban()
         if self.ui.prompt_exit_on_failure():
             return CycleOutcome.EXIT_FAILURE
@@ -281,7 +285,9 @@ class InteractiveSession:
         """Run the main interactive loop.
 
         Returns:
-            Exit code (0 on a clean exit, 1 if the session ended on an error).
+            The session's exit code: 0 when every cycle went well, 1 when any cycle
+            failed or left items undone (even if a later one succeeded), 130 when the
+            user cancelled.
         """
         while True:
             # A cancel belongs to the cycle it was given in.
@@ -291,6 +297,8 @@ class InteractiveSession:
             # the URL prompt when the user asks to keep going.
             try:
                 outcome = self._process_one_cycle()
+                if outcome == CycleOutcome.EXIT_SUCCESS and self.had_failure:
+                    return int(CycleOutcome.EXIT_FAILURE)
                 if outcome != CycleOutcome.CONTINUE:
                     return int(outcome)
             except (KeyboardInterrupt, EOFError):
@@ -300,6 +308,7 @@ class InteractiveSession:
                 self.ui.print(f"\n>>> {t('status_cancelled')} (Ctrl+C).")
                 return int(CycleOutcome.INTERRUPTED)
             except Exception as ex:
+                self.had_failure = True
                 log_error(self.log_path, t("error_unexpected"), ex)
                 self.ui.print(t("error_check_logs"))
                 if self.handle_error(self.log_path):
@@ -485,6 +494,7 @@ class InteractiveSession:
                 # YouTube is already blocking us; the guard has logged it.
                 return self._stop_after_ban()
             if guarded.status is ListingStatus.FAILED and not archive_mode:
+                self.had_failure = True
                 self.ui.print(f"{t('playlist_fetch_failed')}\n{redact_secrets(guarded.error)}\n")
                 if self.ui.prompt_exit_on_failure():
                     return CycleOutcome.EXIT_FAILURE
@@ -632,6 +642,7 @@ class InteractiveSession:
         if status is RunStatus.BANNED:
             return self._stop_after_ban()
         if status is RunStatus.FAILED:
+            self.had_failure = True
             self._print_outcome(outcome)
             if outcome.missing:
                 # Recorded as done, file gone: only the archive tools bring it back.
@@ -658,6 +669,8 @@ class InteractiveSession:
             self.ui.print(paint(t("archive_records_note"), Colors.CYAN))
 
         partial = status is RunStatus.PARTIAL
+        if partial:
+            self.had_failure = True
         next_action = self.ui.pick(
             t("prompt_next"),
             [
