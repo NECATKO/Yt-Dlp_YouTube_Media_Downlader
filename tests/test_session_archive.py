@@ -1,6 +1,7 @@
 """Session-level tests for archive mode: the right command, the right archive
 file, no extra traffic, and a clear stop when YouTube starts blocking."""
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -212,6 +213,170 @@ class TestArchiveDownload:
         assert t("estimate_unavailable") in ui.text()
 
 
+TAB_URL = CHANNEL_URL + "/videos"
+
+
+def _video(ident: str) -> dict[str, Any]:
+    return {
+        "_type": "url",
+        "ie_key": "Youtube",
+        "id": ident,
+        "duration": 60,
+        "url": f"https://www.youtube.com/watch?v={ident}",
+        "title": ident,
+    }
+
+
+def _whole_channel_json() -> str:
+    """yt-dlp's flat listing of a bare channel URL: each tab a nested, filled playlist."""
+    tabs = {
+        "videos": ["vid00000001", "vid00000002"],
+        "shorts": ["sht00000001"],
+        "streams": ["liv00000001"],
+    }
+    return json.dumps(
+        {
+            "_type": "playlist",
+            "id": CHANNEL_ID,
+            "channel_id": CHANNEL_ID,
+            "entries": [
+                {"_type": "playlist", "id": f"{tab}-tab", "entries": [_video(i) for i in ids]}
+                for tab, ids in tabs.items()
+            ],
+        }
+    )
+
+
+class TestArchiveChannelScope:
+    """D01: archiving a channel tab URL archives the whole channel, as README says."""
+
+    def test_a_tab_url_is_listed_and_downloaded_as_the_whole_channel(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths
+    ) -> None:
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
+        runner = Recorder()
+        listed: list[str] = []
+
+        def fake_listing(url: str, *_args: Any) -> PlaylistListing:
+            listed.append(url)
+            return PlaylistListing(entries=[], channel_id=CHANNEL_ID)
+
+        monkeypatch.setattr(session_module, "fetch_listing", fake_listing)
+        session = _session(monkeypatch, tmp_path, paths, ui, TAB_URL, runner)
+
+        assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
+
+        assert listed == [CHANNEL_URL]
+        (call,) = runner.calls
+        assert call["cmd"][-1] == CHANNEL_URL
+        assert TAB_URL not in call["cmd"]
+        assert call["cmd"][call["cmd"].index("--download-archive") + 1] == str(
+            paths.archives_dir / f"channel_{CHANNEL_ID}_archive.txt"
+        )
+        # The user is told, and the log keeps both addresses.
+        assert t("archive_channel_scope", entered=TAB_URL, effective=CHANNEL_URL) in ui.text()
+        assert session.log_path is not None
+        log = session.log_path.read_text(encoding="utf-8")
+        assert f"entered_url={TAB_URL}" in log
+        assert f"url={CHANNEL_URL}\n" in log
+        assert t("prompt_playlist") not in ui.prompts
+
+    def test_every_tab_of_the_listing_is_expected_from_the_run(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths
+    ) -> None:
+        ui = ScriptedUI([ARCHIVE, 1, 1, EXIT])
+        all_ids = ["vid00000001", "vid00000002", "sht00000001", "liv00000001"]
+        runner = Recorder(archive_writes=all_ids)
+        listing_cmds: list[list[str]] = []
+        expected: list[list[str] | None] = []
+        real_evaluate = session_module.evaluate
+
+        def fake_capture(cmd: list[str], **_kwargs: Any) -> tuple[int, str, str]:
+            listing_cmds.append(cmd)
+            return 0, _whole_channel_json(), ""
+
+        def spy_evaluate(**kwargs: Any) -> Any:
+            expected.append(kwargs["expected_ids"])
+            return real_evaluate(**kwargs)
+
+        monkeypatch.setattr(session_module, "run_capture", fake_capture)
+        monkeypatch.setattr(session_module, "evaluate", spy_evaluate)
+        session = _session(monkeypatch, tmp_path, paths, ui, TAB_URL + "?si=share", runner)
+
+        session._process_one_cycle()
+
+        (listing_cmd,) = listing_cmds
+        assert CHANNEL_URL in listing_cmd
+        assert runner.calls[0]["cmd"][-1] == CHANNEL_URL
+        assert expected == [all_ids]
+
+    def test_a_listing_failure_still_keys_the_channel_and_downloads_it_whole(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths
+    ) -> None:
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
+        runner = Recorder()
+
+        def failing_listing(*_args: Any) -> PlaylistListing:
+            raise PlaylistError("returncode=1\nstderr:\nERROR: Unable to download webpage")
+
+        monkeypatch.setattr(session_module, "fetch_listing", failing_listing)
+        session = _session(monkeypatch, tmp_path, paths, ui, TAB_URL, runner)
+
+        session._process_one_cycle()
+
+        cmd = runner.calls[0]["cmd"]
+        assert cmd[-1] == CHANNEL_URL
+        assert cmd[cmd.index("--download-archive") + 1] == str(
+            paths.archives_dir / "channel_ChannelHandle_archive.txt"
+        )
+
+    def test_the_bare_channel_url_is_used_as_is_without_a_notice(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths
+    ) -> None:
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
+        runner = Recorder()
+        monkeypatch.setattr(
+            session_module, "fetch_listing", lambda *_a: PlaylistListing([], CHANNEL_ID)
+        )
+        session = _session(monkeypatch, tmp_path, paths, ui, CHANNEL_URL, runner)
+
+        session._process_one_cycle()
+
+        assert runner.calls[0]["cmd"][-1] == CHANNEL_URL
+        assert "entered_url=" not in (session.log_path or Path()).read_text(encoding="utf-8")
+
+    def test_the_live_address_stays_one_video(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths
+    ) -> None:
+        ui = ScriptedUI([ARCHIVE, 1, EXIT])
+        runner = Recorder()
+        monkeypatch.setattr(session_module, "fetch_listing", _forbidden)
+        live = CHANNEL_URL + "/live"
+        session = _session(monkeypatch, tmp_path, paths, ui, live, runner)
+
+        session._process_one_cycle()
+
+        cmd = runner.calls[0]["cmd"]
+        assert cmd[-1] == live
+        assert "--no-playlist" in cmd
+
+    def test_a_ban_while_listing_the_widened_channel_stops_before_downloading(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths
+    ) -> None:
+        ui = ScriptedUI([ARCHIVE], exit_on_failure=True)
+        runner = Recorder()
+
+        def banned_listing(url: str, *_args: Any) -> PlaylistListing:
+            assert url == CHANNEL_URL
+            raise PlaylistError("returncode=1\nstderr:\nERROR: HTTP Error 429: Too Many Requests")
+
+        monkeypatch.setattr(session_module, "fetch_listing", banned_listing)
+        session = _session(monkeypatch, tmp_path, paths, ui, TAB_URL, runner)
+
+        assert session._process_one_cycle() == CycleOutcome.EXIT_FAILURE
+        assert runner.calls == []
+
+
 class TestBanProtection:
     def test_ban_during_download_explains_how_to_resume(
         self, monkeypatch, tmp_path: Path, paths: AppPaths
@@ -281,6 +446,25 @@ class TestRegularModesUnchanged:
         (call,) = runner.calls
         assert call["stop_on_ban"] is False
         assert "--write-info-json" not in call["cmd"]
+
+    def test_an_mp4_tab_url_keeps_its_tab(
+        self, monkeypatch, tmp_path: Path, paths: AppPaths
+    ) -> None:
+        ui = ScriptedUI([int(ModeChoice.VIDEO), 1, 2, 1, 4, EXIT])
+        runner = Recorder()
+        session = _session(monkeypatch, tmp_path, paths, ui, TAB_URL, runner)
+        fetched: list[str] = []
+        monkeypatch.setattr(
+            session_module,
+            "fetch_listing",
+            lambda url, *_args: fetched.append(url) or PlaylistListing([], None),
+        )
+
+        session._process_one_cycle()
+
+        assert fetched == [TAB_URL]
+        assert runner.calls[0]["cmd"][-1] == TAB_URL
+        assert t("archive_channel_scope", entered=TAB_URL, effective=CHANNEL_URL) not in ui.text()
 
 
 class TestImpersonationWarning:

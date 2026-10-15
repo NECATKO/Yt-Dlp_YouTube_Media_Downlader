@@ -11,7 +11,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 from .exceptions import PlaylistError
 from .i18n import t
@@ -158,6 +158,26 @@ def is_channel_url(url: str) -> bool:
     if not is_youtube_host(url):
         return False
     return bool(_CHANNEL_URL_PATTERN.match(urlparse(url).path))
+
+
+def channel_root_url(url: str) -> str | None:
+    """The whole channel a channel or channel tab URL belongs to, or None.
+
+    yt-dlp lists only the tab a tab URL names, but the channel URL as all of the Videos,
+    Shorts and Live tabs, so archive mode, which keeps a whole channel, widens a tab to
+    its channel. The query (tracking or sort parameters) and fragment are dropped. None
+    for anything that is not a channel or one of its video-listing tabs (see
+    is_channel_url): ``/live``, a single video, a playlist, other sites, and a channel URL
+    carrying ``list=``, which names a playlist rather than the channel.
+    """
+    if not is_channel_url(url):
+        return None
+    parsed = urlparse(url)
+    if "list" in parse_qs(parsed.query):
+        return None
+    parts = [p for p in parsed.path.split("/") if p]
+    root = parts[:1] if parts[0].startswith("@") else parts[:2]
+    return urlunparse((parsed.scheme, parsed.netloc, "/" + "/".join(root), "", "", ""))
 
 
 def channel_id_from_url(url: str) -> str | None:

@@ -9,6 +9,7 @@ import pytest
 from ytdlp_app.exceptions import PlaylistError
 from ytdlp_app.playlist import (
     channel_id_from_url,
+    channel_root_url,
     fetch_listing,
     fetch_playlist_entries,
     get_playlist_id,
@@ -173,6 +174,69 @@ class TestIsChannelUrl:
     def test_every_channel_url_is_also_a_playlist_url(self) -> None:
         """The session relies on this to download with --yes-playlist."""
         assert is_playlist_url("https://www.youtube.com/@ChannelHandle/videos") is True
+
+
+class TestChannelRootUrl:
+    """Archive mode keeps a whole channel: a tab URL is widened to the channel (D01)."""
+
+    @pytest.mark.parametrize(
+        ("url", "root"),
+        [
+            ("https://www.youtube.com/@Handle/videos", "https://www.youtube.com/@Handle"),
+            ("https://www.youtube.com/@Handle/shorts/", "https://www.youtube.com/@Handle"),
+            ("https://www.youtube.com/@Handle/streams", "https://www.youtube.com/@Handle"),
+            ("https://www.youtube.com/@Handle/featured", "https://www.youtube.com/@Handle"),
+            ("https://www.youtube.com/@Handle/podcasts", "https://www.youtube.com/@Handle"),
+            ("https://www.youtube.com/@Handle/releases", "https://www.youtube.com/@Handle"),
+            ("https://www.youtube.com/@Handle/VIDEOS", "https://www.youtube.com/@Handle"),
+            ("https://www.youtube.com/@Handle", "https://www.youtube.com/@Handle"),
+            ("https://www.youtube.com/@Handle/", "https://www.youtube.com/@Handle"),
+            # Tracking parameters do not change what the channel is.
+            ("https://www.youtube.com/@Handle/videos?si=abc", "https://www.youtube.com/@Handle"),
+            (
+                "https://www.youtube.com/@Handle/videos?view=0&sort=p#x",
+                "https://www.youtube.com/@Handle",
+            ),
+            (
+                "https://m.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw/videos",
+                "https://m.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw",
+            ),
+            ("https://youtube.com/c/Name/shorts", "https://youtube.com/c/Name"),
+            ("https://www.youtube.com/user/name/streams", "https://www.youtube.com/user/name"),
+        ],
+    )
+    def test_a_channel_or_its_tab_becomes_the_channel(self, url: str, root: str) -> None:
+        assert channel_root_url(url) == root
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # One video, however it is addressed.
+            "https://www.youtube.com/@Handle/live",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+            "https://www.youtube.com/live/dQw4w9WgXcQ",
+            "https://youtu.be/dQw4w9WgXcQ",
+            # A playlist, also when it is addressed through a channel tab.
+            "https://www.youtube.com/playlist?list=PLtest123",
+            "https://www.youtube.com/@Handle/videos?list=PLtest123",
+            # Channel pages that are not lists of the channel's own videos.
+            "https://www.youtube.com/@Handle/playlists",
+            "https://www.youtube.com/@Handle/community",
+            # Another site with the same path shape.
+            "https://example.com/@Handle/videos",
+        ],
+    )
+    def test_anything_else_is_left_alone(self, url: str) -> None:
+        assert channel_root_url(url) is None
+
+    def test_the_root_keys_the_same_archive_as_the_tab(self) -> None:
+        url = "https://www.youtube.com/@Handle/videos"
+        root = channel_root_url(url)
+
+        assert root is not None
+        assert get_playlist_id(root) == get_playlist_id(url) == "Handle"
+        assert is_channel_url(root) and is_playlist_url(root)
 
 
 class TestChannelIdFromUrl:

@@ -56,6 +56,7 @@
   "quality_mp4_desc": "No re-encoding. Output container: MP4 (remux)",
   "archive_title": "ARCHIVE:",
   "archive_desc": "Video (up to your resolution limit, MKV), description, info JSON, thumbnail and subtitles. Waiting between requests to avoid rate limits...",
+  "archive_channel_scope": "Archive mode keeps the whole channel (Videos, Shorts and Live): using {effective} instead of {entered}.",
   "archive_channel_id_fallback": "Could not look up the channel id; using \"{id}\" from the URL for the archive file. Use the same URL to resume.",
   "ban_detected_title": "YouTube is temporarily blocking requests - download stopped.",
   "ban_detected_detail": "It answered with HTTP 429 (Too Many Requests) or \"Sign in to confirm you're not a bot\". Sending more requests now would only extend the block.",

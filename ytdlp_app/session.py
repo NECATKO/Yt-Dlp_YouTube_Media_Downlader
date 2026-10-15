@@ -37,6 +37,7 @@ from .planning import plan_targets
 from .playlist import (
     PlaylistListing,
     channel_id_from_url,
+    channel_root_url,
     fetch_listing,
     get_playlist_id,
     is_channel_url,
@@ -376,6 +377,17 @@ class InteractiveSession:
         )
         mode = _MODE_BY_CHOICE[ModeChoice(mode_choice)]
         archive_mode = mode == DownloadMode.ARCHIVE
+        # Archive mode keeps a whole channel, and yt-dlp lists only the tab a tab URL
+        # names: from here on (listing, archive key, download) the channel URL is used.
+        entered_url = url
+        if archive_mode:
+            url = channel_root_url(url) or url
+            if url != entered_url:
+                self.ui.print(
+                    paint(
+                        t("archive_channel_scope", entered=entered_url, effective=url), Colors.CYAN
+                    )
+                )
         if mode == DownloadMode.AUDIO and self.settings.audio.cover_kept_beside:
             self.ui.print(paint(t("audio_wav_cover_note"), Colors.YELLOW))
 
@@ -555,7 +567,8 @@ class InteractiveSession:
             (
                 "\n" + "=" * 80 + "\n"
                 f"[{datetime.now().isoformat(timespec='seconds')}] START\n"
-                f"mode={mode} is_playlist={is_playlist} url={url}\n"
+                + (f"entered_url={entered_url}\n" if entered_url != url else "")
+                + f"mode={mode} is_playlist={is_playlist} url={url}\n"
                 f"base_dir={base_dir}\n"
                 f"output_template={output_template}\n"
                 f"archive_path={archive_path}\n"

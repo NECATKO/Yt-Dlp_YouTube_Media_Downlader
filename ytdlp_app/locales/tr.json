@@ -56,6 +56,7 @@
   "quality_mp4_desc": "Yeniden kodlama yok. Çıktı kapsayıcısı: MP4 (remux)",
   "archive_title": "ARŞİV:",
   "archive_desc": "Video (çözünürlük sınırına kadar, MKV), açıklama, info JSON, kapak resmi ve altyazılar. Hız sınırına takılmamak için istekler arasında bekleniyor...",
+  "archive_channel_scope": "Arşiv modu kanalın tamamını saklar (Videolar, Shorts ve Canlı): {entered} yerine {effective} kullanılıyor.",
   "archive_channel_id_fallback": "Kanal kimliği alınamadı; arşiv dosyası için URL'deki \"{id}\" kullanılıyor. Devam etmek için aynı URL'yi kullanın.",
   "ban_detected_title": "YouTube istekleri geçici olarak engelliyor - indirme durduruldu.",
   "ban_detected_detail": "HTTP 429 (Çok Fazla İstek) ya da \"Sign in to confirm you're not a bot\" yanıtı verdi. Şimdi istek göndermeye devam etmek engeli yalnızca uzatır.",
