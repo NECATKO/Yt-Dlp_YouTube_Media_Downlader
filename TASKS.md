@@ -1,3 +1,23 @@
+# Durum — 15 Ekim 2026
+
+14 Ekim genel durum incelemesi (`degerlendirme-raporlari/2026-10-14/`, yerel) güvenilirlik paketinin
+kaynağı; doğrulama ve teslim kanıtları `degerlendirme-raporlari/2026-10-15/` (yerel). Ayrıntı: `CHANGELOG.md` → `[Unreleased]`.
+
+- [x] **Doğrulama zemini:** D18 (`.gitattributes`: `*.sh` LF, `*.bat` CRLF), D15 (Windows test beklentileri)
+- [x] **Güncelleme kurtarması:** D03 (yedek yoksa kayıt korunuyor, başarı denmiyor; kayıt göreli yol), D19 (eski sürüm saklanamazsa yedek silinmiyor)
+- [x] **Windows süreç ağacı:** D02 (job object; lider çıktıktan sonra da alt süreçler kapanıyor), D16 (Windows mypy)
+- [x] **Arşivde kanal kapsamı:** D01 (sekme URL'si kanala genişletiliyor)
+- [x] **Dosya kanıtı:** D10 (yalnız sondaki `[id]`), D11 (`.compat.mp4` ara dosya)
+
+Açık kalanlar:
+- [ ] Rapordaki diğer bulgular: D04–D09, D12–D14, D17 (komut satırı, config, runtime state, sdist, çıkış kodu…)
+- [ ] POSIX'te lider çıktıktan sonra çıktı pipe'ını tutan torun okumayı bekletebilir (koddan görülen risk; yeniden üretilmedi)
+- [ ] Windows'ta `\r\n` biten yt-dlp satırları loga `\r\r\n` yazılıyor (log metin kipinde açılıyor)
+- [ ] Windows'ta yalnız Python 3.14 denendi; 3.11–3.13 ve gerçek macOS doğrulanmadı; gerçek YouTube indirmesi yapılmadı
+- [ ] 2 Ekim yol haritasının kalanı: komut satırı (B07/B08), Transkript, TUI Faz 1 (onay bekliyor), sürüm kararı
+
+---
+
 # Durum — 2 Ekim 2026
 
 Tek dal `main` (feat/tui 2 Ekim'de main'e alındı; PR yok, GitHub CI kapalı). 2 Ekim incelemesi (`degerlendirme-raporlari/2026-10-02/`, yerel)

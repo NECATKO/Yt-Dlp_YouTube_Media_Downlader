@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+From the 2026-10-14 review (`degerlendirme-raporlari/2026-10-14/`, local; findings D01–D03, D10, D11, D15, D16, D18, D19).
+
+### Fixed — reliability
+- **An update whose backup folder was gone was reported as restored** (D03). With the journal naming a backup that is not there (moved, deleted, or the app folder moved), both updaters deleted the journal and said "The previous version was restored" although nothing was; the launchers then started a half-updated app. Now nothing is called restored that was not: the journal stays (so `Run.bat` and `run.sh` keep refusing to start), the message says what to do, and `--check-only`/`-CheckOnly` and a manual run exit with 1 (`--auto`/`-Quiet` still exit 0, without hiding the error). The journal names the backup folder relative to the app folder, so moving the folder keeps it valid; a journal written by 0.4.0 (an absolute path) is still recovered when that folder is in the app folder. A path outside the app folder is never used. After a restore the journal is removed before the backup, so a crash in between leaves clutter, not a blocked app.
+- **A finished update deleted the replaced version when it could not be kept** (D19). If moving it to `.previous-version/` failed, its backup folder was deleted and the success message still pointed at `.previous-version/`. The backup folder now stays, and the warning names it and the reason; the version kept by an earlier update is only dropped once the new one is in its place. The update itself stands.
+- **Windows: a process the command started could outlive it** (D02). The tree was stopped with `taskkill /T` on the command's pid, which finds nothing once that process has exited, so an ffmpeg (or anything holding the output pipe or a file) stayed running. Every command now starts suspended, is put in its own job object before any of its code runs, and only then resumes; whatever it starts is in the same job. When the command exits, what is left in the job is ended, so a held pipe no longer hangs the call; stopping (Ctrl+C, cancel, a ban, a time-out, an error) sends `CTRL_BREAK` first as before, then ends the job. If the job cannot be set up the command does not run. Tested with real Windows processes (`tests/test_exec_windows.py`).
+- **Archive mode with a channel tab URL archived only that tab** (D01). `/@name/videos` (or `/shorts`, `/streams`, ...) made yt-dlp list that tab, while the README promised the whole channel. Archive mode now uses the channel URL for the listing and the download and says so; the log records both URLs. The archive file is keyed by the channel id as before. `/@name/live` and a tab URL with `list=` are left as entered; video and audio modes keep the tab.
+- **A title quoting another video's id counted as that video's file** (D10): `Reaction to [A] [B].mkv` was evidence for A. Only the trailing `[id]` of a name counts (where every default template puts it); in archive mode's `<date> - <title> [<id>]/<title>.mkv` the folder's id counts, and a dated folder and file naming different ids prove neither.
+- **The MP4 compatibility step's work file counted as a finished video** (D11). A `.compat.mp4` left by a killed conversion is now an intermediate file, like `.part` and `.f137.mp4`.
+
+### Fixed — checks and packaging
+- **The Bash scripts became CRLF in a Windows checkout** (D18), which Linux bash rejects, and the portable ZIP is packed from such a checkout. `.gitattributes` keeps `*.sh` LF (and `*.bat` CRLF) in every checkout; a test checks the bytes, and each script is parsed by its own `bash -n`.
+- Four tests failed on Windows for platform reasons only (D15: a child's text-mode `\n`, POSIX paths in manifest fixtures), and Windows mypy flagged `os.killpg` (D16). Both are fixed; a new test keeps CRLF and LF lines apart from a bare-`\r` progress redraw.
+
 From the 2026-10-02 review (`degerlendirme-raporlari/2026-10-02/`, local). The roadmap is in `docs/superpowers/plans/2026-10-02-review-roadmap.md`.
 
 ### Fixed — archive evidence
