@@ -2,7 +2,10 @@
 that must match each other do."""
 
 import json
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -10,6 +13,8 @@ import pytest
 from ytdlp_app.settings import AppSettings
 
 ROOT = Path(__file__).resolve().parent.parent
+
+BASH_SCRIPTS = ("run.sh", "install.sh", "update.sh")
 
 
 def strip_powershell(text: str) -> str:
@@ -136,3 +141,37 @@ def test_the_balance_check_really_catches_a_typo() -> None:
     # Braces inside strings and comments are not structure.
     quoted = "Write-Host '{' # }\n$x = \"}\""
     assert "{" not in strip_powershell(quoted) and "}" not in strip_powershell(quoted)
+
+
+@pytest.mark.parametrize("name", BASH_SCRIPTS)
+def test_the_bash_scripts_have_lf_line_endings_in_the_working_tree(name: str) -> None:
+    """A Windows checkout (core.autocrlf) once turned them into CRLF, which Linux bash
+    rejects, and the portable ZIP is packed from such a checkout."""
+    assert b"\r" not in (ROOT / name).read_bytes(), f"{name} has CR bytes"
+
+
+@pytest.mark.skipif(
+    not shutil.which("git") or not (ROOT / ".git").exists(), reason="needs a git checkout"
+)
+def test_git_keeps_the_bash_scripts_lf_and_the_batch_launcher_crlf() -> None:
+    result = subprocess.run(
+        ["git", "check-attr", "eol", "--", *BASH_SCRIPTS, "Run.bat"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    eol = dict(line.split(": eol: ") for line in result.stdout.splitlines())
+    assert eol == {**dict.fromkeys(BASH_SCRIPTS, "lf"), "Run.bat": "crlf"}
+
+
+# Git Bash on Windows accepts CRLF scripts, so only a POSIX bash proves anything.
+@pytest.mark.skipif(os.name != "posix" or not shutil.which("bash"), reason="needs a POSIX bash")
+@pytest.mark.parametrize("name", BASH_SCRIPTS)
+def test_each_bash_script_parses(name: str) -> None:
+    # One file per call: "bash -n a b" checks a only and passes b to it as an argument.
+    result = subprocess.run(
+        ["bash", "-n", str(ROOT / name)], capture_output=True, text=True, check=False
+    )
+
+    assert result.returncode == 0, result.stderr

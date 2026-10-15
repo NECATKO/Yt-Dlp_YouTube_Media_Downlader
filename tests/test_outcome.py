@@ -307,24 +307,27 @@ class TestEvaluate:
 class TestManifest:
     def test_the_last_line_for_an_id_wins(self, tmp_path: Path) -> None:
         path = tmp_path / "a.files.tsv"
-        path.write_text("x\t/one.mkv\ny\t/two.mkv\nx\t/three.mkv\n", encoding="utf-8")
+        one, two, three = (tmp_path / name for name in ("one.mkv", "two.mkv", "three.mkv"))
+        path.write_text(f"x\t{one}\ny\t{two}\nx\t{three}\n", encoding="utf-8")
 
-        assert read_manifest(path) == {"x": Path("/three.mkv"), "y": Path("/two.mkv")}
+        assert read_manifest(path) == {"x": three, "y": two}
 
     def test_a_missing_file_is_an_empty_manifest(self, tmp_path: Path) -> None:
         assert read_manifest(tmp_path / "none.tsv") == {}
 
     def test_malformed_lines_are_ignored(self, tmp_path: Path) -> None:
         path = tmp_path / "a.files.tsv"
-        path.write_text("no tab here\n\t\nx\t/ok.mkv\n\n", encoding="utf-8")
+        ok = tmp_path / "ok.mkv"
+        path.write_text(f"no tab here\n\t\nx\t{ok}\n\n", encoding="utf-8")
 
-        assert read_manifest(path) == {"x": Path("/ok.mkv")}
+        assert read_manifest(path) == {"x": ok}
 
     def test_comment_lines_are_skipped(self, tmp_path: Path) -> None:
         path = tmp_path / "a.files.tsv"
-        path.write_text("# ytdlp_app download manifest v2\nx\t/ok.mkv\n", encoding="utf-8")
+        ok = tmp_path / "ok.mkv"
+        path.write_text(f"# ytdlp_app download manifest v2\nx\t{ok}\n", encoding="utf-8")
 
-        assert read_manifest(path) == {"x": Path("/ok.mkv")}
+        assert read_manifest(path) == {"x": ok}
 
     def test_relative_paths_resolve_against_the_manifest_folder(self, tmp_path: Path) -> None:
         manifest = tmp_path / "archives" / "a.files.tsv"

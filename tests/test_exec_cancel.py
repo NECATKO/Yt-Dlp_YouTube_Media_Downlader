@@ -71,8 +71,10 @@ class RecordingSink:
 
 
 def _printing(*chunks: str) -> list[str]:
+    """A child that writes `chunks` as raw bytes: text mode would turn "\\n" into "\\r\\n"
+    on Windows, and the tests decide the terminators themselves."""
     body = "import sys\n" + "".join(
-        f"sys.stdout.write({chunk!r}); sys.stdout.flush()\n" for chunk in chunks
+        f"sys.stdout.buffer.write({chunk.encode()!r}); sys.stdout.flush()\n" for chunk in chunks
     )
     return [sys.executable, "-c", body]
 
@@ -174,6 +176,21 @@ class TestSink:
         text = log.read_bytes().decode("utf-8")  # read_text would turn the "\r" into "\n"
         assert progress in text
         assert ">>> returncode = 0" in text
+
+    def test_crlf_and_lf_lines_are_lines_and_only_a_bare_cr_is_progress(
+        self, tmp_path: Path
+    ) -> None:
+        # yt-dlp on Windows ends its lines in "\r\n"; that must not read as a redraw.
+        progress = "[download]  45.3% of ~10.00MiB\r"
+        cmd = _printing("first\r\n", progress, "second\n")
+        sink = RecordingSink()
+
+        assert run_cmd_tee(cmd, tmp_path / "run.log", sink=sink) == 0
+
+        assert sink.progressed == [progress]
+        first, second = (text for text, end in sink.written if end == "")
+        assert "first" in first and first.endswith("\r\n")
+        assert "second" in second and second.endswith("\n") and not second.endswith("\r\n")
 
     def test_nothing_reaches_the_console_when_a_sink_is_given(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
