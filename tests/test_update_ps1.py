@@ -172,6 +172,10 @@ class TestRollback:
 
         assert result.returncode != 0
         assert site.journal().exists()
+        # The backup is named relative to the app folder, so it is still found after a move.
+        recorded = site.journal().read_text(encoding="utf-8-sig").splitlines()[0]
+        assert recorded.startswith(".update-backup-") and "\\" not in recorded
+        assert (site.install / recorded / "ytdlp_app").exists()
         assert "update.ps1 again" in output(result)
         assert site.user_data_untouched()
 
@@ -220,3 +224,98 @@ class TestRollback:
         assert result.returncode == 0, output(result)
         assert site.marker() == "old"
         assert site.leftovers() == []
+
+
+def half_updated(site: Site, recorded: str) -> None:
+    """What a crash in the middle of the swap leaves: the new app in place, the journal
+    naming the backup as `recorded`."""
+    (site.install / "ytdlp_app" / "app.py").write_text("MARKER = 'new'\n", encoding="utf-8")
+    site.journal().write_bytes(recorded.encode("utf-8"))
+    site.publish("v0.3.1")  # nothing newer: a run only recovers
+
+
+class TestRecoveryWithoutItsBackup:
+    """D03: a journal whose backup is not here is a recovery that cannot be done; it must
+    not be reported as done, and the journal (which keeps Run.bat from starting a
+    half-updated app) must stay."""
+
+    @pytest.mark.parametrize("args", [("-CheckOnly",), ("-Quiet",), ()])
+    def test_a_missing_backup_keeps_the_journal_and_is_not_called_a_restore(
+        self, site: Site, args: tuple[str, ...]
+    ) -> None:
+        half_updated(site, ".update-backup-gone\r\n")
+
+        result = site.run(*args, stdin="n\n")
+
+        assert site.journal().read_bytes() == b".update-backup-gone\r\n"
+        assert "previous version was restored" not in output(result)
+        assert ".update-backup-gone" in output(result)
+        # -Quiet (Run.bat) never fails; Run.bat itself then refuses to start.
+        assert result.returncode == (0 if args == ("-Quiet",) else 1)
+        assert site.marker() == "new"
+        assert site.user_data_untouched()
+
+    def test_a_backup_outside_the_app_folder_is_never_used(self, site: Site) -> None:
+        outside = site.tmp / "elsewhere" / ".update-backup-x"
+        (outside / "ytdlp_app").mkdir(parents=True)
+        (outside / "ytdlp_app" / "app.py").write_text("MARKER = 'stranger'\n", encoding="utf-8")
+        half_updated(site, win(outside))
+
+        result = site.run("-CheckOnly")
+
+        assert result.returncode == 1
+        assert site.journal().exists()
+        assert site.marker() == "new"
+        assert (outside / "ytdlp_app" / "app.py").exists()
+
+    def test_an_absolute_journal_from_before_a_folder_move_finds_its_backup_here(
+        self, site: Site
+    ) -> None:
+        backup = site.install / ".update-backup-moved"
+        backup.mkdir()
+        shutil.move(str(site.install / "ytdlp_app"), str(backup / "ytdlp_app"))
+        site.journal().write_text(r"D:\where\the\app\used\to\be\.update-backup-moved", "utf-8")
+        site.publish("v0.3.1")
+
+        result = site.run("-CheckOnly")
+
+        assert result.returncode == 0, output(result)
+        assert site.marker() == "old"
+        assert site.leftovers() == []
+
+
+class TestKeepingThePreviousVersion:
+    """D19: the update is done; only keeping the replaced version as .previous-version
+    fails. The update stands, and the replaced version must not be thrown away."""
+
+    def test_the_backup_stays_where_it_is_and_its_place_is_named(self, site: Site) -> None:
+        older = site.install / ".previous-version"
+        (older / "ytdlp_app").mkdir(parents=True)
+        (older / "ytdlp_app" / "app.py").write_text("MARKER = 'older'\n", encoding="utf-8")
+        site.publish("v0.4.0")
+
+        result = site.run("-Quiet", env={"YTDLP_UPDATE_FAULT_AT": ".previous-version"})
+
+        assert result.returncode == 0, output(result)
+        assert site.version() == "v0.4.0"
+        assert site.marker() == "new"
+        assert not site.journal().exists()
+        assert "'older'" in (older / "ytdlp_app" / "app.py").read_text(encoding="utf-8")
+        (backup,) = site.install.glob(".update-backup-*")
+        assert "'old'" in (backup / "ytdlp_app" / "app.py").read_text(encoding="utf-8")
+        assert backup.name in output(result)
+        assert not list(site.install.glob(".previous-version-*"))
+
+    def test_a_successful_update_replaces_the_version_kept_before(self, site: Site) -> None:
+        older = site.install / ".previous-version"
+        (older / "ytdlp_app").mkdir(parents=True)
+        (older / "ytdlp_app" / "app.py").write_text("MARKER = 'older'\n", encoding="utf-8")
+        site.publish("v0.4.0")
+
+        result = site.run(stdin="y\n")
+
+        assert result.returncode == 0, output(result)
+        assert "'old'" in (older / "ytdlp_app" / "app.py").read_text(encoding="utf-8")
+        assert "kept in .previous-version" in output(result)
+        assert site.leftovers() == []
+        assert not list(site.install.glob(".previous-version-*"))

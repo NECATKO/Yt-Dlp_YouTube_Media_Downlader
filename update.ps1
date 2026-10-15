@@ -45,6 +45,7 @@ $VersionFile = Join-Path $AppDir "app_version.txt"
 $LockPath    = Join-Path $AppDir ".update.lock"
 $Journal     = Join-Path $AppDir ".update-in-progress"
 $PreviousDir = Join-Path $AppDir ".previous-version"
+$KeptAt      = ""
 
 # What an update replaces. Everything else in this folder belongs to the user.
 $ReplaceItems  = @("ytdlp_app", "downloader.py", "pyproject.toml", "runtime.lock", "run.sh", "install.sh", "update.sh", "install.ps1", "update.ps1", "README.md", "LICENSE")
@@ -139,6 +140,20 @@ function Get-JournalBackup {
   return ""
 }
 
+# The backup folder the journal names, as a path in this folder, or "" when it is not here.
+# The journal records the folder's name (0.4.0 recorded its full path, which leads nowhere
+# once the app folder was moved), so only the name counts, and only the name of an update
+# backup folder directly in this one: a damaged journal cannot point anywhere else.
+function Resolve-JournalBackup {
+  $name = ((Get-JournalBackup) -split '[\\/]')[-1]
+  if ($name -notlike ".update-backup-*") { return "" }
+  $path = Join-Path $AppDir $name
+  $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+  if (-not $item -or -not $item.PSIsContainer) { return "" }
+  if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return "" }
+  return $path
+}
+
 function Get-JournalAdded {
   return @(Get-Content -LiteralPath $Journal | Where-Object { $_ -like "+*" } | ForEach-Object { $_.Substring(1).Trim() })
 }
@@ -173,18 +188,30 @@ function Restore-FromBackup([string]$Backup) {
   return $ok
 }
 
+# Without its backup nothing can be undone: the journal stays, and with it Run.bat's refusal
+# to start a half-updated app.
 function Restore-Interrupted {
-  if (-not (Test-Path $Journal)) { return $true }
-  $backup = Get-JournalBackup
-  if ($backup -and (Test-Path -LiteralPath $backup)) {
-    Warn "A previous update was interrupted; restoring the previous version..."
-    if (-not (Restore-FromBackup $backup)) {
-      Fail "Could not restore everything; the files are in $backup. Run update.ps1 again to retry."
-      return $false
-    }
-    Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+  if (-not (Test-Path -LiteralPath $Journal)) { return $true }
+  $backup = Resolve-JournalBackup
+  if (-not $backup) {
+    Fail ("An update did not finish, and the backup folder it names ('$(Get-JournalBackup)') is not in $AppDir, so nothing was restored. " +
+      "If this app folder was moved or copied, put that backup folder back into it and run update.ps1 again. " +
+      "Otherwise reinstall the app from the release ZIP (config.json, archives, downloads, logs and runtime can stay), then delete $Journal.")
+    return $false
   }
-  Remove-Item $Journal -Force -ErrorAction SilentlyContinue
+  Warn "A previous update was interrupted; restoring the previous version..."
+  if (-not (Restore-FromBackup $backup)) {
+    Fail "Could not restore everything; the files are in $backup. Run update.ps1 again to retry."
+    return $false
+  }
+  # The journal goes first: a backup left behind is only clutter, a journal left without its
+  # backup would block the app for good.
+  try { Remove-Item -LiteralPath $Journal -Force -ErrorAction Stop }
+  catch {
+    Fail "The previous version is back, but $Journal could not be removed: $($_.Exception.Message)"
+    return $false
+  }
+  Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
   Get-ChildItem -Path $AppDir -Directory -Force -Filter ".update-new-*" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   Say "The previous version was restored." "Green"
   return $true
@@ -281,8 +308,9 @@ function Install-Package([string]$Root, [string]$Tag) {
   $backup  = Join-Path $AppDir ".update-backup-$stamp"
   $staging = Join-Path $AppDir ".update-new-$stamp"
   New-Item -ItemType Directory -Force -Path $backup, $staging | Out-Null
-  # From here on a crash is recoverable: the journal says where the old files are.
-  Set-Content -LiteralPath $Journal -Value $backup -Encoding UTF8
+  # From here on a crash is recoverable: the journal says where the old files are. It names
+  # the backup folder relative to this one, so it still holds after the folder is moved.
+  Set-Content -LiteralPath $Journal -Value (Split-Path -Leaf $backup) -Encoding UTF8
 
   $abort = {
     param([string]$Reason)
@@ -355,11 +383,40 @@ function Install-Package([string]$Root, [string]$Tag) {
 
   # Commit: the journal goes away, the old version becomes .previous-version.
   Remove-Item $Journal -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $PreviousDir -Recurse -Force -ErrorAction SilentlyContinue
-  try { Move-Item -LiteralPath $backup -Destination $PreviousDir -Force }
-  catch { Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue }
+  $script:KeptAt = Save-PreviousVersion $backup $stamp
   Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
   return $true
+}
+
+# Keep the version an update replaced as .previous-version, the manual way back. The one kept
+# by an earlier update is only dropped once the new one is in its place; when that cannot be
+# done, the backup folder stays where it is and the warning names it. The update itself
+# stands either way. Returns the folder the replaced version is in.
+function Save-PreviousVersion([string]$Backup, [string]$Stamp) {
+  $older = ""
+  if (Test-Path -LiteralPath $PreviousDir) {
+    $older = Join-Path $AppDir ".previous-version-old-$Stamp"
+    try { Move-Item -LiteralPath $PreviousDir -Destination $older -ErrorAction Stop }
+    catch {
+      Warn "Could not replace .previous-version ($($_.Exception.Message)); the version just replaced is kept in $(Split-Path -Leaf $Backup)\ instead."
+      return $Backup
+    }
+  }
+  try {
+    # A test hook: fail keeping the replaced version, once the update itself is done.
+    if ($env:YTDLP_UPDATE_FAULT_AT -eq ".previous-version") { throw "Injected failure while keeping the previous version." }
+    Move-Item -LiteralPath $Backup -Destination $PreviousDir -ErrorAction Stop
+  } catch {
+    $reason = $_.Exception.Message
+    if ($older) {
+      try { Move-Item -LiteralPath $older -Destination $PreviousDir -ErrorAction Stop }
+      catch { Warn "The version kept by the update before is in $(Split-Path -Leaf $older)\." }
+    }
+    Warn "Could not move the replaced version to .previous-version ($reason); it is kept in $(Split-Path -Leaf $Backup)\ instead."
+    return $Backup
+  }
+  if ($older) { Remove-Item -LiteralPath $older -Recurse -Force -ErrorAction SilentlyContinue }
+  return $PreviousDir
 }
 
 function Install-Release($Release, [string]$Tag, [string]$Current) {
@@ -419,7 +476,11 @@ function Install-Release($Release, [string]$Tag, [string]$Current) {
 
     Say "Installing..." "Yellow"
     if (-not (Install-Package $root $Tag)) { return $false }
-    Say "Updated to $Tag. The previous version is kept in .previous-version\" "Green"
+    if ($script:KeptAt -eq $PreviousDir) {
+      Say "Updated to $Tag. The previous version is kept in .previous-version\" "Green"
+    } else {
+      Say "Updated to $Tag." "Green"
+    }
     return $true
   } finally {
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

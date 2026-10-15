@@ -81,3 +81,17 @@ def test_a_half_restored_update_stops_the_launch(folder: Path) -> None:
     assert "Starting app" not in result.stdout
     assert win(backup) in result.stdout
     assert "update.ps1" in result.stdout
+
+
+def test_an_update_whose_backup_is_gone_still_stops_the_launch(folder: Path) -> None:
+    """D03: the real quiet updater cannot restore without the backup; it must leave the
+    journal, so the launch stops instead of starting a half-updated app."""
+    shutil.copy(ROOT / "update.ps1", folder / "update.ps1")
+    (folder / ".update-in-progress").write_bytes(b".update-backup-gone\r\n")
+
+    result = run_batch(folder / "Run.bat", "audit")
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Starting app" not in result.stdout
+    assert (folder / ".update-in-progress").exists()
+    assert "previous version was restored" not in result.stdout

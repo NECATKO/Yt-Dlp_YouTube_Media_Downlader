@@ -56,6 +56,7 @@ JOURNAL="$SCRIPT_DIR/.update-in-progress"
 PREVIOUS_DIR="$SCRIPT_DIR/.previous-version"
 HAVE_LOCK=0
 WORK_DIR=""
+KEPT_AT=""
 
 QUIET=0
 AUTO=0
@@ -345,7 +346,22 @@ validate_package() {
 # The journal: its first line is the backup folder (all an older version wrote), and each
 # "+<name>" line after it is an item the update added that did not exist before.
 journal_backup() {
-    head -n 1 "$JOURNAL"
+    local first
+    first="$(head -n 1 "$JOURNAL")"
+    printf '%s' "${first%$'\r'}"
+}
+
+# The backup folder the journal names, as a path in this folder; fails when it is not here.
+# The journal records the folder's name (0.4.0 recorded its absolute path, which leads
+# nowhere once the app folder was moved), so only the name counts, and only the name of an
+# update backup folder directly in this one: a damaged journal cannot point anywhere else.
+journal_backup_dir() {
+    local name
+    name="$(journal_backup)"
+    name="${name##*/}"
+    [[ "$name" == .update-backup-* ]] || return 1
+    [[ -d "$SCRIPT_DIR/$name" && ! -L "$SCRIPT_DIR/$name" ]] || return 1
+    printf '%s\n' "$SCRIPT_DIR/$name"
 }
 
 journal_added() {
@@ -390,20 +406,28 @@ restore_from_backup() {
 }
 
 # A previous update that never finished (or whose rollback failed): undo it. The journal
-# and the backup stay until everything is back, so this can simply be run again.
+# and the backup stay until everything is back, so this can simply be run again. Without
+# its backup nothing can be undone: the journal stays, and with it run.sh's refusal to
+# start a half-updated app.
 recover_interrupted() {
     [[ -f "$JOURNAL" ]] || return 0
     local backup
-    backup="$(journal_backup)"
-    if [[ -n "$backup" && -d "$backup" ]]; then
-        warn "A previous update was interrupted; restoring the previous version..."
-        if ! restore_from_backup "$backup"; then
-            fail "Could not restore everything; the files are in $backup. Run update.sh again to retry."
-            return 1
-        fi
-        rm -rf "$backup"
+    if ! backup="$(journal_backup_dir)"; then
+        fail "An update did not finish, and the backup folder it names ('$(journal_backup)') is not in $SCRIPT_DIR, so nothing was restored. If this app folder was moved or copied, put that backup folder back into it and run update.sh again. Otherwise reinstall the app from the release ZIP (config.json, archives/, downloads/, logs/ and runtime/ can stay), then delete $JOURNAL."
+        return 1
     fi
-    rm -f "$JOURNAL"
+    warn "A previous update was interrupted; restoring the previous version..."
+    if ! restore_from_backup "$backup"; then
+        fail "Could not restore everything; the files are in $backup. Run update.sh again to retry."
+        return 1
+    fi
+    # The journal goes first: a backup left behind is only clutter, a journal left without
+    # its backup would block the app for good.
+    if ! rm -f "$JOURNAL"; then
+        fail "The previous version is back, but $JOURNAL could not be removed."
+        return 1
+    fi
+    rm -rf "$backup"
     rm -rf "$SCRIPT_DIR"/.update-new-*
     say "${GREEN}The previous version was restored.${NC}"
 }
@@ -433,8 +457,9 @@ apply_update() {
     staging="$SCRIPT_DIR/.update-new-$stamp"
     mkdir "$backup" "$staging" || { fail "Cannot create work folders in $SCRIPT_DIR."; return 1; }
 
-    # From here on a crash is recoverable: the journal says where the old files are.
-    printf '%s\n' "$backup" > "$JOURNAL.tmp" && mv "$JOURNAL.tmp" "$JOURNAL" \
+    # From here on a crash is recoverable: the journal says where the old files are. It names
+    # the backup folder relative to this one, so it still holds after the folder is moved.
+    printf '%s\n' "${backup##*/}" > "$JOURNAL.tmp" && mv "$JOURNAL.tmp" "$JOURNAL" \
         || { rm -rf "$backup" "$staging"; fail "Cannot write the update journal."; return 1; }
 
     # 1) Copy every new file next to its place. Nothing of the install changes yet.
@@ -489,10 +514,36 @@ apply_update() {
 
     # Commit: the journal goes away, the old version becomes .previous-version.
     rm -f "$JOURNAL"
-    rm -rf "$PREVIOUS_DIR"
-    mv "$backup" "$PREVIOUS_DIR" 2> /dev/null || rm -rf "$backup"
+    keep_previous_version "$backup" "$stamp"
     rm -rf "$staging"
     return 0
+}
+
+# Keep the version an update replaced (in $1) as .previous-version, the manual way back. The
+# one kept by an earlier update is only dropped once the new one is in its place; when that
+# cannot be done, the backup folder stays where it is and the warning names it. The update
+# itself stands either way. Sets KEPT_AT to the folder the replaced version is in.
+keep_previous_version() {
+    local backup="$1" stamp="$2" older=""
+    KEPT_AT="$backup"
+    if [[ -e "$PREVIOUS_DIR" || -L "$PREVIOUS_DIR" ]]; then
+        older="$SCRIPT_DIR/.previous-version-old-$stamp"
+        if ! mv "$PREVIOUS_DIR" "$older"; then
+            warn "Could not replace .previous-version; the version just replaced is kept in ${backup##*/}/ instead."
+            return 1
+        fi
+    fi
+    # A test hook: fail keeping the replaced version, once the update itself is done.
+    if [[ "${YTDLP_UPDATE_FAULT_AT:-}" != ".previous-version" ]] && mv "$backup" "$PREVIOUS_DIR"; then
+        KEPT_AT="$PREVIOUS_DIR"
+        [[ -z "$older" ]] || rm -rf "$older"
+        return 0
+    fi
+    if [[ -n "$older" ]] && ! mv "$older" "$PREVIOUS_DIR"; then
+        warn "The version kept by the update before is in ${older##*/}/."
+    fi
+    warn "Could not move the replaced version to .previous-version; it is kept in ${backup##*/}/ instead."
+    return 1
 }
 
 # Download, verify and install the release described by the JSON in $1.
@@ -556,7 +607,11 @@ install_release() {
 
     say "${YELLOW}Installing...${NC}"
     apply_update "$root" "$tag" || return 1
-    say "${GREEN}Updated to $tag. The previous version is kept in .previous-version/.${NC}"
+    if [[ "$KEPT_AT" == "$PREVIOUS_DIR" ]]; then
+        say "${GREEN}Updated to $tag. The previous version is kept in .previous-version/.${NC}"
+    else
+        say "${GREEN}Updated to $tag.${NC}"
+    fi
     return 0
 }
 
