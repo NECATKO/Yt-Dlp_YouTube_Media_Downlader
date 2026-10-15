@@ -12,7 +12,9 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import threading
+import weakref
 from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
@@ -29,9 +31,13 @@ from .logging_utils import (
 )
 from .redact import display_command, redact_secrets
 from .system import ytdlp_command
+from .windows_process import CREATE_SUSPENDED
+
+if sys.platform == "win32":
+    from .windows_process import ProcessJob
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Iterator
     from pathlib import Path
 
 #: Returned by run_cmd_tee when it stopped yt-dlp because YouTube started
@@ -59,6 +65,9 @@ _POSIX_ESCALATION: tuple[tuple[int, str], ...] = (
 # Ctrl+C event cannot be aimed at one), and this flag is what gives the child its own group.
 _CTRL_BREAK = getattr(signal, "CTRL_BREAK_EVENT", 1)
 _CREATE_NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+
+# Windows: the job each started process and everything it starts belongs to (see _start).
+_JOBS: weakref.WeakKeyDictionary[subprocess.Popen[Any], Any] = weakref.WeakKeyDictionary()
 
 # How often the cancel watcher looks up from waiting on the cancel event to see whether the
 # command finished on its own. It bounds how long a finished call waits for its watcher.
@@ -163,21 +172,38 @@ def find_ban_signal(text: str) -> BanSignal | None:
     return None
 
 
-def _popen_kwargs() -> dict[str, Any]:
+def _start(cmd: list[str], **kwargs: Any) -> subprocess.Popen[Any]:
     """Start the child in its own process group (POSIX: its own session).
 
     Everything it starts (yt-dlp starts ffmpeg) then shares that group, so it can be
     stopped as a unit, and a terminal's Ctrl+C no longer reaches it behind our back:
     stopping it is our job, done explicitly and on every exit path.
+
+    On Windows the child also gets its own job, before any of its code runs (it starts
+    suspended): the job, not the child's pid, is what stops its descendants, also after the
+    child itself has left. When the job cannot be set up the child is stopped and OSError
+    raised: the command does not run without that control.
     """
-    if os.name == "nt":
-        return {"creationflags": _CREATE_NEW_PROCESS_GROUP}
-    return {"start_new_session": True}
+    if sys.platform == "win32":
+        flags = _CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED
+        p = subprocess.Popen(cmd, creationflags=flags, **kwargs)
+        try:
+            _JOBS[p] = ProcessJob.adopt(p.pid)
+        except BaseException:
+            # The child is still suspended (it ran none of its code): kill, reap, close pipes.
+            with contextlib.suppress(Exception):
+                p.kill()
+                p.wait(timeout=_KILL_WAIT)
+            _close_pipes(p)
+            raise
+        return p
+    return subprocess.Popen(cmd, start_new_session=True, **kwargs)
 
 
 def _killpg(pgid: int, sig: int) -> None:
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(pgid, sig)
+    if sys.platform != "win32":
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(pgid, sig)
 
 
 def _stop_posix(p: subprocess.Popen[Any]) -> None:
@@ -196,16 +222,22 @@ def _stop_posix(p: subprocess.Popen[Any]) -> None:
     _killpg(pgid, getattr(signal, "SIGKILL", signal.SIGTERM))
 
 
-def _stop_windows(
-    p: subprocess.Popen[Any],
-    grace: float | None = None,
-    run: Callable[..., Any] = subprocess.run,
-) -> None:
-    """CTRL_BREAK to the group, then ``taskkill /T /F`` on the whole tree.
+def _end_job(p: subprocess.Popen[Any]) -> None:
+    """Kill whatever is left in the process's job (the process itself included) and release
+    the job; without one, kill the process."""
+    job = _JOBS.get(p)
+    if job is not None:
+        job.close()
+    elif p.poll() is None:
+        with contextlib.suppress(OSError):
+            p.kill()
 
-    The tree is always swept, also when the leader left on its own, because ffmpeg can
-    outlive the yt-dlp that started it. ``/T`` follows the parent links, so it finds
-    the descendants without a job object.
+
+def _stop_windows(p: subprocess.Popen[Any], grace: float | None = None) -> None:
+    """CTRL_BREAK to the group, then the job: everything still in it is killed.
+
+    The job is always ended, also when the leader left on its own, because ffmpeg can
+    outlive the yt-dlp that started it; the job finds it whatever became of the leader.
     """
     grace = _INTERRUPT_GRACE if grace is None else grace
     if p.poll() is None:
@@ -213,13 +245,7 @@ def _stop_windows(
             p.send_signal(_CTRL_BREAK)
         with contextlib.suppress(subprocess.TimeoutExpired):
             p.wait(timeout=grace)
-    with contextlib.suppress(OSError, subprocess.SubprocessError):
-        run(
-            ["taskkill", "/PID", str(p.pid), "/T", "/F"],
-            capture_output=True,
-            check=False,
-            timeout=_KILL_WAIT,
-        )
+    _end_job(p)
     if p.poll() is None:
         p.wait()
 
@@ -247,7 +273,7 @@ def stop_process_tree(p: subprocess.Popen[Any], *, close_pipes: bool = True) -> 
         # Impatience while we are cleaning up: kill outright, then keep cleaning.
         with contextlib.suppress(Exception):
             if os.name == "nt":
-                p.kill()
+                _end_job(p)
             else:
                 _killpg(p.pid, getattr(signal, "SIGKILL", signal.SIGTERM))
             p.wait(timeout=_KILL_WAIT)
@@ -318,7 +344,7 @@ def run_capture(
     """
     p: subprocess.Popen[str] | None = None
     try:
-        p = subprocess.Popen(
+        p = _start(
             resolve_program(cmd),
             env=child_env(),
             shell=False,
@@ -328,7 +354,6 @@ def run_capture(
             text=True,
             encoding="utf-8",
             errors="replace",
-            **_popen_kwargs(),
         )
         with _stopped_on_cancel(p, cancel):
             stdout, stderr = p.communicate(timeout=timeout)
@@ -411,7 +436,7 @@ def run_cmd_tee(
             )
             f.write("=" * 80 + "\n")
 
-            p = subprocess.Popen(
+            p = _start(
                 real_cmd,
                 env=child_env(),
                 shell=False,
@@ -420,7 +445,6 @@ def run_cmd_tee(
                 stderr=subprocess.STDOUT,
                 # Use binary mode to manually handle carriage returns
                 text=False,
-                **_popen_kwargs(),
             )
 
             assert p.stdout is not None

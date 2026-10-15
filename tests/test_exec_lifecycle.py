@@ -328,36 +328,52 @@ class FakeProcess:
             self.returncode = 1
         return self.returncode
 
+    def kill(self) -> None:
+        self.sent.append(-9)
+        self.returncode = 1
+
+
+class FakeJob:
+    def __init__(self, proc: FakeProcess) -> None:
+        self.proc = proc
+        self.closed = 0
+
+    def close(self) -> None:
+        self.closed += 1
+        self.proc.returncode = 1
+
 
 class TestWindowsTreeStop:
-    """The Windows branch cannot run here; its decisions are checked with a stand-in."""
+    """The decisions of the Windows stop, checked with stand-ins on any platform; the real
+    job is exercised in test_exec_windows.py."""
 
-    def test_asks_politely_first_and_only_kills_the_tree_if_ignored(self) -> None:
+    def test_asks_politely_first_and_only_then_ends_the_job(self) -> None:
         proc = FakeProcess(exits_after_break=False)
-        calls: list[list[str]] = []
+        job = FakeJob(proc)
+        exec_module._JOBS[proc] = job  # type: ignore[index]
 
-        exec_module._stop_windows(proc, grace=0.01, run=lambda cmd, **_: calls.append(cmd))  # type: ignore[arg-type]
+        exec_module._stop_windows(proc, grace=0.01)  # type: ignore[arg-type]
 
         assert proc.sent == [exec_module._CTRL_BREAK]
-        assert calls == [["taskkill", "/PID", "4321", "/T", "/F"]]
+        assert job.closed == 1
         assert proc.returncode is not None
 
-    def test_a_process_that_leaves_on_its_own_still_has_its_tree_swept(self) -> None:
+    def test_a_process_that_leaves_on_its_own_still_has_its_job_ended(self) -> None:
         proc = FakeProcess(exits_after_break=True)
-        calls: list[list[str]] = []
+        job = FakeJob(proc)
+        exec_module._JOBS[proc] = job  # type: ignore[index]
 
-        exec_module._stop_windows(proc, grace=0.01, run=lambda cmd, **_: calls.append(cmd))  # type: ignore[arg-type]
+        exec_module._stop_windows(proc, grace=0.01)  # type: ignore[arg-type]
 
-        # ffmpeg may outlive yt-dlp, so the tree is always swept.
-        assert calls == [["taskkill", "/PID", "4321", "/T", "/F"]]
+        # ffmpeg may outlive yt-dlp, so the job is always ended.
+        assert job.closed == 1
 
-    def test_spawn_options_differ_per_platform(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(exec_module.os, "name", "nt")
-        assert exec_module._popen_kwargs() == {
-            "creationflags": exec_module._CREATE_NEW_PROCESS_GROUP
-        }
-        monkeypatch.setattr(exec_module.os, "name", "posix")
-        assert exec_module._popen_kwargs() == {"start_new_session": True}
+    def test_without_a_job_a_live_process_is_killed(self) -> None:
+        proc = FakeProcess(exits_after_break=False)
+
+        exec_module._stop_windows(proc, grace=0.01)  # type: ignore[arg-type]
+
+        assert proc.sent == [exec_module._CTRL_BREAK, -9]
 
 
 def test_sigint_is_offered_before_sigterm() -> None:
