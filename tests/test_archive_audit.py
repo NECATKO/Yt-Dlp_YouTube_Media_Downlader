@@ -14,7 +14,10 @@ from ytdlp_app.archive_audit import (
     plan_forget,
     plan_repair,
 )
+from ytdlp_app.evidence import MediaIndex, locate
 from ytdlp_app.i18n import set_language
+from ytdlp_app.models import DownloadMode
+from ytdlp_app.outcome import evaluate
 
 
 @pytest.fixture(autouse=True)
@@ -513,3 +516,55 @@ class TestMenu:
         ui = self.make(world, [1, 4])
 
         assert any("No download archives" in line for line in ui.printed)
+
+
+class TestFalseEvidence:
+    """D10/D11 end to end: the audit and the run's outcome give the same answer."""
+
+    A = "AAAAAAAAAAA"
+    B = "BBBBBBBBBBB"
+
+    def test_a_title_quoting_a_missing_id_does_not_prove_it(self, world: dict[str, Path]) -> None:
+        archive = write_archive(world, "single_videos_mp4.txt", [self.A, self.B])
+        touch(world["videos"] / f"Reaction to [{self.A}] [{self.B}].mp4")
+
+        report = audit_archive(archive, [world["videos"]])
+
+        assert statuses(report) == {
+            self.A: FindingStatus.UNVERIFIED,
+            self.B: FindingStatus.PRESENT,
+        }
+
+    def test_only_a_half_converted_file_left_is_missing_in_audit_and_outcome(
+        self, world: dict[str, Path]
+    ) -> None:
+        archive = write_archive(world, "single_videos_mp4.txt", [self.A])
+        final = world["videos"] / f"T [{self.A}].mp4"
+        write_manifest(archive, {self.A: final})
+        touch(world["videos"] / f"T [{self.A}].compat.mp4")
+
+        report = audit_archive(archive, [world["videos"]])
+        media = MediaIndex([world["videos"]])
+        outcome = evaluate(
+            stage_codes=(0,),
+            archive_before={self.A},
+            archive_after={self.A},
+            manifest={self.A: final},
+            expected_ids=[self.A],
+            locate=lambda ident, path: (
+                locate(ident, path, mode=DownloadMode.VIDEO, index=media).status
+            ),
+        )
+
+        assert statuses(report) == {self.A: FindingStatus.MISSING}
+        assert outcome.missing == (self.A,)
+        assert outcome.already_present == 0
+
+    def test_repair_drops_only_the_proven_missing_record(self, world: dict[str, Path]) -> None:
+        archive = write_archive(world, "single_videos_mp4.txt", [self.A, self.B])
+        write_manifest(archive, {self.A: world["videos"] / f"T [{self.A}].mp4"})
+        touch(world["videos"] / f"T [{self.A}].compat.mp4")
+
+        plan = plan_repair(audit_archive(archive, [world["videos"]]))
+
+        assert list(plan.remove) == [self.A]

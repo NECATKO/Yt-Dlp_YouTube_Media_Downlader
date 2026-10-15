@@ -24,7 +24,12 @@ from .models import DownloadMode
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-_BRACKET_ID = re.compile(r"\[([^\[\]/\\]+)\]")
+#: The "[id]" group a name ends with: where every default template puts %(id)s. Earlier
+#: bracket groups belong to the title ("Reaction to [<another id>]") and are never ids.
+_TRAILING_ID = re.compile(r"\[([^\[\]/\\]+)\]$")
+
+#: An archive mode item folder: "<upload_date> - <title> [<id>]".
+_DATED_FOLDER = re.compile(r"^\d{8} - ")
 
 #: What each mode leaves behind as its finished file. Archive mode writes MKV, video mode
 #: MP4 or MKV (or the source container when the user keeps it); audio mode the chosen
@@ -40,9 +45,11 @@ _SUFFIXES: dict[DownloadMode | None, frozenset[str]] = {
     None: VIDEO_SUFFIXES | AUDIO_SUFFIXES,
 }
 
-#: yt-dlp's intermediate files: unmerged format streams (``.f137.mp4``) and ``.temp`` files.
-#: ``.part`` and ``.ytdl`` never end in a media suffix, so the suffix check drops them.
-_LEFTOVER = re.compile(r"\.(?:f\d+(?:-\w+)?|temp)\.[^.]+$", re.IGNORECASE)
+#: Intermediate files: yt-dlp's unmerged format streams (``.f137.mp4``) and ``.temp`` files,
+#: and the MP4 compatibility step's work file (``.compat.mp4``), left behind when a
+#: conversion is killed. ``.part`` and ``.ytdl`` never end in a media suffix, so the suffix
+#: check drops them.
+_LEFTOVER = re.compile(r"\.(?:f\d+(?:-\w+)?|temp|compat)\.[^.]+$", re.IGNORECASE)
 
 #: The archive name suffix of each mode (see planning.archive_file_name).
 _ARCHIVE_SUFFIX_MODES = (
@@ -91,12 +98,35 @@ def is_media_file(path: Path, mode: DownloadMode | None) -> bool:
         return False
 
 
-class MediaIndex:
-    """Media files under the download folders, by the id in their name or their folder's.
+def _trailing_id(name: str) -> str | None:
+    match = _TRAILING_ID.search(name)
+    return match.group(1) if match else None
 
-    The folders are walked once, on the first lookup. Archive mode names the folder
-    ``... [id]`` and the file after the title alone, so a file counts for the ids in its
-    own name and in its folder's name.
+
+def _id_of(folder: str, file: str) -> str | None:
+    """The id a media file is evidence for, from its name and its folder's, or None.
+
+    Video and audio modes end the file name in ``[id]``. Archive mode ends the folder name
+    in it and names the file after the title alone, so the title the folder repeats before
+    its id is the file's whole name, brackets of its own included. When a dated archive
+    folder and the file name otherwise end in different ids, the file proves neither.
+    """
+    stem = Path(file).stem
+    own = _trailing_id(stem)
+    folder_id = _trailing_id(folder)
+    if folder_id is None:
+        return own
+    if own is None or own == folder_id or folder.endswith(f"{stem} [{folder_id}]"):
+        return folder_id
+    # Two different ids: a dated folder is an archive item folder, which this file
+    # contradicts; any other folder (a playlist's title) is no id at all.
+    return None if _DATED_FOLDER.match(folder) else own
+
+
+class MediaIndex:
+    """Media files under the download folders, by the id their name carries (see _id_of).
+
+    The folders are walked once, on the first lookup.
     """
 
     def __init__(self, roots: Iterable[Path]) -> None:
@@ -108,11 +138,12 @@ class MediaIndex:
         for root in self._roots:
             for folder, dirs, files in os.walk(root):
                 dirs.sort()
-                folder_ids = _BRACKET_ID.findall(Path(folder).name)
+                folder_name = Path(folder).name
                 for name in sorted(files):
                     if not _is_media_name(name, None):
                         continue
-                    for ident in dict.fromkeys([*_BRACKET_ID.findall(name), *folder_ids]):
+                    ident = _id_of(folder_name, name)
+                    if ident is not None:
                         found.setdefault(ident, []).append(Path(folder) / name)
         return found
 

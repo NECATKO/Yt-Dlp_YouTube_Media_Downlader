@@ -151,3 +151,73 @@ class TestLocate:
         file = touch(tmp_path / "T [a].mp4")
         found = locate("a", None, mode=DownloadMode.VIDEO, index=MediaIndex([tmp_path]))
         assert (found.status, found.path) == (EvidenceStatus.PRESENT, file)
+
+
+A = "AAAAAAAAAAA"
+B = "BBBBBBBBBBB"
+
+
+class TestWhichIdANameCarries:
+    """D10: only the id field of the default templates counts, never a title's brackets."""
+
+    def test_a_title_quoting_another_id_is_evidence_only_for_the_last_one(
+        self, tmp_path: Path
+    ) -> None:
+        touch(tmp_path / f"A title quoting [{A}] [{B}].mkv")
+        index = MediaIndex([tmp_path])
+
+        assert index.files_for(A, DownloadMode.VIDEO) == ()
+        assert len(index.files_for(B, DownloadMode.VIDEO)) == 1
+
+    def test_an_archive_folder_counts_for_its_last_id_not_the_titles(self, tmp_path: Path) -> None:
+        # Archive layout: "<date> - <title> [<id>]/<title>.mkv", the title quoting A.
+        folder = tmp_path / "Chan" / f"20260101 - Quote [{A}] [{B}]"
+        media = touch(folder / f"Quote [{A}].mkv")
+        index = MediaIndex([tmp_path])
+
+        assert index.files_for(A, DownloadMode.ARCHIVE) == ()
+        assert index.files_for(B, DownloadMode.ARCHIVE) == (media,)
+
+    def test_an_archive_folder_and_a_file_naming_different_ids_prove_neither(
+        self, tmp_path: Path
+    ) -> None:
+        touch(tmp_path / "Chan" / f"20260101 - Something [{B}]" / f"Other [{A}].mkv")
+        index = MediaIndex([tmp_path])
+
+        assert index.files_for(A, DownloadMode.ARCHIVE) == ()
+        assert index.files_for(B, DownloadMode.ARCHIVE) == ()
+
+    def test_a_playlist_folder_ending_in_brackets_does_not_hide_the_files_id(
+        self, tmp_path: Path
+    ) -> None:
+        media = touch(tmp_path / "Best of [2020]" / f"001 - Song [{A}].mp4")
+        index = MediaIndex([tmp_path])
+
+        assert index.files_for(A, DownloadMode.VIDEO) == (media,)
+        assert index.files_for("2020", DownloadMode.VIDEO) == ()
+
+    def test_the_same_id_in_folder_and_file_is_one_match(self, tmp_path: Path) -> None:
+        media = touch(tmp_path / f"20260101 - T [{A}]" / f"T [{A}].mkv")
+
+        assert MediaIndex([tmp_path]).files_for(A, DownloadMode.ARCHIVE) == (media,)
+
+
+class TestUnfinishedConversion:
+    """D11: the MP4 compatibility step's work file is not a finished download."""
+
+    @pytest.mark.parametrize("name", [f"T [{A}].compat.mp4", f"T [{A}].COMPAT.MP4"])
+    def test_a_compat_work_file_is_not_media(self, tmp_path: Path, name: str) -> None:
+        path = touch(tmp_path / name)
+
+        assert not is_media_file(path, DownloadMode.VIDEO)
+        assert MediaIndex([tmp_path]).files_for(A, DownloadMode.VIDEO) == ()
+
+    def test_a_record_pointing_at_the_work_file_is_missing(self, tmp_path: Path) -> None:
+        work = touch(tmp_path / f"T [{A}].compat.mp4")
+
+        verdict = locate(
+            A, tmp_path / f"T [{A}].mp4", mode=DownloadMode.VIDEO, index=MediaIndex([tmp_path])
+        )
+
+        assert verdict.status is EvidenceStatus.MISSING
+        assert verdict.path != work
