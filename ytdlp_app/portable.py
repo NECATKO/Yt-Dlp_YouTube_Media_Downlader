@@ -91,8 +91,7 @@ class LockEntry:
 def platform_key(system: str | None = None, machine: str | None = None) -> str | None:
     """Return the runtime.lock platform key for this machine, e.g. "windows-x86_64".
 
-    Returns None for operating systems the portable runtime does not cover
-    (macOS keeps using the system installation).
+    Returns None for operating systems the app does not support.
     """
     os_name = (system if system is not None else platform.system()).lower()
     arch = _ARCH_ALIASES.get((machine if machine is not None else platform.machine()).lower())

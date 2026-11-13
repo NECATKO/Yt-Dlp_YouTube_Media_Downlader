@@ -1,3 +1,13 @@
+# Durum — 13 Kasım 2026
+
+Sadeleştirme kararı: yalnız İngilizce arayüz, yalnız Windows ve Linux terminali.
+
+- [x] Türkçe arayüz ve dil seçimi kaldırıldı (`i18n` tek katalog: `locales/en.json`)
+- [x] macOS desteği kaldırıldı (`install.sh`/`run.sh` Homebrew yolu, `~/Library` veri klasörü, CI işi)
+- [ ] Çekirdek dışı özelliklerin budanması — hangilerinin kalacağı kararı bekliyor
+
+---
+
 # Durum — 15 Ekim 2026
 
 14 Ekim genel durum incelemesi (`degerlendirme-raporlari/2026-10-14/`, yerel) güvenilirlik paketinin

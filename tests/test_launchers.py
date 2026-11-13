@@ -53,7 +53,7 @@ class TestRunSh:
         )
 
     def test_it_does_not_check_for_updates_at_launch(self, folder: Path) -> None:
-        """On Linux/macOS updating is on request (bash update.sh), never at launch."""
+        """On Linux updating is on request (bash update.sh), never at launch."""
         fake_python(folder)
         script(folder / "install.sh", "exit 0\n")
         script(folder / "update.sh", f'echo ran >> "{folder}/update.calls"\n')

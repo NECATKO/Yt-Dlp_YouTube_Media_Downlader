@@ -11,13 +11,12 @@ from .archive_audit import cli_entry as audit_command
 from .config import (
     default_dirs,
     ensure_dirs_interactive,
-    ensure_language_interactive,
     load_config,
     load_settings,
     migrate_config,
     normalize_user_path,
 )
-from .i18n import set_language, t
+from .i18n import t
 from .logging_utils import Colors, log_error, now_stamp, paint
 from .models import AppPaths, UserConfig
 from .redact import register_proxy
@@ -38,8 +37,6 @@ def _installed_data_dir() -> Path:
     if sys.platform == "win32":
         root = os.environ.get("LOCALAPPDATA")
         base = Path(root).expanduser() if root else Path.home() / "AppData" / "Local"
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
     else:
         root = os.environ.get("XDG_DATA_HOME")
         base = Path(root).expanduser() if root else Path.home() / ".local" / "share"
@@ -65,8 +62,8 @@ def _resolve_app_dir() -> Path:
 def make_streams_forgiving(*streams: TextIO | Any) -> None:
     """Make console output replace what the terminal cannot encode instead of raising.
 
-    The messages use natural Turkish, and a terminal in a legacy code page (a Windows
-    console outside the launcher's UTF-8 mode, ``LANG=C``) cannot show every letter. A
+    Video titles are in any language, and a terminal in a legacy code page (a Windows
+    console outside the launcher's UTF-8 mode, ``LANG=C``) cannot show every character. A
     stray "?" is a better failure than an UnicodeEncodeError in the middle of a download.
     """
     for stream in streams:
@@ -135,10 +132,6 @@ def run(argv: Sequence[str] | None = None) -> int:
         # 0) config: load or create paths (once)
         cfg = load_config(paths.config_file)
         migration_notes = migrate_config(cfg)
-
-        # Language must be resolved before anything else is printed, otherwise
-        # every t() lookup falls through to the raw key.
-        set_language(ensure_language_interactive(ui, cfg, config_file=paths.config_file))
 
         if args and args[0] == "audit":
             # The archive check: no prompts, nothing changed without --apply.

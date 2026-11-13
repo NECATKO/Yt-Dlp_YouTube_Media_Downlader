@@ -10,7 +10,7 @@ import ytdlp_app.session as session_module
 from tests.test_session_archive import Recorder, ScriptedUI, _session
 from ytdlp_app.exceptions import PlaylistError
 from ytdlp_app.exec import BAN_RETURN_CODE
-from ytdlp_app.i18n import set_language, t
+from ytdlp_app.i18n import t
 from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, PlaylistEntry
 from ytdlp_app.netctx import LISTING_TIMEOUT_SECONDS, PROBE_TIMEOUT_SECONDS
 from ytdlp_app.playlist import PlaylistListing
@@ -24,13 +24,6 @@ CHANNEL_ID = "UCuAXFkgsw1L7xaCfnd5JJOw"
 VIDEO, AUDIO, ARCHIVE = (int(ModeChoice.VIDEO), int(ModeChoice.AUDIO), int(ModeChoice.ARCHIVE))
 EXIT = int(ActionChoice.EXIT)
 FULL, QUALITY, MKV, COMPAT, UNLIMITED = 1, 2, 1, 1, 4
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 @pytest.fixture(autouse=True)

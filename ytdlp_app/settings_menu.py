@@ -1,6 +1,6 @@
 """In-app settings menu.
 
-Lets the user change the interface language, the download folders, and the
+Lets the user change the download folders and the
 advanced settings without editing config.json by hand. Every change is written
 through to disk immediately, so a crash never loses more than the edit in
 progress.
@@ -13,7 +13,7 @@ import dataclasses
 from typing import TYPE_CHECKING, Any
 
 from .config import normalize_user_path, save_settings, to_config_path
-from .i18n import get_available_languages, get_language, get_language_name, set_language, t
+from .i18n import t
 from .logging_utils import Colors, paint
 from .models import UserConfig
 from .redact import redact_secrets, register_proxy
@@ -83,24 +83,22 @@ class SettingsMenu:
         register_proxy(self.settings.download.proxy)
         self.ui.print(paint(t("settings_saved"), Colors.GREEN))
 
-    def _snapshot(self) -> tuple[AppSettings, dict[str, Any], UserConfig, str]:
+    def _snapshot(self) -> tuple[AppSettings, dict[str, Any], UserConfig]:
         """Everything an editor may change, as it is now."""
         return (
             copy.deepcopy(self.settings),
             copy.deepcopy(self.cfg),
             self.config,
-            get_language(),
         )
 
-    def _restore(self, snapshot: tuple[AppSettings, dict[str, Any], UserConfig, str]) -> None:
+    def _restore(self, snapshot: tuple[AppSettings, dict[str, Any], UserConfig]) -> None:
         """Put back what _snapshot captured, in the same objects the session holds."""
-        settings, cfg, config, language = snapshot
+        settings, cfg, config = snapshot
         for f in dataclasses.fields(AppSettings):
             setattr(self.settings, f.name, getattr(settings, f.name))
         self.cfg.clear()
         self.cfg.update(cfg)
         self.config = config
-        set_language(language)
         register_proxy(None)
         register_proxy(self.settings.download.proxy)
 
@@ -235,9 +233,8 @@ class SettingsMenu:
     # -- top level --------------------------------------------------------
 
     def _entries(self) -> list[tuple[str, Callable[[], None]]]:
-        """Build the menu, translated with whatever language is active now."""
+        """The menu: each entry's label and the editor it opens."""
         return [
-            (t("settings_language"), self._edit_language),
             (t("settings_videos_dir"), self._edit_videos_dir),
             (t("settings_music_dir"), self._edit_music_dir),
             (t("settings_download"), self._edit_download),
@@ -258,8 +255,6 @@ class SettingsMenu:
             UserConfig is frozen, so changing a folder rebuilds it.
         """
         while True:
-            # Rebuilt each pass so the labels follow a language change made in
-            # the previous one.
             entries = self._entries()
             labels = [label for label, _ in entries] + [t("settings_back")]
 
@@ -287,21 +282,6 @@ class SettingsMenu:
             raise
 
     # -- individual editors -----------------------------------------------
-
-    def _edit_language(self) -> None:
-        available = get_available_languages()
-        if len(available) < 2:
-            return
-
-        choice = self.ui.pick(
-            t("settings_language"),
-            [get_language_name(code) for code in available],
-        )
-        language = available[choice - 1]
-
-        set_language(language)
-        self.cfg["language"] = language
-        self._persist()
 
     def _edit_directory(self, label: str, current: Path) -> Path | None:
         """Prompt for a folder and create it.

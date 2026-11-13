@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
@@ -69,19 +69,14 @@ jobs:
         continue-on-error: true
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Install ffmpeg (macOS)
-        if: runner.os == 'macOS'
-        continue-on-error: true
-        run: brew install ffmpeg
-
       - name: Install ffmpeg (Windows)
         if: runner.os == 'Windows'
         continue-on-error: true
         run: choco install ffmpeg -y --no-progress
 
       # Ubuntu's ffmpeg has every encoder the engine tests need, so there a missing tool
-      # or encoder is a failure, not a skip. Other ffmpeg builds differ (Homebrew's has no
-      # libaom-av1), so on macOS and Windows those tests skip themselves.
+      # or encoder is a failure, not a skip. Other ffmpeg builds differ, so on Windows
+      # those tests skip themselves.
       # On Windows, update.ps1 and Run.bat run under the real PowerShell and cmd.exe
       # (tests/windows.py); there a missing tool is a failure, not a skip.
       - name: Run tests with coverage

@@ -1,12 +1,12 @@
 #!/bin/bash
-# update.sh - transactional updater for ytdlp-downloader (Linux and macOS)
+# update.sh - transactional updater for ytdlp-downloader (Linux)
 #
 # Usage: ./update.sh [--check-only] [--auto] [--quiet]
 #   (no option)   ask, then update the app and offer to update yt-dlp
 #   --check-only  only say whether a newer release exists
 #   --auto        for unattended use (a scheduled task, a wrapper): install a newer release
 #                 without asking, never fail (always exits 0), stay quiet otherwise.
-#                 run.sh does not call it; on Linux/macOS updating is on request
+#                 run.sh does not call it; on Linux updating is on request
 #
 # The app package is replaced as one transaction:
 #   1. the release ZIP is downloaded and unpacked into a temporary folder inside this one,

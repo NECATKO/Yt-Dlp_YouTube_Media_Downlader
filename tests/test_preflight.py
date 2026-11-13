@@ -3,11 +3,8 @@
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from ytdlp_app.estimate import format_size
 from ytdlp_app.exceptions import PlaylistError
-from ytdlp_app.i18n import set_language
 from ytdlp_app.models import DownloadMode, PlaylistEntry, ProfileChoice
 from ytdlp_app.preflight import (
     ListingStatus,
@@ -20,13 +17,6 @@ from ytdlp_app.preflight import (
 from ytdlp_app.settings import AppSettings
 
 BAN_TEXT = "ERROR: [youtube:tab] @Handle: Sign in to confirm you\u2019re not a bot."
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 class ScriptedUI:

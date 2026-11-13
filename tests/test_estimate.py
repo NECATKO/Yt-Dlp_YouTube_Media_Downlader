@@ -18,15 +18,7 @@ from ytdlp_app.estimate import (
     plan_videos,
     size_bytes,
 )
-from ytdlp_app.i18n import set_language
 from ytdlp_app.models import PlaylistEntry
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 def _entry(vid: str, duration: float | None = None, *, short: bool = False) -> PlaylistEntry:
@@ -287,7 +279,3 @@ class TestFormatting:
     )
     def test_durations(self, seconds: float, expected: str) -> None:
         assert format_duration(seconds) == expected
-
-    def test_durations_follow_the_language(self) -> None:
-        set_language("tr")
-        assert format_duration(3720) == "1 sa 2 dk"

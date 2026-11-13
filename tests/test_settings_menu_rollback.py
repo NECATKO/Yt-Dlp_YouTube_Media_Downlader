@@ -8,16 +8,9 @@ import pytest
 
 import ytdlp_app.settings_menu as menu_module
 from tests.test_settings_menu import BACK, FakeUI, _menu
-from ytdlp_app.i18n import get_language, set_language, t
+from ytdlp_app.i18n import t
 from ytdlp_app.models import DownloadMode, UserConfig
 from ytdlp_app.settings import AppSettings
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 @pytest.fixture
@@ -39,7 +32,7 @@ def disk_full(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(menu_module, "save_config", broken, raising=False)
 
 
-DOWNLOAD, LANGUAGE, VIDEOS_DIR = 4, 1, 2
+DOWNLOAD, VIDEOS_DIR = 3, 1
 
 
 class TestFailedSave:
@@ -65,17 +58,6 @@ class TestFailedSave:
 
         assert result == user_config
         assert not ui.picks
-
-    def test_a_failed_language_change_is_reverted(
-        self, disk_full: None, config_file: Path, user_config: UserConfig
-    ) -> None:
-        cfg = {"language": "en"}
-        ui = FakeUI(picks=[LANGUAGE, 2, BACK])
-
-        _menu(ui, config_file, user_config, cfg=cfg).run()
-
-        assert get_language() == "en"
-        assert cfg["language"] == "en"
 
     def test_a_failed_folder_change_keeps_the_old_folder(
         self, disk_full: None, config_file: Path, user_config: UserConfig, tmp_path: Path

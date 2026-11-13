@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from ytdlp_app.config import load_settings
-from ytdlp_app.i18n import get_language, set_language, t
+from ytdlp_app.i18n import t
 from ytdlp_app.models import UserConfig
 from ytdlp_app.settings import AppSettings
 from ytdlp_app.settings_menu import AUDIO_FORMATS, SettingsMenu
@@ -63,14 +63,6 @@ def user_config(tmp_path: Path) -> UserConfig:
     )
 
 
-@pytest.fixture(autouse=True)
-def _english():
-    """Menus are language sensitive; start each test from a known state."""
-    set_language("en")
-    yield
-    set_language("en")
-
-
 def _menu(
     ui: FakeUI,
     config_file: Path,
@@ -104,21 +96,6 @@ class TestNavigation:
         assert _menu(ui, config_file, user_config).run().videos_dir == user_config.videos_dir
 
 
-class TestLanguage:
-    """Changing the language must take effect and survive a restart."""
-
-    def test_switch_persists_and_applies(self, config_file: Path, user_config: UserConfig) -> None:
-        cfg: dict[str, Any] = {"language": "en"}
-        # Menu entry 1 (language), then Turkish, then leave.
-        ui = FakeUI(picks=[1, 2, BACK])
-
-        _menu(ui, config_file, user_config, cfg=cfg).run()
-
-        assert cfg["language"] == "tr"
-        assert get_language() == "tr"
-        assert json.loads(config_file.read_text(encoding="utf-8"))["language"] == "tr"
-
-
 class TestDirectories:
     """Folder edits rebuild the frozen UserConfig and create the folder."""
 
@@ -127,7 +104,7 @@ class TestDirectories:
     ) -> None:
         target = tmp_path / "NewVideos"
         cfg: dict[str, Any] = {}
-        ui = FakeUI(picks=[2, BACK], texts=[str(target)])
+        ui = FakeUI(picks=[1, BACK], texts=[str(target)])
 
         result = _menu(ui, config_file, user_config, cfg=cfg).run()
 
@@ -146,7 +123,7 @@ class TestDirectories:
         config_file.parent.mkdir()
         target = tmp_path / "elsewhere" / "Videos"
         cfg: dict[str, Any] = {}
-        ui = FakeUI(picks=[2, BACK], texts=[str(target)])
+        ui = FakeUI(picks=[1, BACK], texts=[str(target)])
 
         _menu(ui, config_file, user_config, cfg=cfg).run()
 
@@ -156,7 +133,7 @@ class TestDirectories:
         self, tmp_path: Path, config_file: Path, user_config: UserConfig
     ) -> None:
         cfg: dict[str, Any] = {}
-        ui = FakeUI(picks=[2, BACK], texts=["downloads/Clips"])
+        ui = FakeUI(picks=[1, BACK], texts=["downloads/Clips"])
 
         result = _menu(ui, config_file, user_config, cfg=cfg).run()
 
@@ -168,7 +145,7 @@ class TestDirectories:
         self, tmp_path: Path, config_file: Path, user_config: UserConfig
     ) -> None:
         target = tmp_path / "NewMusic"
-        ui = FakeUI(picks=[3, BACK], texts=[str(target)])
+        ui = FakeUI(picks=[2, BACK], texts=[str(target)])
 
         result = _menu(ui, config_file, user_config).run()
 
@@ -178,7 +155,7 @@ class TestDirectories:
     def test_blank_input_keeps_the_current_folder(
         self, config_file: Path, user_config: UserConfig
     ) -> None:
-        ui = FakeUI(picks=[2, BACK], texts=[""])
+        ui = FakeUI(picks=[1, BACK], texts=[""])
 
         result = _menu(ui, config_file, user_config).run()
 
@@ -196,7 +173,7 @@ class TestDownloadSettings:
         user_config: UserConfig,
         settings: AppSettings,
     ) -> None:
-        ui = FakeUI(picks=[4, BACK], texts=answers)
+        ui = FakeUI(picks=[3, BACK], texts=answers)
         _menu(ui, config_file, user_config, settings=settings).run()
 
     def test_values_are_stored(self, config_file: Path, user_config: UserConfig) -> None:
@@ -251,7 +228,7 @@ class TestDownloadSettings:
         """The menu applies the rules the config loader applies (B09)."""
         settings = AppSettings()
         ui = FakeUI(
-            picks=[4, BACK],
+            picks=[3, BACK],
             texts=["invalid proxy url", "http://proxy:3128", "fast", "2M", "", "", ""],
         )
 
@@ -294,7 +271,7 @@ class TestAudioSettings:
         settings = AppSettings()
         opus = AUDIO_FORMATS.index("opus") + 1
         # menu entry 5, format=opus, then quality text, thumbnail=no, metadata=yes
-        ui = FakeUI(picks=[5, opus, 2, 1, BACK], texts=["5"])
+        ui = FakeUI(picks=[4, opus, 2, 1, BACK], texts=["5"])
 
         _menu(ui, config_file, user_config, settings=settings).run()
 
@@ -308,7 +285,7 @@ class TestAudioSettings:
     ) -> None:
         settings = AppSettings()
         wav = AUDIO_FORMATS.index("wav") + 1
-        ui = FakeUI(picks=[5, wav, 1, 1, BACK], texts=[""])
+        ui = FakeUI(picks=[4, wav, 1, 1, BACK], texts=[""])
 
         _menu(ui, config_file, user_config, settings=settings).run()
 
@@ -318,7 +295,7 @@ class TestAudioSettings:
     def test_quality_is_bounded(self, config_file: Path, user_config: UserConfig) -> None:
         settings = AppSettings()
         mp3 = AUDIO_FORMATS.index("mp3") + 1
-        ui = FakeUI(picks=[5, mp3, 1, 1, BACK], texts=["42", "9"])
+        ui = FakeUI(picks=[4, mp3, 1, 1, BACK], texts=["42", "9"])
 
         _menu(ui, config_file, user_config, settings=settings).run()
 
@@ -332,7 +309,7 @@ class TestSubtitleSettings:
         self, config_file: Path, user_config: UserConfig
     ) -> None:
         settings = AppSettings()
-        ui = FakeUI(picks=[6, 1, 1, BACK], texts=["en,tr"])
+        ui = FakeUI(picks=[5, 1, 1, BACK], texts=["en,tr"])
 
         _menu(ui, config_file, user_config, settings=settings).run()
 
@@ -344,7 +321,7 @@ class TestSubtitleSettings:
         self, config_file: Path, user_config: UserConfig
     ) -> None:
         settings = AppSettings()
-        ui = FakeUI(picks=[6, 1, 1, BACK], texts=["--exec rm", "en,tr"])
+        ui = FakeUI(picks=[5, 1, 1, BACK], texts=["--exec rm", "en,tr"])
 
         _menu(ui, config_file, user_config, settings=settings).run()
 
@@ -355,7 +332,7 @@ class TestSubtitleSettings:
     ) -> None:
         settings = AppSettings()
         # No texts scripted: asking for languages would raise in FakeUI.
-        ui = FakeUI(picks=[6, 2, 2, BACK])
+        ui = FakeUI(picks=[5, 2, 2, BACK])
 
         _menu(ui, config_file, user_config, settings=settings).run()
 
@@ -370,7 +347,7 @@ class TestPersistence:
         self, config_file: Path, user_config: UserConfig
     ) -> None:
         settings = AppSettings()
-        ui = FakeUI(picks=[4, BACK], texts=["http://proxy:9000", "", "", "", ""])
+        ui = FakeUI(picks=[3, BACK], texts=["http://proxy:9000", "", "", "", ""])
 
         _menu(ui, config_file, user_config, settings=settings).run()
 
@@ -381,7 +358,7 @@ class TestPersistence:
         self, config_file: Path, user_config: UserConfig
     ) -> None:
         cfg: dict[str, Any] = {"app": "yt-dlp-downloader", "language": "en"}
-        ui = FakeUI(picks=[4, BACK], texts=["", "", "", "", ""])
+        ui = FakeUI(picks=[3, BACK], texts=["", "", "", "", ""])
 
         _menu(ui, config_file, user_config, cfg=cfg).run()
 
@@ -393,7 +370,7 @@ class TestPersistence:
 class TestArchiveSettingsMenu:
     """Entry 7 edits the four archive waits and persists them."""
 
-    ARCHIVE_ENTRY = 7
+    ARCHIVE_ENTRY = 6
 
     def _run(
         self, answers: list[str], config_file: Path, user_config: UserConfig, settings: AppSettings
@@ -463,8 +440,8 @@ class TestArchiveSettingsMenu:
 class TestResolutionLimitMenu:
     """Entries 8 and 9 edit the MP4 and archive resolution caps."""
 
-    VIDEO_ENTRY = 8
-    ARCHIVE_ENTRY = 9
+    VIDEO_ENTRY = 7
+    ARCHIVE_ENTRY = 8
 
     def _run(
         self,

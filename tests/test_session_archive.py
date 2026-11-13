@@ -10,7 +10,7 @@ import pytest
 import ytdlp_app.session as session_module
 from ytdlp_app.exceptions import PlaylistError
 from ytdlp_app.exec import BAN_RETURN_CODE
-from ytdlp_app.i18n import set_language, t
+from ytdlp_app.i18n import t
 from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, UserConfig
 from ytdlp_app.playlist import PlaylistListing
 from ytdlp_app.session import CycleOutcome, InteractiveSession
@@ -95,13 +95,6 @@ def _forbidden(*_args: Any, **_kwargs: Any) -> Any:
 
 def _forbidden_probe(*_args: Any, **_kwargs: Any) -> Any:
     raise AssertionError("archive mode must not send skip-probe requests")
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 @pytest.fixture

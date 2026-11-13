@@ -9,7 +9,7 @@ import pytest
 import ytdlp_app.session as session_module
 from tests.test_session_archive import Recorder, ScriptedUI, _session
 from ytdlp_app.exceptions import PlaylistError
-from ytdlp_app.i18n import set_language, t
+from ytdlp_app.i18n import t
 from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, PlaylistEntry
 from ytdlp_app.playlist import PlaylistListing
 from ytdlp_app.session import CycleOutcome
@@ -26,13 +26,6 @@ FULL_PLAYLIST = 1
 QUALITY, MKV, COMPAT = 2, 1, 1
 UNLIMITED = 4
 BAN_TEXT = "ERROR: [youtube:tab] @Handle: Sign in to confirm you\u2019re not a bot."
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 @pytest.fixture(autouse=True)

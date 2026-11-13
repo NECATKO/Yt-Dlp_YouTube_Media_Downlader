@@ -1,14 +1,12 @@
 #!/bin/bash
-# install.sh - sets up ytdlp-downloader
+# install.sh - sets up ytdlp-downloader on Linux
 #
-# Linux: a portable runtime in ./runtime, with no sudo and no system packages.
+# A portable runtime in ./runtime, with no sudo and no system packages.
 #   runtime/python   relocatable Python (python-build-standalone), with yt-dlp
 #   runtime/ffmpeg   ffmpeg + ffprobe
 #   runtime/deno     Deno, for YouTube's JavaScript challenges
 # Every download is checked against the sha256 pinned in runtime.lock. Safe to
 # run repeatedly: it only fetches what is missing or re-pinned.
-#
-# macOS: the system installation (Homebrew Python/ffmpeg + a .venv), as before.
 #
 # Usage: bash install.sh [--quiet]   (or ./install.sh once it is executable)
 
@@ -171,81 +169,8 @@ portable_install() {
 }
 
 # ==============================================================================
-# macOS: system installation (unchanged behavior)
-# ==============================================================================
-
-# The interpreter the .venv is made with, once found.
-PYTHON_BIN=""
-
-# Whether $1 runs and is Python 3.11 or newer (compared by Python itself, so 4.0 passes).
-python_ok() {
-    "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' &> /dev/null
-}
-
-# The first Python 3.11+ on the PATH, versioned names first: Homebrew links python3.12 and
-# friends onto the PATH, while "python3" may still be an older system or python.org one.
-find_python() {
-    local candidate path
-    for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
-        path="$(command -v "$candidate" 2> /dev/null)" || continue
-        if python_ok "$path"; then
-            PYTHON_BIN="$path"
-            return 0
-        fi
-    done
-    return 1
-}
-
-require_brew() {
-    if ! command -v brew &> /dev/null; then
-        echo -e "${RED}Homebrew not found. Please install Homebrew first:${NC}"
-        echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-        exit 1
-    fi
-}
-
-macos_install() {
-    if ! find_python; then
-        echo -e "${YELLOW}Installing Python 3.11+...${NC}"
-        require_brew
-        brew install python@3.12
-        # Use the interpreter brew just installed, by its own path: installing it does not
-        # change which "python3" comes first on the PATH.
-        PYTHON_BIN="$(brew --prefix python@3.12)/bin/python3.12"
-        python_ok "$PYTHON_BIN" || die "Failed to install Python 3.11+"
-    fi
-    echo -e "${GREEN}Using Python: $PYTHON_BIN${NC}"
-
-    if command -v ffmpeg &> /dev/null; then
-        echo -e "${GREEN}ffmpeg already installed${NC}"
-    else
-        echo -e "${YELLOW}Installing ffmpeg...${NC}"
-        require_brew
-        brew install ffmpeg
-    fi
-
-    if ! command -v deno &> /dev/null; then
-        read -r -p "Install Deno for JS challenge support? (y/N): " install_deno_choice
-        if [[ "$install_deno_choice" =~ ^[Yy]$ ]]; then
-            require_brew
-            brew install deno
-        fi
-    fi
-
-    echo -e "${YELLOW}Creating virtual environment...${NC}"
-    if [[ ! -d ".venv" ]]; then
-        "$PYTHON_BIN" -m venv .venv
-    fi
-    .venv/bin/pip install --upgrade pip
-    .venv/bin/pip install -e .
-
-    echo -e "${GREEN}Installation complete!${NC} Run the downloader with: ${CYAN}./run.sh${NC}"
-}
-
-# ==============================================================================
 
 case "$(uname -s)" in
     Linux)  portable_install ;;
-    Darwin) macos_install ;;
     *)      die "Unsupported operating system: $(uname -s). On Windows, use Run.bat." ;;
 esac

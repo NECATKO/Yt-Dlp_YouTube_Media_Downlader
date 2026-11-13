@@ -14,18 +14,11 @@ import pytest
 
 from tests.test_exec_lifecycle import PARENT, alive, pids_from, posix_only, wait_gone
 from ytdlp_app.exec import ConsoleSink, run_capture, run_cmd_tee
-from ytdlp_app.i18n import set_language, t
+from ytdlp_app.i18n import t
 from ytdlp_app.redact import display_command
 
 #: The time a cancelled command has to be gone in, start to finish.
 CANCEL_BUDGET = 5.0
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 def quiet_child(marker: Path, seconds: int = 30) -> list[str]:

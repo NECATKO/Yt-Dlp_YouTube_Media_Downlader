@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — simplification
+- **The Turkish interface.** The app is English only: the language prompt at first launch, the "Interface language" entry of the settings menu and `tr.json` are gone, and `i18n` is one message catalogue (`locales/en.json`) behind `t()`. A `language` key in an existing `config.json` is ignored and kept. The exit prompt after an error accepts `y`/`yes` only (it also took the Turkish `e`).
+- **macOS.** The app supports the Windows and the Linux terminal. `install.sh` and `run.sh` no longer have the Homebrew + `.venv` path (`install.sh` refuses any system but Linux), the per-user data folder under `~/Library` is gone, and CI no longer has a macOS job.
+
 From the 2026-10-14 review (`degerlendirme-raporlari/2026-10-14/`, local; findings D01–D03, D10, D11, D15, D16, D18, D19).
 
 ### Fixed — reliability

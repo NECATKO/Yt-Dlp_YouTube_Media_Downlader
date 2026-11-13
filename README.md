@@ -1,23 +1,23 @@
 # yt-dlp Downloader (portable)
 
-A portable cross-platform console application that wraps yt-dlp and ffmpeg. Runs on Windows, Linux, and macOS; on Windows and Linux it is fully portable (see [Portable runtime](#portable-runtime)). Features interactive folder setup, MP4/MP3/Archive mode selection, playlist handling, download archives to prevent duplicates, colorized console output, and detailed logging.
+A portable console application that wraps yt-dlp and ffmpeg. Runs in the Windows and Linux terminal, with everything it needs inside its own folder (see [Portable runtime](#portable-runtime)). The interface is in English. Features interactive folder setup, MP4/MP3/Archive mode selection, playlist handling, download archives to prevent duplicates, colorized console output, and detailed logging.
 
 **Scope.** The app is built around YouTube: playlists, channels, the size estimate and the channel archives all rest on YouTube's URL forms and ids. A URL from another site is still handed to yt-dlp, but only ever as a single item (you are told so); it is never treated as a playlist or channel.
 
 ## Features
 - **Fully portable (Windows, Linux)**: On first launch Python, yt-dlp, ffmpeg and Deno are downloaded *into the program folder*. No administrator rights, nothing installed on the system; copy the folder to a USB stick or another PC and it keeps working
-- **Verified updates**: on Windows a newer release is looked for quietly at every launch (`Run.bat`); on Linux/macOS you update on request with `bash update.sh`. Either way a release is installed only after the new package has been checked, and a failed update keeps the working version (see [Updating](#updating))
+- **Verified updates**: on Windows a newer release is looked for quietly at every launch (`Run.bat`); on Linux you update on request with `bash update.sh`. Either way a release is installed only after the new package has been checked, and a failed update keeps the working version (see [Updating](#updating))
 - **Interactive prompts**: Choose MP4/MP3/Archive mode, playlist vs single video, and quality profiles
 - **Honest results**: a run is judged by what it left behind (the download archive and the files), not by yt-dlp's exit code; you are told what was downloaded, what was already there, what failed and what is missing
 - **Archive mode**: Preserve a whole channel (or a single video) with its description, subtitles, thumbnail and metadata, paced to avoid rate limits and IP bans
 - **Archive check and repair**: compare the archives with the files on disk, preview a repair, redownload what is missing (type `a` at the URL prompt, or `downloader.py audit`)
-- **Settings menu**: Change the language, download folders, proxy, speed limit, audio format, and subtitles from inside the app — type `s` at the URL prompt
+- **Settings menu**: Change the download folders, proxy, speed limit, audio format, and subtitles from inside the app — type `s` at the URL prompt
 - **Colorized output**: Syntax-highlighted console output on a terminal; plain text when redirected or when `NO_COLOR` is set
 - **Skip reporting**: Explains why playlist items were skipped (private, region-blocked, age-restricted, members-only, etc.)
 - **Session continuity**: Download multiple URLs in a single session without restarting
 
 ## How it works
-1. Launch `Run.bat` (Windows) or `bash run.sh` (Linux/macOS; `./run.sh` works once the file is executable, which a ZIP download does not preserve). On Windows and Linux the first launch downloads the portable runtime into `runtime/` (once, about 150 MB on Windows and 220 MB on Linux); macOS installs Python, ffmpeg and Deno with Homebrew and yt-dlp into `.venv`.
+1. Launch `Run.bat` (Windows) or `bash run.sh` (Linux; `./run.sh` works once the file is executable, which a ZIP download does not preserve). The first launch downloads the portable runtime into `runtime/` (once, about 150 MB on Windows and 220 MB on Linux).
 2. You are asked once for base download folders (defaults: `downloads/Videos` and `downloads/Music` inside the program folder). Choices are saved to `config.json`.
 3. Each session: enter a URL, choose Video (MP4), Audio (in the format set in the settings, MP3 by default) or Archive (see [Archive mode](#archive-mode)), decide whether a playlist URL should grab the whole list or only that video, then pick the MP4 profile when relevant.
 4. yt-dlp runs with resume/retry flags (`--continue`, `--retries infinite`, `--fragment-retries infinite`); a download that keeps failing skips to the next playlist item, but a failed conversion, merge or embedding step, or a fragment that stays missing, leaves the item **undone** (it is not written to the download archive) so the next run retries it; a log captures the full command output.
@@ -146,7 +146,7 @@ On Windows (x64) and Linux (x86_64, aarch64; glibc-based distributions) everythi
 ## Updating
 The app package (the `ytdlp_app` folder and the scripts) is updated from GitHub releases by the same transaction on every platform, but started differently:
 - **Windows:** `Run.bat` runs `update.ps1 -Quiet` at every launch; nothing is asked, being offline is fine, and it never stops the launch. Set `YTDLP_NO_AUTO_UPDATE=1` to skip it. Run `update.ps1` yourself to see the new version and be asked first (*y* installs it; anything else, or no answer, keeps the installed version).
-- **Linux/macOS:** `run.sh` does **not** check for updates. Run `bash update.sh` when you want one (it asks first, then offers to update yt-dlp; if that fails it says so and exits with 1, and the installed yt-dlp stays); `bash update.sh --check-only` only says whether a newer release exists.
+- **Linux:** `run.sh` does **not** check for updates. Run `bash update.sh` when you want one (it asks first, then offers to update yt-dlp; if that fails it says so and exits with 1, and the installed yt-dlp stays); `bash update.sh --check-only` only says whether a newer release exists.
 
 An update is one transaction:
 1. The release ZIP is downloaded to a private temporary folder inside the app folder (unique per run) and unpacked there. `unzip` is used if present, otherwise the bundled Python or `python3`, then `bsdtar`; if none exists the update stops before downloading anything and says so.
@@ -157,12 +157,12 @@ An update is one transaction:
 6. Only one update runs at a time (a lock), and an update that was killed half way is undone the next time the updater starts, from the backup folder the journal names. The journal names that folder relative to the app folder, so moving the whole folder keeps it valid.
 7. If even putting the old files back fails, or the backup folder is not there, the journal (`.update-in-progress`) is kept: `Run.bat` and `run.sh` then refuse to start the app, and the updater says what to do (put the backup folder back, or reinstall from the release ZIP and delete the journal). Running the updater again finishes a restore that failed part way. Files a release added are removed by a rollback.
 
-`config.json`, `logs/`, `archives/`, `downloads/`, `cache/`, `runtime/` and `.venv/` are never touched. **`Run.bat` itself is not replaced** by the auto-update (cmd.exe reads a batch file while it runs, so swapping it underneath the launch could derail it): when a release changes `Run.bat`, copy it over by hand. The Linux/macOS updater replaces `run.sh` safely (a rename; the running script keeps its old copy). A ZIP download does not preserve the executable bit of `run.sh`, `install.sh` and `update.sh`; use `bash run.sh`, or `chmod +x run.sh install.sh update.sh` once.
+`config.json`, `logs/`, `archives/`, `downloads/`, `cache/`, `runtime/` and `.venv/` are never touched. **`Run.bat` itself is not replaced** by the auto-update (cmd.exe reads a batch file while it runs, so swapping it underneath the launch could derail it): when a release changes `Run.bat`, copy it over by hand. The Linux updater replaces `run.sh` safely (a rename; the running script keeps its old copy). A ZIP download does not preserve the executable bit of `run.sh`, `install.sh` and `update.sh`; use `bash run.sh`, or `chmod +x run.sh install.sh update.sh` once.
 
 ## Config and state
 | File | Description |
 |------|-------------|
-| `config.json` | Stores `config_version`, `app`, `videos_dir`, `music_dir`, `saved_at`, `language` and the advanced `settings` (including `settings.archive`). Folders inside the program folder are stored relative. Delete to reconfigure. |
+| `config.json` | Stores `config_version`, `app`, `videos_dir`, `music_dir`, `saved_at` and the advanced `settings` (including `settings.archive`). Folders inside the program folder are stored relative. Delete to reconfigure. |
 | `archives/*.txt` | Download archives for `--download-archive`. |
 | `archives/*.files.tsv` | Manifests: which file each finished item was written to. Used by the archive check. |
 | `archives/backups/` | Copies made before an archive was repaired. |
@@ -177,8 +177,8 @@ An update is one transaction:
 ## Files in this folder
 | File | Description |
 |------|-------------|
-| `Run.bat` / `run.sh` | One-click start (Windows / Linux, macOS). Sets up or refreshes the portable runtime and launches the app; `Run.bat` also updates quietly first. Both return the app's exit code; `Run.bat` waits for a key only when started without arguments, so `Run.bat audit ...` works in scripts. |
-| `install.ps1` / `install.sh` | Sets up the portable runtime in `runtime/` (macOS: Homebrew + `.venv`). Safe to rerun. |
+| `Run.bat` / `run.sh` | One-click start (Windows / Linux). Sets up or refreshes the portable runtime and launches the app; `Run.bat` also updates quietly first. Both return the app's exit code; `Run.bat` waits for a key only when started without arguments, so `Run.bat audit ...` works in scripts. |
+| `install.ps1` / `install.sh` | Sets up the portable runtime in `runtime/`. Safe to rerun. |
 | `update.ps1` / `update.sh` | Transactional app updater (see [Updating](#updating)). |
 | `runtime.lock` | Pinned URLs and SHA-256 checksums of the portable Python, ffmpeg and Deno. |
 | `downloader.py` | Entry point that calls `ytdlp_app.app.run()`. `downloader.py audit ...` runs the archive check. |
@@ -216,7 +216,6 @@ An update is one transaction:
 ## Requirements
 - **Windows**: 64-bit Windows 10 (version 1803 or newer) or Windows 11. Nothing else.
 - **Linux**: x86_64 or aarch64 with glibc (not Alpine/musl), plus `curl` or `wget`, `tar` and `sha256sum` (present on practically every distribution). Updating also needs `unzip`, `python3` or `bsdtar` (the bundled Python counts).
-- **macOS**: Homebrew; Python 3.11+. A Python 3.11 or newer on the PATH (`python3.12`, `python3`, ...) is used; if there is none, `python@3.12` is installed with Homebrew and the `.venv` is made with that interpreter by its path.
 - yt-dlp 2025.11.12 or newer (the portable runtime and the `.venv` install keep it current; an older one on the PATH is reported before a download starts)
 - Internet connection for the first launch and for downloads
 
@@ -226,262 +225,16 @@ An update is one transaction:
 | First-time setup fails | Check the internet connection and run `Run.bat` / `bash run.sh` again; it resumes and only fetches what is missing. Administrator rights are not needed. |
 | "Permission denied" starting `./run.sh` | ZIP downloads lose the executable bit: run `bash run.sh`, or `chmod +x run.sh install.sh update.sh`. |
 | "Checksum mismatch" | The download was corrupted or altered and was discarded. Try again; if it persists, report it. |
-| yt-dlp/ffmpeg not found | Run `install.ps1` (Windows) or `bash install.sh` (Linux/macOS) again. |
+| yt-dlp/ffmpeg not found | Run `install.ps1` (Windows) or `bash install.sh` (Linux) again. |
 | A video stopped working after a YouTube change | Update yt-dlp: `runtime/python/python -m ytdlp_app.portable update-ytdlp`. |
 | An update failed | The previous version was restored; read the message, fix the cause (often a missing `unzip`) and run `bash update.sh` again. The previous version is also in `.previous-version/`. |
 | "An update did not finish" at launch | Putting the old files back failed part way. Run `bash update.sh` (Windows: `update.ps1`); it finishes the restore. The message names the folder that holds the old files. |
 | Change download folders | Type `s` at the URL prompt and pick the folder to change. |
-| Change the interface language | Type `s` at the URL prompt and pick "Interface language". |
 | Download something again / a file was deleted | Type `a` at the URL prompt (archive tools) or run `downloader.py audit`; see [What "already downloaded" means](#what-already-downloaded-means). Deleting an archive file by hand also works, but forgets everything in it. |
 | "Finished with problems" | The items that were not downloaded are listed; run the same URL again to retry them (the log has the reasons). |
 | Archive stopped with "YouTube is temporarily blocking requests" | Wait a few hours and enter the same URL again; it resumes. Consider raising the archive waits (`s` → *Archive mode waits*) or using a proxy. |
 | A setting was replaced by its default at startup | The message names the field and why; fix it in `config.json` or in the settings menu. |
-| Deno warning appears | Run `install.ps1` / `bash install.sh` again (macOS: `brew install deno`). |
+| Deno warning appears | Run `install.ps1` / `bash install.sh` again. |
 
 ## License
 See [LICENSE](LICENSE) for details.
-
----
-
-## yt-dlp Downloader (taşınabilir) — Türkçe
-
-yt-dlp ve ffmpeg üzerine kurulu taşınabilir bir konsol uygulaması. Windows, Linux ve macOS üzerinde çalışır; Windows ve Linux'ta tamamen taşınabilirdir (bkz. *Taşınabilir çalışma ortamı*). İnteraktif klasör kurulumu, MP4/MP3/Arşiv mod seçimi, oynatma listesi yönetimi, tekrarları engelleyen arşiv sistemi, renkli konsol çıktısı ve ayrıntılı günlükleme sunar.
-
-**Kapsam.** Uygulama YouTube'a göredir: oynatma listeleri, kanallar, boyut tahmini ve kanal arşivleri YouTube'un URL biçimlerine ve kimliklerine dayanır. Başka bir sitenin URL'si yine yt-dlp'ye verilir, ama yalnızca tek öğe olarak (bu size söylenir); asla oynatma listesi ya da kanal sayılmaz.
-
-## Özellikler
-- **Tamamen taşınabilir (Windows, Linux)**: İlk açılışta Python, yt-dlp, ffmpeg ve Deno *program klasörünün içine* indirilir. Yönetici izni gerekmez, sisteme hiçbir şey kurulmaz; klasörü USB belleğe veya başka bir bilgisayara kopyalayın, çalışmaya devam eder
-- **Doğrulanmış güncelleme**: Windows'ta yeni bir sürüm her açılışta sessizce aranır (`Run.bat`); Linux/macOS'ta istediğinizde `bash update.sh` ile güncellersiniz. İki durumda da sürüm ancak yeni paket denetlendikten sonra kurulur ve başarısız bir güncelleme çalışan sürümü korur (bkz. *Güncelleme*)
-- **İnteraktif menüler**: MP4/MP3/Arşiv modu, oynatma listesi/tek video seçimi ve kalite profilleri
-- **Dürüst sonuçlar**: bir çalıştırma yt-dlp'nin çıkış koduna değil, geride bıraktıklarına (indirme arşivi ve dosyalar) göre değerlendirilir; neyin indirildiği, neyin zaten var olduğu, neyin başarısız olduğu ve neyin eksik olduğu söylenir
-- **Arşiv modu**: Bir kanalın tamamını (veya tek bir videoyu) açıklama, altyazı, kapak resmi ve metaveri ile birlikte, hız sınırına ve IP engeline takılmayacak tempoda arşivler
-- **Arşiv denetimi ve onarımı**: arşivleri diskteki dosyalarla karşılaştırır, onarımı önizler, eksik olanı yeniden indirir (URL isteminde `a` yazın ya da `downloader.py audit`)
-- **Ayarlar menüsü**: Dil, indirme klasörleri, vekil sunucu, hız sınırı, ses biçimi ve altyazıları uygulama içinden değiştirin — URL isteminde `s` yazın
-- **Renkli çıktı**: Terminalde söz dizimi vurgulu çıktı; yönlendirilince ya da `NO_COLOR` tanımlıysa düz metin
-- **Atlama raporu**: Oynatma listesi öğelerinin neden atlandığını açıklar (gizli, bölge kısıtı, yaş kısıtı, üyelik gerekli, vb.)
-- **Oturum sürekliliği**: Tek oturumda yeniden başlatmadan birden fazla URL indirin
-
-### Nasıl çalışır
-1. `Run.bat` (Windows) veya `bash run.sh` (Linux/macOS; dosya çalıştırılabilir olduğunda `./run.sh` da olur, ZIP indirmesi bu biti korumaz) ile başlatın. Windows ve Linux'ta ilk açılış taşınabilir çalışma ortamını `runtime/` içine indirir (bir kereye mahsus; Windows'ta yaklaşık 150 MB, Linux'ta 220 MB); macOS'ta Python, ffmpeg ve Deno Homebrew ile, yt-dlp `.venv` içine kurulur.
-2. İlk seferde video/müzik klasörlerini sorar (varsayılan: program klasöründeki `downloads/Videos` ve `downloads/Music`). Tercihler `config.json` içine kaydedilir.
-3. Her oturumda: URL girin, Video (MP4), Ses (ayarlarda seçilen biçimde, varsayılan MP3) veya Arşiv (bkz. *Arşiv modu*) seçin, oynatma listesi URL'si için tüm liste mi tek video mu karar verin, MP4 ise profil seçin.
-4. yt-dlp devam/yeniden dene bayraklarıyla (`--continue`, `--retries infinite`, `--fragment-retries infinite`) çalışır; sürekli başarısız olan bir indirme listedeki sonraki öğeye geçer, ama başarısız bir dönüştürme, birleştirme ya da gömme adımı ya da eksik kalan bir parça öğeyi **tamamlanmamış** bırakır (indirme arşivine yazılmaz) ve sonraki çalıştırma yeniden dener; konsol çıktısı günlüğe yazılır.
-5. Çalıştırma bittiğinde üç sonuçtan biri verilir: *her şey tamam*, *sorunlarla tamamlandı* (bazı öğeler indi, bazıları inmedi; inmeyenler listelenir) ya da *hiçbir şey indirilemedi*. Çıkış kodu oturumun tamamını anlatır: her şey yolunda gittiyse 0, herhangi bir indirme başarısız olduysa ya da öğe eksik bıraktıysa (sonraki bir indirme başarılı olsa bile) 1, Ctrl+C ile iptal edildiyse 130.
-6. Oynatma listesi kullanıldığında indirilmeyen öğeler için neden yoklaması yapılır ve ekrana yazılır (gizli, bölge kısıtı, yaş kısıtı, üyelik gerekli, telif hakkı, vb.). Yoklama, Ctrl+C'de ya da YouTube engellemeye başladığında hemen durur.
-7. İndirme bitince aynı oturumda hemen yeni URL indirebilirsiniz.
-
-### Çıktı düzeni
-Dosya adları video kimliğini taşır; böylece aynı başlıklı iki farklı video iki ayrı dosya olur (kimlik olmadan ikincisi sessizce birincinin kopyası sanılıyordu). Oynatma listelerinde sıra numarası yalnızca sıralama için önek olarak kalır.
-
-| Mod | Tür | Çıktı Yolu | Arşiv Dosyası |
-|-----|-----|------------|---------------|
-| MP4 | Oynatma listesi | `<Videos>/yt-dlp/<playlist_title>/<index> - <title> [<id>].mp4` | `archives/playlist_<playlist_id>_mp4.txt` |
-| MP4 | Kanal | yukarıdaki gibi | `archives/channel_<channel_id>_mp4.txt` |
-| MP4 | Tek video | `<Videos>/Downloaded Videos/<title> [<id>].mp4` | `archives/single_videos_mp4.txt` |
-| Ses | Oynatma listesi | `<Music>/yt-dlp/<playlist_title>/<index> - <title> [<id>].<biçim>` | `archives/playlist_<playlist_id>_mp3.txt` |
-| Ses | Kanal | yukarıdaki gibi | `archives/channel_<channel_id>_mp3.txt` |
-| Ses | Tek parça | `<Music>/Downloaded Music/<title> [<id>].<biçim>` | `archives/single_audios_mp3.txt` |
-| Arşiv | Kanal | `<Videos>/yt-dlp/<channel>/<upload_date> - <title> [<id>]/<title>.mkv` | `archives/channel_<channel_id>_archive.txt` |
-| Arşiv | Oynatma listesi | yukarıdakiyle aynı | `archives/playlist_<playlist_id>_archive.txt` |
-| Arşiv | Tek video | yukarıdakiyle aynı | `archives/single_videos_archive.txt` |
-
-- Hangi ses biçimini seçerseniz seçin ses arşivleri `mp3` adını korur: arşiv *hangi videoların tamamlandığını* kaydeder, hangi biçimde olduğunu değil; biçime göre yeniden adlandırmak halihazırda indirilen her şeyin kaydını gizlerdi.
-- Her arşiv dosyası adı temizlenmiş bir kimlikten üretilir (`/../../x` gibi bir oynatma listesi kimliği `archives/` dışına çıkamaz) ve arşiv klasörünün içinde kaldığı doğrulanır. Temizlenince aynı metne dönüşecek iki kimlik farklı adlar alır.
-- Kanal URL'si (handle, `/channel/`, `/c/`, `/user/` ya da bunların sekmeleri) her modda gerçek kanal kimliğiyle adlandırılır; sekme adı asla kanalın yerine geçmez. `/@ad/live`, yönlendirdiği tek videodur; oynatma listesi değildir.
-- **Yükseltme.** Kayıtlı çıktı şablonlarınız yalnızca hâlâ tam olarak eski varsayılanlarsa (`%(title)s.%(ext)s` ve oynatma listesi olan) taşınır; kendi yazdığınız şablon asla değiştirilmez, ama `%(id)s` içermiyorsa bu size söylenir. Değişiklikten önce indirilen dosyalar eski adlarını korur, mevcut arşivler çalışmaya devam eder. Eski sürümlerin bir kanal için handle adıyla tuttuğu arşiv, kimlikle adlandırılmış olan oluşana kadar kullanılmaya devam eder.
-- Günlükler: `logs/yt-dlp_<mod>_<playlist|single>_<zaman>.log`
-
-### MP4 profilleri
-1. **Uyumluluk** — sonuç **H.264 video ve AAC ses içeren bir MP4 dosyasıdır** ve bu varsayılmaz, denetlenir:
-   - Aşama 1 H.264 + AAC sürümünü ister; bu, yeniden kodlamadan MP4'e birleşir.
-   - Aşama 2 geriye kalanın en iyisini alır ve paketle gelen bir yt-dlp eklentisi (`Mp4Compat`) sonucu ffprobe ile inceler. Zaten MP4 içinde H.264 + AAC olan dosyaya dokunulmaz (kalite kaybı yok); videosu doğru sesi yanlış olan dosyada video olduğu gibi kalır, yalnızca ses dönüştürülür; geri kalan her şey (AV1, VP9, HEVC, WebM/MKV kapsayıcı, hatta AV1 taşıyan bir `.mp4`) dönüştürülür. Dönüştürülen dosya yeniden incelenir ve H.264 + AAC olmalıdır; değilse öğe başarısız sayılır ve sonraki çalıştırmada yeniden denenir.
-   - yt-dlp'nin kendi `--recode-video mp4` seçeneği kullanılmaz: kapsayıcıya bakar, dolayısıyla AV1 taşıyan bir `.mp4` "zaten hedef biçimde" sayılıp olduğu gibi kalırdı.
-   - Aşama 1'in bitiremediği öğe arşivde olmadığından Aşama 2 onu gerçekten işler; temiz biten bir Aşama 2, çözülmemiş bir Aşama 1'i gizlemez.
-2. **Kalite** (yeniden kodlama yok):
-   - En iyi video + en iyi sesi dönüştürmeden indirir
-   - Kapsayıcı seçimi:
-     - **MKV**: her zaman çalışır; tek bir birleşik akış olarak gelen video (tek bir MP4) MKV'ye aktarılır (akış kopyası), MP4 olarak bırakılmaz
-     - **MP4 remux**: Codec'ler uyumsuzsa hata verebilir
-
-### Ses modu
-- Mevcut en iyi sesi indirir (`bestaudio/best`)
-- Seçilen biçime dönüştürür (`mp3`, `m4a`, `opus`, `flac`, `wav` ya da kaynak codec'ini korumak için `best`; `s` → *Ses*); mod menüsü, özet ve iletiler bu biçimi adıyla söyler
-- Metaveri ve kapak resmi (JPG'ye dönüştürülmüş) gömer. WAV kapak taşıyamadığı için `wav` seçiliyken kapak, dosyanın yanına ayrı bir `.jpg` olarak kaydedilir (uygulama bunu söyler)
-
-### Arşiv modu
-Silinme riski olan bir kanalı korumak için. Mod olarak **Arşiv**'i seçin ve bir kanal URL'si (`https://www.youtube.com/@isim`, `/channel/UC...` ya da `/@isim/videos` gibi bir sekme), bir oynatma listesi veya tek bir video girin.
-
-- **Her video için saklananlar** (her biri kendi klasöründe): video (çözünürlük sınırına kadar en iyi kalite, varsayılan 1080p; her zaman MKV olarak, bölümler ve metaveri gömülü), `.description`, `.info.json`, kapak resmi ve Türkçe/İngilizce yüklenmiş + otomatik altyazılar (`.srt`'ye dönüştürülmüş). YouTube'un makine çevirileri atlanır (kanal yüklemediyse İngilizce bir videoya Türkçe altyazı gelmez); yalnızca videoda gerçekten var olan altyazılar saklanır.
-- **Ya tam ya hiç.** Bir öğe arşiv dosyasına ancak sahip olduğu her şey kaydedildiğinde girer:
-  - eksik bir HLS/DASH parçası öğeyi başarısız kılar (yt-dlp'nin varsayılanı onu atlayıp başarı bildirmektir; ortaya deliği olan bir video çıkar); 10 denemeden sonra öğe arşivin dışında kalır ve sonraki çalıştırma yeniden indirir;
-  - var olduğu hâlde indirilemeyen bir altyazı ya da listelenmiş olduğu hâlde hiçbiri kaydedilemeyen kapak resimleri de öğeyi durdurur (paketle gelen `ArchiveComplete` eklentisi videoyu indirmeden önce denetler; böylece bant genişliği boşa harcanmaz). Hiç altyazısı ya da kapak resmi *olmayan* bir video onlarsız da tamamdır; en iyi kapak resmi 404 verse de daha düşüğü geldiyse sorun olmaz.
-- **Kanal URL'si kanalın tamamını arşivler.** yt-dlp Videos, Shorts ve Live sekmelerini iç içe oynatma listesi olarak döndürür; hepsi indirilir ve "tüm liste mi bu video mu" sorusu sorulmaz. Bir sekme URL'si (`/@isim/videos`, `/shorts`, `/streams`, ...) yt-dlp'ye yalnızca o sekmeyi listeletir; bu yüzden arşiv modu listeleme ve indirme için onun yerine kanal URL'sini kullanır ve bunu söyler; log ikisini de kaydeder. `/@isim/live` ve `list=` içeren sekme URL'si girildiği gibi kalır. Video ve ses modları verdiğiniz sekmeyi korur.
-- **Arşiv dosyası gerçek kanal kimliğine göre adlandırılır** (`channel_UC..._archive.txt`). Böylece aynı kanalın handle URL'si, `/channel/` URL'si ve sekme URL'leri, handle değişse bile aynı arşivden devam eder. Kimlik, boyut tahminini de besleyen aynı listeden okunur (ayrı bir istek yok); liste engel dışı bir nedenle başarısız olursa URL'deki kimlik kullanılır.
-- **Tempo** (varsayılanlar): istekler arası 1,5 sn, videolar arası 15–45 sn (rastgele), her altyazıdan önce 5 sn, sonsuz yerine 10 deneme. Bekleme süreleri `s` → *Arşiv modu bekleme süreleri* ile değiştirilir ve `config.json` içinde `settings.archive` altında saklanır. Hız sınırınız ve vekil sunucunuz bu modda da geçerlidir.
-- **Engel koruması**: yt-dlp `HTTP Error 429` ya da YouTube'un *"Sign in to confirm you're not a bot"* iletisini bildirirse indirme hemen durdurulur (yt-dlp ve başlattığı her şey, ffmpeg dahil), olay günlüğe (`[BAN-GUARD]`) yazılır ve **birkaç saat bekleyip aynı URL'yi yeniden vermeniz, indirmenin kaldığı yerden devam edeceği** söylenir.
-- İstek sayısını düşük tutmak için arşiv modu bir kanalı ya da oynatma listesini yalnızca bir kez listeler (boyut tahmini ve kanal kimliği için; istekler arası bekleme uygulanır) ve sonrasında atlanan öğeleri yoklamaz (atlama raporu yalnızca MP4/ses modunda). Tek video için liste isteği yapılmaz.
-
-### "Zaten indirilmiş" ne demek
-İndirme arşivi **hangi videoların tamamlandığını** video kimliğine göre kaydeder. Klasörü, çözünürlüğü ya da ses biçimini kaydetmez. Bunlardan birini sonradan değiştirirseniz:
-
-| Değiştirdiğiniz | Arşivde zaten kayıtlı öğelere ne olur |
-|-----------------|---------------------------------------|
-| İndirme klasörü | Atlanırlar; yeni klasöre hiçbir şey kopyalanmaz |
-| Çözünürlük sınırı | Atlanırlar; yeni kalitede yeniden indirilmez |
-| Ses biçimi | Atlanırlar; yeniden dönüştürülmez |
-| Hiçbiri, ama bir dosyayı sildiniz | O da atlanır; arşiv denetimi (aşağıda) onu bulmadıkça |
-
-Öğe atlayan bir çalıştırmadan sonra uygulama bunu söyler. Bir şeyi yeniden indirmek için arşiv araçlarını kullanın:
-
-- **Eksik dosyalar** — URL isteminde `a` → *Eksik dosyaları yeniden indir* ya da `downloader.py audit --repair` (önizleme), ardından `--repair --apply`. Yalnızca dosyasının kesin olarak yok olduğu kayıtlar silinir. Denetim, bir dosyanın yerini her arşivin yanında tutulan manifestten (`archives/<ad>.files.tsv`; bundan sonra indirilen her şey için yazılır) ya da dosya/klasör adındaki `[kimlik]`ten bilir. İkisi de olmayan kayıt (adlarda kimlik bulunmadan önceki bir indirme) *denetlenemedi* diye bildirilir; tahminle asla onarılmaz.
-- **Birkaç video yeniden** — `downloader.py audit --forget KİMLİK [KİMLİK ...] --archive AD [--apply]`.
-- **Bir arşivin tamamı yeniden (örneğin daha iyi kalitede)** — `a` → *Bir arşivdeki her şeyi yeniden indir* ya da `--forget-all --archive AD`. Önce başka bir indirme klasörü seçin (ya da eski dosyaları kaldırın): dosyalar kimlikle adlandırılır ve yt-dlp var olan bir dosyanın üzerine yazmaz.
-
-Bir arşivi değiştiren her komut **`--apply` ekleyene kadar bir önizlemedir** (menüde: onaylayana kadar), önce arşivi `archives/backups/<ad>.<zaman>.bak` olarak kopyalar, atomik biçimde yeniden yazar, yorum ve boş satırlara dokunmaz ve başka hiçbir şeyi silmez. Geri almak için yedeği arşiv dosyasının üzerine kopyalayın. Seçeneksiz `downloader.py audit` salt okunur bir rapordur.
-
-### Boyut tahmini ve çözünürlük sınırı
-**Oynatma listesi ya da kanal indirmeden önce** (video, ses ve arşiv modları) uygulama bir boyut tahmini gösterir ve boş disk alanını denetler. Listeyi bir kez okur (video başına ek istek yok) ve her videonun süresini tipik bir bit hızıyla çarpar; bu yüzden rakamlar bilerek yüksek taraftadır ve **ölçüm değil tahmindir**:
-
-| Satır | Varsayılan bit hızı |
-|-------|---------------------|
-| 1080p | 6000 kbit/sn video + 160 kbit/sn ses |
-| 1440p (en fazla) | 12000 + 160 |
-| 2160p (en fazla) | 30000 + 160 |
-| Sınırsız (8K'ya kadar) | 80000 + 160 |
-
-- 1440p ve 2160p "en fazla" diye etiketlenir: düz listede çözünürlük yoktur ve o çözünürlükte olmayan video daha küçük iner.
-- **Sınırsız, 2160p değildir.** Var olan en iyi biçimi alır; bu 8K olabilir. Bu yüzden kendi satırı vardır ve sınırsız indirme için disk denetimi onu kullanır. Gerçek boyut, her videonun sunduğu biçimlere bağlıdır.
-- **Gereken alan** = seçilen çözünürlüğün toplamı + en büyük tek video; birleştirme ya da yeniden kodlama sırasında kaynak ve sonuç diskte birlikte durur. Ses için: çıktıların toplamı + en büyük *kaynak* akış (dönüştürülürken diskte durur ve düşük bit hızlı bir çıktıdan büyüktür).
-- Arşivde kayıtlı videolar hariç tutulur. Süresi olmayan video (Shorts, canlı) 180 sn (Shorts) ya da bilinen sürelerin ortancası kabul edilir; ekranda kaç videonun varsayımla hesaplandığı yazar. Hiçbir süre bilinmiyorsa tahmin atlanır ve indirme devam eder.
-- **Ses** tek rakam gösterir; ses biçiminiz ve kaliteniz esas alınır (`mp3` kalite 0 yaklaşık 245 kbit/sn; `flac` ve `wav` çok daha büyük).
-- Boyutlar 1024 tabanlıdır (KiB/MiB/GiB), Windows Gezgini gibi.
-- **Yer yetmiyor mu?** Uyarılırsınız ve *Yine de devam et / İptal* sorulur. İndirme asla engellenmez.
-- **Süre:** kısa bir hız testi (en fazla yaklaşık 10 MB, bağlantı ne yaparsa yapsın 8 saniyeyi geçmez; `speed.cloudflare.com`, vekil sunucunuzdan geçer; SOCKS vekilde atlanır) boyutu kaba bir indirme süresine çevirir. YouTube'u değil, o sunucuya olan hattınızı ölçer; süreleri kaba sayın; IP adresinizi o sunucuya gönderir. Başarısız olursa süre sütunu bunu söyler, başka bir şey değişmez. **Kapatılabilir** (`s` → *Bağlantı hızı testi* ya da `settings.download.speed_test`); boyut tahmini kalır. Arşiv modu ayrıca videolar arası beklemeleri *en az* (her bekleme en kısa değerinde) ve *yaklaşık* (ortalama) olarak gösterir.
-- Tek video için tahmin yapılmaz (ek istek gerekirdi).
-
-**Çözünürlük sınırı.** Tahminden sonra MP4 ve arşiv indirmeleri için (tek video dahil) en yüksek çözünürlük sorulur: 1080p, 1440p, 2160p ya da sınırsız. Kayıtlı varsayılan işaretlidir; başka bir seçenek seçerseniz yalnızca bu indirme için kullanabilir ya da yeni varsayılan olarak kaydedebilirsiniz. Sınır tüm video biçim seçicilerine (`[height<=N]`, yedek dahil) uygulanır. Uyumluluk MP4 profili 1080p'de kalır: YouTube H.264'ü yaklaşık 1080p'ye kadar verir, daha yükseği yavaşça yeniden kodlanırdı. Varsayılanlar: arşiv 1080p, MP4 sınırsız. `s` → *Video çözünürlük sınırı* / *Arşiv çözünürlük sınırı* ile ya da `config.json`'da (`settings.video.max_height`, `settings.archive.max_height`: `1080`, `1440`, `2160` ya da `null`) değiştirilir.
-
-### Ağ, vekil sunucu ve gizlilik
-- **Her yt-dlp çağrısı için tek kural kümesi.** İndirme, oynatma listesi listelemesi ve atlama yoklamaları aynı vekil sunucuyu, JavaScript çalışma ortamını, ağ zaman aşımını (takılan her okuma için 30 sn; indirmenin toplam süre sınırı yoktur) ve tempoyu alır. Listeleme ve yoklamaların ayrıca tüm isteğe uygulanan bir süre sınırı vardır (30 ve 3 dakika); takılan bir istek uygulamayı donduramaz.
-- **Kendi yt-dlp yapılandırma dosyalarınız varsayılan olarak yok sayılır** (`--ignore-config`): `yt-dlp.conf` dosyanızda unutulmuş bir `--skip-download` ya da `--extract-audio` bir indirmenin ne yaptığını değiştirirdi ve karar veren artık uygulamanın ayarları olmazdı. Dikkate alınmalarını istiyorsanız `s` → *Kendi yt-dlp yapılandırma dosyalarımı oku* seçeneğini açın (`settings.download.allow_external_config`).
-- **Vekil sunucu kimlik bilgileri maskelenir** (`http://***:***@host:port`): konsolda, ayar ekranında, komut başlığında, günlüğün `CMD:` satırında, hata iletilerinde ve yt-dlp'nin kendi çıktısında gösterilen ya da günlüğe yazılan her yerde. Yalnızca gerçekten çalıştırılan argümanlar onları korur.
-- Hız testi de vekil sunucunuzdan geçer; uygulama bunun için `speed.cloudflare.com` ile, güncellemeler ve çalışma ortamı indirmeleri için GitHub ile konuşur.
-
-### Temiz durdurma
-yt-dlp ffmpeg'i başlatır ve terminaldeki Ctrl+C, çocuğun çocuğuna güvenilir biçimde ulaşmaz. Bu yüzden uygulama her komutu kendi süreç grubunda başlatır ve Ctrl+C'de, engelde, dolu diskte (günlük yazma hatası), bozulan bir konsolda ya da beklenmeyen herhangi bir hatada grubun tamamını durdurur: önce bir kesme (yt-dlp ffmpeg'i durdurup temiz çıkar, yarım dosyalarını devam etmek için saklar), sonra sonlandırma, sonra öldürme; aralarında beklenir ve en sonda artakalanlar süpürülür. Çağrı dönmeden önce borular kapatılır ve süreç toplanır. Windows'ta grup `CTRL_BREAK` alır, ardından tüm ağaca `taskkill /T /F` uygulanır. **Windows dalı, bunun geliştirildiği ortamda çalıştırılamadı**; yalnızca kararlarının birim testleriyle kapsanmıştır.
-
-### Taşınabilir çalışma ortamı
-Windows (x64) ve Linux'ta (x86_64, aarch64; glibc tabanlı dağıtımlar) uygulamanın ihtiyaç duyduğu her şey kendi klasöründe durur:
-
-| Klasör | İçerik |
-|--------|--------|
-| `runtime/python` | Taşınabilir Python 3.12 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)), yt-dlp bunun içine kurulur |
-| `runtime/ffmpeg` | ffmpeg ve ffprobe ([yt-dlp'nin FFmpeg derlemeleri](https://github.com/yt-dlp/FFmpeg-Builds)) |
-| `runtime/deno` | yt-dlp'nin YouTube JavaScript doğrulamalarını çözmek için kullandığı Deno |
-| `cache/` | yt-dlp ve Deno önbellekleri (normalde kullanıcı profiline yazılırlar) |
-| `downloads/` | Varsayılan indirme konumu |
-
-- **Sisteme dokunulmaz**: winget/apt yok, yönetici izni veya sudo yok, PATH değişikliği yok. Klasörü silmek her şeyi kaldırır.
-- **Doğrulanmış indirmeler**: her dosya açılmadan önce `runtime.lock` içinde sabitlenmiş SHA-256 ile karşılaştırılır; uyuşmazsa kurulum durur. Bir uygulama güncellemesi bir sürümü değiştirirse, sonraki açılış yalnızca o bileşeni yeniler. Bir bileşeni (ya da Python'u) değiştirmek bir yeniden adlandırmadır; sil-sonra-taşı değildir: eski kopya, yenisi yerine oturana kadar kenarda tutulur ve yarım kalan bir değişim sonraki açılışta düzeltilir.
-- **yt-dlp güncel kalır**: açılışta haftada bir otomatik güncellenir (YouTube değişiklikleri eski sürümleri bozar). İnternet yoksa kurulu sürümle devam edilir. Hemen güncellemek için: `runtime/python/python -m ytdlp_app.portable update-ytdlp` (Windows'ta `runtime\python\python.exe`); `... status` neyin kurulu olduğunu gösterir.
-- **Klasörü taşımak**: program klasörünün içindeki klasörler `config.json`'a göreli yazılır; indirmeler, arşivler ve ayarlar klasörle birlikte taşınır.
-- Kurulum sonrası disk kullanımı: Windows'ta yaklaşık 360 MB, Linux'ta 530 MB (Linux ffmpeg derlemesi statik bağlıdır).
-- Eski sürümden yükseltme: yeni başlatıcı artık `.venv`'i ve winget ile kurulan Python/ffmpeg/Deno'yu kullanmaz. `.venv` klasörü silinebilir; sistem paketleri başka bir şey kullanmıyorsa kaldırılabilir. `config.json`'daki mevcut indirme klasörleri olduğu gibi korunur.
-
-### Güncelleme
-Uygulama paketi (`ytdlp_app` klasörü ve betikler) GitHub sürümlerinden her platformda aynı işlemle güncellenir, ama farklı başlatılır:
-- **Windows:** `Run.bat` her açılışta `update.ps1 -Quiet` çalıştırır; hiçbir şey sorulmaz, internetsiz olmak sorun değildir ve açılışı asla engellemez. Atlamak için `YTDLP_NO_AUTO_UPDATE=1` tanımlayın. `update.ps1`'i kendiniz çalıştırırsanız yeni sürümü gösterir ve önce sorar (*y* kurar; başka her yanıt ya da yanıtsızlık kurulu sürümü korur).
-- **Linux/macOS:** `run.sh` güncelleme **denetlemez**. İstediğinizde `bash update.sh` çalıştırın (önce sorar, ardından yt-dlp'yi güncellemeyi önerir; bu başarısız olursa bunu söyler ve 1 ile çıkar, kurulu yt-dlp kalır); `bash update.sh --check-only` yalnızca yeni sürüm olup olmadığını söyler.
-
-Bir güncelleme tek bir işlemdir:
-1. Sürüm ZIP'i, uygulama klasörünün içinde, her çalıştırmaya özgü geçici bir klasöre indirilir ve orada açılır. `unzip` varsa o, yoksa paketle gelen Python ya da `python3`, sonra `bsdtar` kullanılır; hiçbiri yoksa güncelleme bir şey indirmeden durur ve bunu söyler.
-2. Sürüm bir `.sha256` sağlama toplamı yayımlıyorsa indirme onunla eşleşmelidir; yayımlamıyorsa paket yalnızca yapısal olarak doğrulanır (`runtime.lock`'taki SHA-256 sabitleri ayrı bir şeydir: Python, ffmpeg ve Deno indirmelerini korurlar, uygulama paketini değil).
-3. Yeni paket **kurulu olana dokunmadan** denetlenir: bir sürümün ihtiyaç duyduğu dosyalar vardır, sürümü etiketine eşittir ve kurulu olandan *yenidir* (anlamsal sıralama: `0.10.0`, `0.9.0`'dan; `1.0.0`, `1.0.0-rc1`'den yenidir; eski ya da eşit bir sürüm asla kurulmaz) ve paketle gelen Python altında içe aktarılabilir.
-4. Her yeni dosya önce yerinin yanına kopyalanır; yalnızca tüm kopyalar varsa her eski dosya bir yedek klasöre taşınır ve yenisi yerine konur.
-5. `app_version.txt` en son yazılır; böylece kurulmamış bir sürümü asla adıyla anmaz. Herhangi bir noktada bir şey başarısız olursa taşınan her şey geri konur ve önceki sürüm çalışmaya devam eder. Eski sürüm `.previous-version/` içinde kalır; oraya taşınamazsa yedek klasörü (`.update-backup-...`) korunur ve ileti onun adını verir.
-6. Aynı anda yalnızca bir güncelleme çalışır (bir kilit) ve yarıda kesilmiş bir güncelleme, güncelleyici bir sonraki başladığında kayıt dosyasının adını verdiği yedek klasöründen geri alınır. Kayıt bu klasörü uygulama klasörüne göre adlandırır; klasörün tamamını taşımak onu geçersiz kılmaz.
-7. Eski dosyaları geri koymak bile başarısız olursa ya da yedek klasörü yerinde değilse kayıt dosyası (`.update-in-progress`) korunur: `Run.bat` ve `run.sh` uygulamayı başlatmaz, güncelleyici ne yapılacağını söyler (yedek klasörünü geri koyun ya da sürüm ZIP'inden yeniden kurup kayıt dosyasını silin). Güncelleyiciyi yeniden çalıştırmak yarıda kalan bir geri yüklemeyi tamamlar. Bir sürümün eklediği dosyalar geri almada kaldırılır.
-
-`config.json`, `logs/`, `archives/`, `downloads/`, `cache/`, `runtime/` ve `.venv/`'e asla dokunulmaz. **`Run.bat`'ın kendisi otomatik güncellemeyle değiştirilmez** (cmd.exe bir toplu iş dosyasını çalışırken okur; altından değiştirmek açılışı bozabilir): bir sürüm `Run.bat`'ı değiştirirse elle kopyalayın. Linux/macOS güncelleyicisi `run.sh`'ı güvenle değiştirir (bir yeniden adlandırma; çalışan betik eski kopyasını korur). ZIP indirmesi `run.sh`, `install.sh` ve `update.sh` dosyalarının çalıştırılabilir bitini korumaz; `bash run.sh` kullanın ya da bir kez `chmod +x run.sh install.sh update.sh` yapın.
-
-### Ayarlar ve durum
-| Dosya | Açıklama |
-|-------|----------|
-| `config.json` | `config_version`, `app`, `videos_dir`, `music_dir`, `saved_at`, `language` ve gelişmiş `settings` (`settings.archive` dahil) değerlerini saklar. Program klasörünün içindeki klasörler göreli saklanır. Yeniden yapılandırmak için silin. |
-| `archives/*.txt` | `--download-archive` için indirme arşivleri. |
-| `archives/*.files.tsv` | Manifestler: bitmiş her öğenin hangi dosyaya yazıldığı. Arşiv denetimi bunu kullanır. |
-| `archives/backups/` | Bir arşiv onarılmadan önce alınan kopyalar. |
-| `logs/*.log` | Zaman damgalı tam komut çıktısı. Sorun giderme için kullanışlı. |
-| `app_version.txt` | Otomatik güncelleme için mevcut sürümü takip eder. |
-
-- **Hatalı düzenlemeler uygulamayı çökertmez.** `settings` altındaki her bölüm ve alan okunurken tür ve aralık bakımından denetlenir: nesne olmayan bir bölüm, NaN, sonsuz, negatif ya da aralık dışı bir sayı, bilinmeyen bir ses biçimi, sayı da `infinite` de olmayan bir yeniden deneme değeri, kullanılamaz bir vekil sunucu ya da çıktı şablonu (mutlak yol ya da `..` içeren) açılışta **adıyla** bildirilir ve varsayılanıyla değiştirilir; yapılandırmanın geri kalanı olduğu gibi kullanılır.
-- **Kayıtlar kesintiye dayanıklıdır.** `config.json` ve `runtime/state.json` geçici bir dosyaya yazılıp yerine yeniden adlandırılır; dolu bir disk ya da çökme önceki geçerli dosyayı bırakır. Bir kayıt başarısız olursa çalışan uygulama diskteki duruma döner (ayar menüsündeki düzenlemeler geri alınır); bellek ve disk hiçbir zaman ayrışmaz.
-- **Okunamayan bir yapılandırma**, varsayılanlar kullanılmadan önce `config.json.corrupt-<zaman>` olarak kopyalanır; böylece sonraki kayıt hâlâ kurtarılabilecek olanı yok edemez.
-- **`config_version`** (şu an 2) şemayı işaretler. Eski bir dosya okunurken bellekte taşınır ve bir sonraki kayıtta yeni biçimde yazılır; eskisinin bir kopyası önce `config.json.v1.bak` olarak saklanır.
-
-### Bu klasördeki dosyalar
-| Dosya | Açıklama |
-|-------|----------|
-| `Run.bat` / `run.sh` | Tek tıkla başlatma (Windows / Linux, macOS). Taşınabilir çalışma ortamını kurar veya yeniler, uygulamayı başlatır; `Run.bat` ayrıca önce sessizce günceller. İkisi de uygulamanın çıkış kodunu döndürür; `Run.bat` yalnızca argümansız başlatıldığında tuşa basılmasını bekler, bu yüzden `Run.bat audit ...` betiklerde çalışır. |
-| `install.ps1` / `install.sh` | Taşınabilir çalışma ortamını `runtime/` içine kurar (macOS: Homebrew + `.venv`). Yeniden çalıştırmak güvenlidir. |
-| `update.ps1` / `update.sh` | İşlem bütünlüklü uygulama güncelleyicisi (bkz. *Güncelleme*). |
-| `runtime.lock` | Taşınabilir Python, ffmpeg ve Deno için sabitlenmiş adresler ve SHA-256 değerleri. |
-| `downloader.py` | `ytdlp_app.app.run()` fonksiyonunu çağıran giriş noktası. `downloader.py audit ...` arşiv denetimini çalıştırır. |
-| `ytdlp_app/` | Modüler bileşenli Python paketi (aşağıya bakın). |
-
-### ytdlp_app/ modülleri
-| Modül | Açıklama |
-|-------|----------|
-| `app.py` | Uygulama giriş noktası, yapılandırma yükleme, `audit` komutu |
-| `session.py` | Ana döngüyü yöneten interaktif oturum yöneticisi |
-| `planning.py` | Çıktı klasörleri, şablonlar ve arşiv dosyası adları (`archives/` içinde kaldığı doğrulanır) |
-| `outcome.py` | Sonuç modeli: tamamlanan / zaten var olan / başarısız / eksik / engellenen / iptal edilen; arşivden, manifestten ve diskten değerlendirilir; iletiler bundan üretilir |
-| `archive_audit.py` | Arşiv denetimi, onarım önizlemesi, yedek ve uygulama, arşiv araçları menüsü |
-| `config.py` | Yapılandırma yükleme/kaydetme (atomik), şema göçü, interaktif klasör kurulumu |
-| `settings.py` | Tam doğrulamalı ayar veri sınıfları ve şema varsayılanları |
-| `settings_menu.py` | Uygulama içi ayar menüsü (her düzenleme bütünüyle uygulanır ya da hiç) |
-| `atomic.py` | Yapılandırma ve durum dosyaları için geçiciye-yaz-sonra-yeniden-adlandır |
-| `netctx.py` | İndirme, listeleme ve yoklamaların paylaştığı ağ bağlamı |
-| `redact.py` | Gösterilen ya da günlüğe yazılan her yerde vekil sunucu kimlik bilgilerini maskeler |
-| `ui.py` | Terminale sığan paneller ve menülerle konsol arayüzü (Protocol tabanlı) |
-| `yt_dlp.py` | yt-dlp argümanlarını oluşturan CommandBuilder sınıfı |
-| `plugins/` | yt-dlp eklentileri: `original_subs` (makine çevirisi altyazı yok), `mp4_compat` (H.264 + AAC), `complete` (kaydedilmemiş altyazı ya da kapak resmi olan öğe yok), `ledger` (manifest) |
-| `exec.py` | Çıktı akışı, günlükleme, engel koruması, süreç grubu temizliği ve süre sınırlarıyla komut yürütme |
-| `windows_process.py` | Windows iş nesneleri (job object): bir komut ve başlattığı her şey, komutun kendisi çıktıktan sonra da birlikte durdurulur |
-| `playlist.py` | YouTube URL sınıflandırması, oynatma listesi ve kanal listeleme (kanal sekmeleri düzleştirilir, kanal kimliği), arşiv okuma |
-| `estimate.py` | Boyut, disk alanı ve süre tahmini (saf hesap) |
-| `speedtest.py` | Kesin süre bütçeli kısa bağlantı hızı ölçümü |
-| `preflight.py` | Liste koruması, tahmin tablosu, çözünürlük sorusu ve boş alan denetimi |
-| `skip_probe.py` | Atlanan öğeleri atlama nedenini belirlemek için yoklar; iptal ya da engelde durur |
-| `logging_utils.py` | Günlükleme ve renk politikası |
-| `system.py` | yt-dlp, ffmpeg ve Deno'nun yerini bulur |
-| `portable.py` | Taşınabilir çalışma ortamı kurulumu (`python -m ytdlp_app.portable ensure / update-ytdlp / status`) |
-| `models.py` | Yollar, yapılandırma, girdiler ve indirme planları için veri sınıfları |
-
-### Gereksinimler
-- **Windows**: 64 bit Windows 10 (1803 veya üzeri) ya da Windows 11. Başka bir şey gerekmez.
-- **Linux**: glibc'li x86_64 veya aarch64 (Alpine/musl değil), ayrıca `curl` veya `wget`, `tar` ve `sha256sum` (hemen her dağıtımda bulunur). Güncelleme ayrıca `unzip`, `python3` ya da `bsdtar` gerektirir (paketle gelen Python sayılır).
-- **macOS**: Homebrew; Python 3.11+. PATH'te 3.11 veya daha yeni bir Python (`python3.12`, `python3`, ...) varsa o kullanılır; yoksa Homebrew ile `python@3.12` kurulur ve `.venv` o yorumlayıcıyla, yolu üzerinden oluşturulur.
-- yt-dlp 2025.11.12 veya daha yenisi (taşınabilir çalışma ortamı ve `.venv` kurulumu onu güncel tutar; PATH'teki daha eski bir sürüm indirme başlamadan bildirilir)
-- İlk açılış ve indirmeler için internet bağlantısı
-
-### Sorun giderme
-| Sorun | Çözüm |
-|-------|-------|
-| İlk kurulum başarısız | İnternet bağlantısını denetleyip `Run.bat` / `bash run.sh`'ı yeniden çalıştırın; kaldığı yerden devam eder, yalnızca eksikleri indirir. Yönetici izni gerekmez. |
-| `./run.sh` başlatılırken "Permission denied" | ZIP indirmeleri çalıştırılabilir biti kaybeder: `bash run.sh` çalıştırın ya da `chmod +x run.sh install.sh update.sh` yapın. |
-| "Checksum mismatch" | İndirilen dosya bozulmuş ya da değiştirilmiş ve silindi. Yeniden deneyin; sürerse bildirin. |
-| yt-dlp/ffmpeg bulunamıyor | `install.ps1` (Windows) veya `bash install.sh` (Linux/macOS) dosyasını yeniden çalıştırın. |
-| YouTube değişikliğinden sonra video inmiyor | yt-dlp'yi güncelleyin: `runtime/python/python -m ytdlp_app.portable update-ytdlp`. |
-| Güncelleme başarısız oldu | Önceki sürüm geri yüklendi; iletiyi okuyun, nedeni giderin (çoğunlukla eksik `unzip`) ve `bash update.sh`'ı yeniden çalıştırın. Önceki sürüm ayrıca `.previous-version/` içindedir. |
-| Açılışta "An update did not finish" | Eski dosyaları geri koyma yarıda kaldı. `bash update.sh` (Windows: `update.ps1`) çalıştırın; geri yüklemeyi tamamlar. İleti, eski dosyaların bulunduğu klasörü söyler. |
-| İndirme klasörlerini değiştirme | URL isteminde `s` yazın ve değiştirmek istediğiniz klasörü seçin. |
-| Arayüz dilini değiştirme | URL isteminde `s` yazın ve "Arayüz dili" seçeneğini seçin. |
-| Bir şeyi yeniden indirme / bir dosya silindi | URL isteminde `a` yazın (arşiv araçları) ya da `downloader.py audit` çalıştırın; bkz. *"Zaten indirilmiş" ne demek*. Bir arşiv dosyasını elle silmek de işe yarar, ama içindeki her şeyi unutturur. |
-| "Sorunlarla tamamlandı" | İndirilemeyen öğeler listelenir; yeniden denemek için aynı URL'yi tekrar çalıştırın (nedenler günlüktedir). |
-| Arşiv "YouTube istekleri geçici olarak engelliyor" ile durdu | Birkaç saat bekleyin ve aynı URL'yi tekrar girin; kaldığı yerden devam eder. Arşiv bekleme sürelerini artırmayı (`s` → *Arşiv modu bekleme süreleri*) ya da vekil sunucu kullanmayı düşünün. |
-| Açılışta bir ayar varsayılanıyla değiştirildi | İleti alanın adını ve nedenini söyler; `config.json`'da ya da ayar menüsünde düzeltin. |
-| Deno uyarısı görünüyor | `install.ps1` / `bash install.sh`'ı yeniden çalıştırın (macOS: `brew install deno`). |
-
-### Lisans
-Ayrıntılar için [LICENSE](LICENSE) dosyasına bakın.

@@ -5,7 +5,7 @@
 #   powershell -File update.ps1 -Quiet     what Run.bat does at every launch: silent unless it
 #                                          acts, and it never blocks the launch (exits 0)
 #
-# The app package is replaced as one transaction, like update.sh does on Linux/macOS:
+# The app package is replaced as one transaction, like update.sh does on Linux:
 #   1. the release ZIP is downloaded and unpacked into a private folder inside this one,
 #   2. the new package is checked (expected files, a version that matches the release and is
 #      newer than the installed one, and that it imports) WITHOUT touching the install,

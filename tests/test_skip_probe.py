@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from ytdlp_app.i18n import load_locale, set_language
+from ytdlp_app.i18n import t
 from ytdlp_app.skip_probe import probe_skip_reason
 
 
@@ -23,12 +23,6 @@ def _runner(rc: int, out: str = "", err: str = ""):
 
 def _formats(*vcodecs: str | None) -> str:
     return json.dumps({"formats": [{"vcodec": v} for v in vcodecs]})
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    """Each test starts from a known catalogue."""
-    set_language("en")
 
 
 @pytest.mark.parametrize(
@@ -48,12 +42,12 @@ def _english():
 )
 def test_stderr_is_classified(stderr: str, expected_key: str) -> None:
     reason = probe_skip_reason("https://x.test/v", [], _runner(1, err=stderr))
-    assert reason == load_locale("en")[expected_key]
+    assert reason == t(expected_key)
 
 
 def test_interrupt_is_reported() -> None:
     reason = probe_skip_reason("https://x.test/v", [], _runner(130))
-    assert reason == load_locale("en")["skip_reason_interrupted"]
+    assert reason == t("skip_reason_interrupted")
 
 
 def test_unknown_error_quotes_the_stderr() -> None:
@@ -69,39 +63,17 @@ def test_unknown_error_truncates_a_long_stderr() -> None:
 
 def test_audio_only_entry() -> None:
     reason = probe_skip_reason("https://x.test/v", [], _runner(0, out=_formats("none")))
-    assert reason == load_locale("en")["skip_reason_no_video_track"]
+    assert reason == t("skip_reason_no_video_track")
 
 
 def test_video_present_means_postprocessing_failed() -> None:
     reason = probe_skip_reason("https://x.test/v", [], _runner(0, out=_formats("avc1.64001f")))
-    assert reason == load_locale("en")["skip_reason_postprocess"]
+    assert reason == t("skip_reason_postprocess")
 
 
 def test_unparseable_json() -> None:
     reason = probe_skip_reason("https://x.test/v", [], _runner(0, out="not json at all"))
-    assert reason == load_locale("en")["skip_reason_json_parse"]
-
-
-@pytest.mark.parametrize(
-    "runner",
-    [
-        _runner(130),
-        _runner(1, err="ERROR: Private video"),
-        _runner(1, err="ERROR: nothing recognizable"),
-        _runner(0, out=_formats("none")),
-        _runner(0, out=_formats("avc1")),
-        _runner(0, out="not json"),
-    ],
-)
-def test_every_branch_is_translated(runner) -> None:
-    """A hardcoded English literal would come back identical in Turkish."""
-    set_language("en")
-    english = probe_skip_reason("https://x.test/v", [], runner)
-    set_language("tr")
-    turkish = probe_skip_reason("https://x.test/v", [], runner)
-    set_language("en")
-
-    assert english != turkish, f"untranslated skip reason: {english!r}"
+    assert reason == t("skip_reason_json_parse")
 
 
 class TestProbeStatus:
@@ -151,7 +123,7 @@ class TestProbeStatus:
         result = probe_item("u", [], _runner(TIMEOUT_RETURN_CODE, err="Timed out after 180 s"))
 
         assert result.status is ProbeStatus.REASON
-        assert result.text == load_locale("en")["skip_reason_timeout"]
+        assert result.text == t("skip_reason_timeout")
 
     def test_the_probe_command_can_carry_the_shared_network_arguments(self) -> None:
         from ytdlp_app.skip_probe import probe_item  # noqa: PLC0415

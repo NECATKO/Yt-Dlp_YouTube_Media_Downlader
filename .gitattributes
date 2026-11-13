@@ -1,4 +1,4 @@
-# Bash scripts run on Linux and macOS: LF in every checkout, also on Windows with
+# Bash scripts run on Linux: LF in every checkout, also on Windows with
 # core.autocrlf, since the portable ZIP is packed from a Windows checkout.
 *.sh text eol=lf
 # cmd.exe reads batch files with CRLF line endings.

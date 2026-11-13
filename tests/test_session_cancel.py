@@ -17,7 +17,7 @@ from tests.test_session_archive import Recorder, ScriptedUI, _session
 from ytdlp_app import app, speedtest
 from ytdlp_app.config import load_config
 from ytdlp_app.exec import run_cmd_tee
-from ytdlp_app.i18n import set_language, t
+from ytdlp_app.i18n import t
 from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, PlaylistEntry, UserConfig
 from ytdlp_app.playlist import PlaylistListing
 from ytdlp_app.session import CycleOutcome, InteractiveSession
@@ -32,13 +32,6 @@ QUALITY = 2
 MKV = 1
 UNLIMITED = 4
 EXIT = int(ActionChoice.EXIT)
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 @pytest.fixture
