@@ -28,7 +28,6 @@ class TestEveryCallShares:
             lambda c: c.download_args(),
             lambda c: c.listing_args(archive=False),
             lambda c: c.listing_args(archive=True),
-            lambda c: c.probe_args(),
         ],
     )
     def test_proxy_config_policy_and_timeout(self, make) -> None:
@@ -41,11 +40,11 @@ class TestEveryCallShares:
         assert args[0] == "--ignore-config"
 
     def test_no_proxy_no_flag(self) -> None:
-        assert "--proxy" not in context().probe_args()
+        assert "--proxy" not in context().base_args()
 
     def test_deno_only_when_available(self) -> None:
-        assert "--js-runtimes" in context(deno=True).probe_args()
-        assert "--js-runtimes" not in context(deno=False).probe_args()
+        assert "--js-runtimes" in context(deno=True).base_args()
+        assert "--js-runtimes" not in context(deno=False).base_args()
 
 
 class TestConfigPolicy:
@@ -57,7 +56,6 @@ class TestConfigPolicy:
             context(external=True).base_args(),
             context(external=True).download_args(),
             context(external=True).listing_args(archive=False),
-            context(external=True).probe_args(),
         ):
             assert "--ignore-config" not in args
 
@@ -68,7 +66,6 @@ class TestCallSpecificParts:
 
         assert value(ctx.download_args(), "--limit-rate") == "2M"
         assert "--limit-rate" not in ctx.listing_args(archive=False)
-        assert "--limit-rate" not in ctx.probe_args()
 
     def test_archive_listing_uses_the_configured_request_wait(self) -> None:
         ctx = context()
@@ -76,10 +73,9 @@ class TestCallSpecificParts:
 
         assert value(ctx.listing_args(archive=True), "--sleep-requests") == "4"
 
-    def test_regular_listing_and_probes_are_paced_too(self) -> None:
+    def test_a_regular_listing_is_paced_too(self) -> None:
         ctx = context()
 
         assert value(ctx.listing_args(archive=False), "--sleep-requests") == (
             f"{METADATA_SLEEP_REQUESTS:g}"
         )
-        assert value(ctx.probe_args(), "--sleep-requests") == f"{METADATA_SLEEP_REQUESTS:g}"

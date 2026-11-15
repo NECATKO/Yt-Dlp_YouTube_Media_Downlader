@@ -4,7 +4,7 @@ from pathlib import Path
 
 import ytdlp_app.session as session_module
 from ytdlp_app.i18n import t
-from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, UserConfig
+from ytdlp_app.models import AppPaths, ModeChoice, UserConfig
 from ytdlp_app.outcome import StageReport
 from ytdlp_app.session import CycleOutcome, InteractiveSession
 
@@ -79,7 +79,7 @@ def test_a_rerun_single_video_whose_file_was_deleted_is_not_already_there(
     session, ui = make_failed_session(monkeypatch, tmp_path, exit_on_failure=False)
     picks = iter([int(ModeChoice.AUDIO)])
     # The mode, then "exit" should the run (wrongly) reach the what-next question.
-    monkeypatch.setattr(ui, "pick", lambda *_a: next(picks, int(ActionChoice.EXIT)))
+    monkeypatch.setattr(ui, "pick", lambda *_a: next(picks, 2))
     monkeypatch.setattr(ui, "prompt_exit_on_failure", lambda: False, raising=False)
     monkeypatch.setattr(session, "_execute_download", lambda *args: StageReport((0,)))
     archive = tmp_path / "archives" / "single_audios_mp3.txt"
@@ -173,7 +173,7 @@ class TestSessionExitCode:
         monkeypatch.setattr(session, "_execute_download", archived)
         answers = {
             t("prompt_mode"): int(ModeChoice.AUDIO),
-            t("prompt_next"): int(ActionChoice.DOWNLOAD_ANOTHER),
+            t("prompt_next"): 1,
         }
         monkeypatch.setattr(_ui, "pick", lambda prompt, _options: answers[prompt])
 

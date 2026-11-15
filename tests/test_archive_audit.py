@@ -15,16 +15,8 @@ from ytdlp_app.archive_audit import (
     plan_repair,
 )
 from ytdlp_app.evidence import MediaIndex, locate
-from ytdlp_app.i18n import set_language
 from ytdlp_app.models import DownloadMode
 from ytdlp_app.outcome import evaluate
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 @pytest.fixture

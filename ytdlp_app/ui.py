@@ -389,7 +389,4 @@ class ConsoleUI:
             .strip()
             .lower()
         )
-        # Accept the localized affirmative (Turkish uses "e") as well as the
-        # English forms, which users type out of habit regardless of language.
-        affirmative = {"y", "yes", t("yes").strip().lower()}
-        return ans in affirmative
+        return ans in {"y", "yes"}

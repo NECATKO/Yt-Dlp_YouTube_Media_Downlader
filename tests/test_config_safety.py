@@ -17,15 +17,7 @@ from ytdlp_app.config import (
     save_config,
     save_settings,
 )
-from ytdlp_app.i18n import set_language
 from ytdlp_app.settings import LEGACY_TEMPLATES, AppSettings, OutputSettings
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 def leftovers(folder: Path) -> list[str]:

@@ -20,7 +20,7 @@ from .models import CaptureRunner, PlaylistEntry
 if TYPE_CHECKING:
     from pathlib import Path
 
-# The app is built around YouTube: playlist and channel handling, the size estimate and
+# The app is built around YouTube: playlist and channel handling and
 # the archive naming all rest on YouTube's URL forms and ids. Any other site's URL is
 # still handed to yt-dlp, but only ever as a single item.
 _YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")

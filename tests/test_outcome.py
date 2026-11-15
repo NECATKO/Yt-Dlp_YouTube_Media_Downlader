@@ -2,10 +2,8 @@
 
 from pathlib import Path
 
-import pytest
-
 from ytdlp_app.evidence import EvidenceStatus
-from ytdlp_app.i18n import set_language, t
+from ytdlp_app.i18n import t
 from ytdlp_app.outcome import (
     RunOutcome,
     RunStatus,
@@ -13,13 +11,6 @@ from ytdlp_app.outcome import (
     evaluate,
     read_manifest,
 )
-
-
-@pytest.fixture(autouse=True)
-def _english():
-    set_language("en")
-    yield
-    set_language("en")
 
 
 def make(tmp_path: Path, names: list[str]) -> dict[str, Path]:

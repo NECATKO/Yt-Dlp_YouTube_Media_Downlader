@@ -30,15 +30,6 @@ def test_windows_console_script_uses_local_app_data(monkeypatch, tmp_path: Path)
     assert app._resolve_app_dir() == tmp_path / "ytdlp-downloader"
 
 
-def test_macos_console_script_uses_application_support(monkeypatch) -> None:
-    monkeypatch.setattr(app.sys, "argv", ["/venv/bin/ytdlp-downloader"])
-    monkeypatch.setattr(app.sys, "platform", "darwin")
-
-    assert app._resolve_app_dir() == (
-        Path.home() / "Library" / "Application Support" / "ytdlp-downloader"
-    )
-
-
 class _StopAfterSetup(BaseException):
     """Escapes run()'s catch-all handler, which would otherwise log a crash."""
 

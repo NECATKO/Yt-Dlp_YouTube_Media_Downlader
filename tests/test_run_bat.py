@@ -30,7 +30,6 @@ def robocopy() -> Path:
 def folder(windows_scratch: Path) -> Path:
     shutil.copy(ROOT / "Run.bat", windows_scratch / "Run.bat")
     (windows_scratch / "install.ps1").write_text("exit 0\r\n", encoding="utf-8")
-    (windows_scratch / "update.ps1").write_text("exit 0\r\n", encoding="utf-8")
     (windows_scratch / "downloader.py").write_text("print('app')\n", encoding="utf-8")
     python = windows_scratch / "runtime" / "python" / "python.exe"
     python.parent.mkdir(parents=True)
@@ -68,30 +67,3 @@ def test_quoted_arguments_with_spaces_reach_the_app(folder: Path) -> None:
 
     assert result.returncode == app_code(folder, "audit", "--archive", "a b.txt")
     assert "Press any key" not in result.stdout
-
-
-def test_a_half_restored_update_stops_the_launch(folder: Path) -> None:
-    backup = folder / ".update-backup-x"
-    backup.mkdir()
-    (folder / ".update-in-progress").write_text(win(backup) + "\r\n", encoding="utf-8")
-
-    result = run_batch(folder / "Run.bat", "audit", env=NO_UPDATE)
-
-    assert result.returncode == 1
-    assert "Starting app" not in result.stdout
-    assert win(backup) in result.stdout
-    assert "update.ps1" in result.stdout
-
-
-def test_an_update_whose_backup_is_gone_still_stops_the_launch(folder: Path) -> None:
-    """D03: the real quiet updater cannot restore without the backup; it must leave the
-    journal, so the launch stops instead of starting a half-updated app."""
-    shutil.copy(ROOT / "update.ps1", folder / "update.ps1")
-    (folder / ".update-in-progress").write_bytes(b".update-backup-gone\r\n")
-
-    result = run_batch(folder / "Run.bat", "audit")
-
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "Starting app" not in result.stdout
-    assert (folder / ".update-in-progress").exists()
-    assert "previous version was restored" not in result.stdout

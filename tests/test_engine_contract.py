@@ -105,25 +105,23 @@ class TestPostProcessingFailures:
         b = builder(out)
         info = write_info(src, item("idAAAAAAAA1", "Title", media))
 
-        result = run_engine(self.failing(b.build_mp4_compatibility_stage1()), info)
+        result = run_engine(self.failing(b.build_mp4_compatibility()), info)
 
         assert result.returncode != 0
         assert archive_ids(b.archive_path) == []
 
-    def test_the_second_stage_really_reprocesses_the_item(
-        self, workspace: tuple[Path, Path]
-    ) -> None:
+    def test_the_next_run_really_reprocesses_the_item(self, workspace: tuple[Path, Path]) -> None:
         src, out = workspace
         media = make_media(src / "clip.mp4")
         b = builder(out)
         info = write_info(src, item("idAAAAAAAA1", "Title", media))
 
-        stage1 = run_engine(self.failing(b.build_mp4_compatibility_stage1()), info)
-        stage2 = run_engine(b.build_mp4_compatibility_stage2(), info)
+        first = run_engine(self.failing(b.build_mp4_compatibility()), info)
+        second = run_engine(b.build_mp4_compatibility(), info)
 
-        assert stage1.returncode != 0
-        assert stage2.returncode == 0
-        assert "already been recorded in the archive" not in stage2.stdout
+        assert first.returncode != 0
+        assert second.returncode == 0
+        assert "already been recorded in the archive" not in second.stdout
         assert archive_ids(b.archive_path) == ["idAAAAAAAA1"]
         assert codecs(only(list(out.glob("*.mp4")))) == {"video": "h264", "audio": "aac"}
 
@@ -164,7 +162,7 @@ class TestCompatibilityCodecs:
         b = builder(out)
         info = write_info(src, item("idAAAAAAAA1", "Title", media))
 
-        result = run_engine(b.build_mp4_compatibility_stage2(), info)
+        result = run_engine(b.build_mp4_compatibility(), info)
 
         assert result.returncode == 0, result.stdout + result.stderr
         final = only(list(out.iterdir()))
@@ -184,7 +182,7 @@ class TestCompatibilityCodecs:
         b.settings.video.embed_thumbnail = False
         info = write_info(src, item("idAAAAAAAA1", "Title", media))
 
-        assert run_engine(b.build_mp4_compatibility_stage2(), info).returncode == 0
+        assert run_engine(b.build_mp4_compatibility(), info).returncode == 0
 
         final = only(list(out.glob("*.mp4")))
         assert _video_payload(final) == _video_payload(media)
@@ -199,7 +197,7 @@ class TestCompatibilityCodecs:
         b.settings.video.embed_thumbnail = False
         info = write_info(src, item("idAAAAAAAA1", "Title", media))
 
-        assert run_engine(b.build_mp4_compatibility_stage2(), info).returncode == 0
+        assert run_engine(b.build_mp4_compatibility(), info).returncode == 0
 
         final = only(list(out.glob("*.mp4")))
         assert codecs(final) == {"video": "h264", "audio": "aac"}
@@ -211,7 +209,7 @@ class TestCompatibilityCodecs:
         b = builder(out)
         info = write_info(src, item("idAAAAAAAA1", "A Title", media))
 
-        assert run_engine(b.build_mp4_compatibility_stage2(), info).returncode == 0
+        assert run_engine(b.build_mp4_compatibility(), info).returncode == 0
 
         tags = probe(only(list(out.glob("*.mp4"))))["format"].get("tags", {})
         assert tags.get("title") == "A Title"
@@ -223,7 +221,7 @@ class TestCompatibilityCodecs:
         media = make_media(src / "clip.mp4", vcodec="libaom-av1")
         b = builder(out)
         info = write_info(src, item("idAAAAAAAA1", "Title", media))
-        cmd = [*b.build_mp4_compatibility_stage2()]
+        cmd = [*b.build_mp4_compatibility()]
         cmd[-1:-1] = ["--ffmpeg-location", str(src / "no-such-ffmpeg")]
 
         result = run_engine(cmd, info)
@@ -530,7 +528,7 @@ class TestDownloadManifest:
         media = make_media(src / "clip.mp4", vcodec="libaom-av1")
         b = builder(out)
         info = write_info(src, item("idAAAAAAAA1", "Title", media))
-        cmd = [*b.build_mp4_compatibility_stage2()]
+        cmd = [*b.build_mp4_compatibility()]
         cmd[-1:-1] = ["--ffmpeg-location", str(src / "no-such-ffmpeg")]
 
         assert run_engine(cmd, info).returncode != 0

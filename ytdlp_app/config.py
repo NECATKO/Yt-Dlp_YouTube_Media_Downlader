@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .atomic import atomic_write_text
-from .i18n import get_available_languages, get_language_name, t
+from .i18n import t
 from .logging_utils import Colors, console_print, paint
 from .settings import LEGACY_TEMPLATES, AppSettings, OutputSettings, SettingsIssue
 
@@ -275,44 +275,6 @@ def delete_config(config_file: Path) -> None:
         config_file.unlink()
 
 
-def ensure_language_interactive(ui: UI, existing_cfg: dict, *, config_file: Path) -> str:
-    """Resolve the interface language, asking once on first run.
-
-    The choice is persisted to config.json so later runs are silent. It can be
-    changed afterwards from the in-app settings menu (see settings_menu.py).
-
-    Args:
-        ui: The UI interface.
-        existing_cfg: The loaded configuration dict (mutated in place).
-        config_file: Path to the configuration file.
-
-    Returns:
-        The resolved language code.
-    """
-    available = get_available_languages()
-    saved = str(existing_cfg.get("language") or "").strip().lower()
-
-    if saved in available:
-        return saved
-    if len(available) < 2:
-        return available[0] if available else "en"
-
-    # Nothing recorded yet. Translations are not loaded at this point, so the
-    # prompt has to carry its own text in every language it offers.
-    choice = ui.pick(
-        "Select language / Dil seçin",
-        [get_language_name(code) for code in available],
-    )
-    language = available[choice - 1]
-
-    existing_cfg["language"] = language
-    # A read-only config location must not stop the app from starting.
-    with contextlib.suppress(Exception):
-        save_config(config_file, existing_cfg)
-
-    return language
-
-
 def _folder_setting(ui: UI, cfg: dict[str, Any], key: str) -> str:
     """Read a folder setting; anything but a usable path string counts as not set."""
     value = cfg.get(key)
@@ -372,8 +334,7 @@ def ensure_dirs_interactive(
     videos_dir.mkdir(parents=True, exist_ok=True)
     music_dir.mkdir(parents=True, exist_ok=True)
 
-    # Start from the existing config so keys we do not own here (notably the
-    # language chosen by ensure_language_interactive) survive the rewrite.
+    # Start from the existing config so keys we do not own here survive the rewrite.
     new_cfg = dict(existing_cfg)
     new_cfg.update(
         {

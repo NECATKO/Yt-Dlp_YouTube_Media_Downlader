@@ -1,3 +1,16 @@
+# Durum — 13 Kasım 2026
+
+Sadeleştirme kararı: yalnız İngilizce arayüz, yalnız Windows ve Linux terminali.
+
+- [x] Türkçe arayüz ve dil seçimi kaldırıldı (`i18n` tek katalog: `locales/en.json`)
+- [x] macOS desteği kaldırıldı (`install.sh`/`run.sh` Homebrew yolu, `~/Library` veri klasörü, CI işi)
+- [x] Budandı: kendi kendini güncelleme, ayar menüsü, boyut/süre tahmini + hız testi + çözünürlük sorusu, atlanan öğe raporu
+- [x] Uyumluluk profili tek komut; boş disk denetimi sabit eşik (2 GB); arşiv altyazıları yalnız İngilizce
+- [ ] Doğrulanmadı: 0.3.x kurulumlarının eski güncelleyicisi bu sürüme geçince ne yapıyor (yeni pakette `update.*` yok)
+- [ ] Kaldı: arşiv denetim aracı (`archive_audit.py`) — kullanılıp kullanılmadığına göre karar
+
+---
+
 # Durum — 15 Ekim 2026
 
 14 Ekim genel durum incelemesi (`degerlendirme-raporlari/2026-10-14/`, yerel) güvenilirlik paketinin

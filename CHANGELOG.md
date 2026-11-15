@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — simplification
+- **The self-updater** (`update.sh`, `update.ps1`). `Run.bat` no longer looks for a new release at launch, and neither launcher checks for an unfinished update. The app is updated by unpacking the new release ZIP over the folder; yt-dlp is still upgraded automatically once a week. The release keeps its stable asset name, its `.sha256` and `app_version.txt`.
+- **The settings menu** (`s` at the URL prompt, and "Settings" after a download). Settings are changed in `config.json`, which is now written with every default on first launch; `settings.example.json` lists the keys.
+- **The size and time estimate, the speed test and the resolution question.** The resolution cap comes from `settings.video.max_height` / `settings.archive.max_height`; `settings.download.speed_test` is gone (the key is ignored in an existing `config.json`). The app no longer talks to `speed.cloudflare.com`.
+- **The skip report.** Items that did not download are no longer probed one by one afterwards; the result summary still lists their ids, and the log holds yt-dlp's reason.
+
+### Changed — simplification
+- **The compatibility MP4 profile is one yt-dlp command** instead of two stages. Its format selector asks for H.264 + AAC first and falls back to the best rendition of any codec; `Mp4Compat` verifies and converts as before. It stays capped at 1080p, or at a lower `settings.video.max_height`.
+- **The free-space check is a fixed threshold**: with less than 2 GB free on the target disk you are asked whether to continue. It now also runs for a single video.
+- **Archive mode keeps English subtitles only** (`--sub-langs en.*`; it was `tr.*,en.*`).
+- **The Turkish interface.** The app is English only: the language prompt at first launch, the "Interface language" entry of the settings menu and `tr.json` are gone, and `i18n` is one message catalogue (`locales/en.json`) behind `t()`. A `language` key in an existing `config.json` is ignored and kept. The exit prompt after an error accepts `y`/`yes` only (it also took the Turkish `e`).
+- **macOS.** The app supports the Windows and the Linux terminal. `install.sh` and `run.sh` no longer have the Homebrew + `.venv` path (`install.sh` refuses any system but Linux), the per-user data folder under `~/Library` is gone, and CI no longer has a macOS job.
+
 From the 2026-10-14 review (`degerlendirme-raporlari/2026-10-14/`, local; findings D01–D03, D10, D11, D15, D16, D18, D19).
 
 ### Fixed — reliability

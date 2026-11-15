@@ -52,39 +52,9 @@ class TestRunSh:
             check=False,
         )
 
-    def test_it_does_not_check_for_updates_at_launch(self, folder: Path) -> None:
-        """On Linux/macOS updating is on request (bash update.sh), never at launch."""
-        fake_python(folder)
-        script(folder / "install.sh", "exit 0\n")
-        script(folder / "update.sh", f'echo ran >> "{folder}/update.calls"\n')
-
-        result = self.run(folder)
-
-        assert result.returncode == 0, result.stderr
-        assert not (folder / "update.calls").exists()
-        assert "-s downloader.py" in (folder / "python.calls").read_text()
-
-    def test_a_half_restored_update_stops_the_launch(self, folder: Path) -> None:
-        """Running a package an update left half replaced could do anything."""
-        fake_python(folder)
-        script(folder / "install.sh", "exit 0\n")
-        script(folder / "update.sh", f'echo ran >> "{folder}/update.calls"\n')
-        backup = folder / ".update-backup-x"
-        backup.mkdir()
-        (folder / ".update-in-progress").write_text(f"{backup}\n", encoding="utf-8")
-
-        result = self.run(folder)
-
-        assert result.returncode == 1
-        assert not (folder / "python.calls").exists()
-        assert not (folder / "update.calls").exists()
-        assert str(backup) in result.stderr
-        assert "bash update.sh" in result.stderr
-
     def test_python_is_told_to_use_utf8(self, folder: Path) -> None:
         fake_python(folder)
         script(folder / "install.sh", "exit 0\n")
-        script(folder / "update.sh", "exit 0\n")
 
         self.run(folder)
 
@@ -93,7 +63,6 @@ class TestRunSh:
     def test_arguments_reach_the_app(self, folder: Path) -> None:
         fake_python(folder)
         script(folder / "install.sh", "exit 0\n")
-        script(folder / "update.sh", "exit 0\n")
 
         self.run(folder, "audit", "--repair")
 
@@ -102,7 +71,6 @@ class TestRunSh:
     def test_an_offline_launch_with_a_working_runtime_carries_on(self, folder: Path) -> None:
         fake_python(folder)
         script(folder / "install.sh", "exit 1\n")  # the runtime check cannot finish
-        script(folder / "update.sh", "exit 0\n")
 
         result = self.run(folder)
 
