@@ -15,6 +15,7 @@ from .config import (
     load_settings,
     migrate_config,
     normalize_user_path,
+    save_settings,
 )
 from .i18n import t
 from .logging_utils import Colors, log_error, now_stamp, paint
@@ -166,7 +167,13 @@ def run(argv: Sequence[str] | None = None) -> int:
         _print_settings_issues(ui, issues)
         register_proxy(settings.download.proxy)
 
-        session = InteractiveSession(ui, user_config, paths, settings, _cfg)
+        if "settings" not in _cfg:
+            # Settings are changed by editing config.json: write the defaults out once
+            # so every option is there to be found. A read-only folder is not fatal.
+            with contextlib.suppress(OSError):
+                save_settings(paths.config_file, _cfg, settings)
+
+        session = InteractiveSession(ui, user_config, paths, settings)
         return session.run_loop()
 
     except (KeyboardInterrupt, EOFError):

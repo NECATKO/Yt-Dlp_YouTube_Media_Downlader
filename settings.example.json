@@ -1,5 +1,5 @@
 {
-  "_comment": "Advanced settings live under the \"settings\" key of config.json, in the shape shown below. Edit them there, or use the in-app settings menu. Any key you omit falls back to the default shown here; a value of the wrong type or outside its range is reported by name at startup and replaced by the default. max_height is 1080, 1440, 2160 or null (no cap). retries is a whole number or \"infinite\". allow_external_config lets yt-dlp also read your own yt-dlp.conf (off by default: the app's settings then decide everything). speed_test turns the short connection-speed measurement before a playlist download on or off. The output templates below already contain %(id)s: without the video id two videos with the same title would share one file.",
+  "_comment": "Advanced settings live under the \"settings\" key of config.json, in the shape shown below. Edit them there; the app reads them at start. Any key you omit falls back to the default shown here; a value of the wrong type or outside its range is reported by name at startup and replaced by the default. max_height is 1080, 1440, 2160 or null (no cap). retries is a whole number or \"infinite\". allow_external_config lets yt-dlp also read your own yt-dlp.conf (off by default: the app's settings then decide everything). The output templates below already contain %(id)s: without the video id two videos with the same title would share one file.",
   "config_version": 2,
   "settings": {
     "download": {
@@ -10,8 +10,7 @@
       "fragment_retries": "infinite",
       "rate_limit": null,
       "proxy": null,
-      "allow_external_config": false,
-      "speed_test": true
+      "allow_external_config": false
     },
     "audio": {
       "audio_quality": 0,

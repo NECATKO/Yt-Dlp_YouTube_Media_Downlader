@@ -77,7 +77,7 @@ jobs:
       # Ubuntu's ffmpeg has every encoder the engine tests need, so there a missing tool
       # or encoder is a failure, not a skip. Other ffmpeg builds differ, so on Windows
       # those tests skip themselves.
-      # On Windows, update.ps1 and Run.bat run under the real PowerShell and cmd.exe
+      # On Windows, Run.bat runs under the real cmd.exe
       # (tests/windows.py); there a missing tool is a failure, not a skip.
       - name: Run tests with coverage
         env:
@@ -156,11 +156,10 @@ jobs:
           Copy-Item -Path "downloader.py" -Destination $releaseDir
           Copy-Item -Path "Run.bat" -Destination $releaseDir
           Copy-Item -Path "install.ps1" -Destination $releaseDir
-          Copy-Item -Path "update.ps1" -Destination $releaseDir
           Copy-Item -Path "run.sh" -Destination $releaseDir
           Copy-Item -Path "install.sh" -Destination $releaseDir
-          Copy-Item -Path "update.sh" -Destination $releaseDir
-          # app_version.txt is what the updaters compare against the release tag.
+          # Installs up to 0.3.x update themselves from this asset and compare this file
+          # against the release tag; without it they would reinstall at every launch.
           Copy-Item -Path "app_version.txt" -Destination $releaseDir
           # The runtime pins: first launch downloads Python, ffmpeg and Deno from these.
           Copy-Item -Path "runtime.lock" -Destination $releaseDir
@@ -172,11 +171,11 @@ jobs:
           New-Item -ItemType Directory -Path "$releaseDir/archives" -Force
           New-Item -ItemType Directory -Path "$releaseDir/logs" -Force
 
-          # The asset name must stay stable across releases: update.ps1 looks the
-          # asset up by exact name, so a version-stamped name is never found.
+          # The asset name stays stable: the updater of installs up to 0.3.x looks it
+          # up by exact name.
           Compress-Archive -Path $releaseDir -DestinationPath "YtDlpDownloader-Portable.zip"
 
-          # The updaters verify the download against this when it is published.
+          # Lets anyone verify the download; the old updater also checks it.
           $hash = (Get-FileHash -Path "YtDlpDownloader-Portable.zip" -Algorithm SHA256).Hash.ToLower()
           Set-Content -Path "YtDlpDownloader-Portable.zip.sha256" -Value "$hash  YtDlpDownloader-Portable.zip" -Encoding ASCII
 

@@ -101,7 +101,6 @@ class TestDownloadPlan:
             output_template="%(title)s.%(ext)s",
             archive_path=tmp_path / "archives" / "single_videos_mp4.txt",
             log_path=tmp_path / "logs" / "test.log",
-            probe_args=["--js-runtimes", "deno"],
         )
         assert plan.mode == "mp4"
         assert plan.is_playlist is False
@@ -120,7 +119,6 @@ class TestDownloadPlan:
             output_template="%(playlist_title)s/%(playlist_index)s - %(title)s.%(ext)s",
             archive_path=tmp_path / "archives" / "playlist_PLtest_mp3.txt",
             log_path=tmp_path / "logs" / "test.log",
-            probe_args=[],
         )
         assert plan.mode == "mp3"
         assert plan.is_playlist is True

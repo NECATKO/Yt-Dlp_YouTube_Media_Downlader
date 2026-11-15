@@ -168,7 +168,7 @@ def _plain_text(value: object) -> str | None:
     return text
 
 
-# -- the field rules, shared by the config loader and the settings menu ----------
+# -- the field rules, used by the config loader ----------
 # A value either passes and is returned (stripped), or None is returned and the caller
 # reports it. Typing a value in the menu and reading it back from config.json give the
 # same answer because both go through these.
@@ -316,13 +316,11 @@ class DownloadSettings:
         fragment_retries: Number of retries for failed fragments.
         rate_limit: Download speed limit (e.g., '1M', '500K'), or None.
         proxy: HTTP/SOCKS proxy URL, or None. It applies to every yt-dlp call the
-            app makes (downloads, listings, skip probes) and to the speed test.
+            app makes (downloads and listings).
         allow_external_config: Let yt-dlp also read the user's own yt-dlp config
             files. Off by default: the app's settings then decide every option,
             and a stray ``--skip-download`` or ``--extract-audio`` in someone's
             yt-dlp.conf cannot change what a download does.
-        speed_test: Measure the connection speed before a playlist download, to
-            turn the size estimate into a time estimate.
     """
 
     concurrent_fragments: int = 4
@@ -333,7 +331,6 @@ class DownloadSettings:
     rate_limit: str | None = None
     proxy: str | None = None
     allow_external_config: bool = False
-    speed_test: bool = True
 
     def to_args(self) -> list[str]:
         """Convert settings to yt-dlp command-line arguments.
@@ -436,7 +433,6 @@ class DownloadSettings:
                 "download.allow_external_config",
                 issues,
             ),
-            speed_test=_bool(data, "speed_test", d.speed_test, "download.speed_test", issues),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -450,7 +446,6 @@ class DownloadSettings:
             "rate_limit": self.rate_limit,
             "proxy": self.proxy,
             "allow_external_config": self.allow_external_config,
-            "speed_test": self.speed_test,
         }
 
 
@@ -652,11 +647,6 @@ def _max_height(
         issues, path, f"expected one of {ALLOWED_MAX_HEIGHTS} or null, found {value!r}", default
     )
     return default
-
-
-def _as_max_height(value: Any, default: int | None) -> int | None:
-    """Return a usable resolution cap: an offered height, None (no cap) or the default."""
-    return _max_height({"v": value}, "v", default, "", None)
 
 
 def _format_seconds(value: float) -> str:

@@ -8,27 +8,22 @@ import pytest
 
 import ytdlp_app.session as session_module
 from tests.test_session_archive import Recorder, ScriptedUI, _session
+from ytdlp_app import preflight
 from ytdlp_app.exceptions import PlaylistError
 from ytdlp_app.exec import BAN_RETURN_CODE
 from ytdlp_app.i18n import t
-from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, PlaylistEntry
-from ytdlp_app.netctx import LISTING_TIMEOUT_SECONDS, PROBE_TIMEOUT_SECONDS
+from ytdlp_app.models import AppPaths, ModeChoice, PlaylistEntry
+from ytdlp_app.netctx import LISTING_TIMEOUT_SECONDS
 from ytdlp_app.playlist import PlaylistListing
 from ytdlp_app.session import CycleOutcome
-from ytdlp_app.skip_probe import ProbeResult, ProbeStatus
 
 LIST_URL = "https://www.youtube.com/playlist?list=PLabc"
 VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 CHANNEL_URL = "https://www.youtube.com/@ChannelHandle/videos"
 CHANNEL_ID = "UCuAXFkgsw1L7xaCfnd5JJOw"
 VIDEO, AUDIO, ARCHIVE = (int(ModeChoice.VIDEO), int(ModeChoice.AUDIO), int(ModeChoice.ARCHIVE))
-EXIT = int(ActionChoice.EXIT)
-FULL, QUALITY, MKV, COMPAT, UNLIMITED = 1, 2, 1, 1, 4
-
-
-@pytest.fixture(autouse=True)
-def _plenty_of_space(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(session_module, "free_bytes", lambda _path: 10**15)
+EXIT = 2  # the second option of the "what next" menu
+FULL, QUALITY, MKV, COMPAT = 1, 2, 1, 1
 
 
 @pytest.fixture
@@ -76,15 +71,12 @@ def playlist_session(monkeypatch, tmp_path, paths, ui, runner, url=LIST_URL, lis
         "fetch_listing",
         lambda *_a: listing if listing is not None else PlaylistListing(entries(), None),
     )
-    monkeypatch.setattr(
-        session_module, "probe_item", lambda *_a: ProbeResult(ProbeStatus.REASON, "reason")
-    )
     return session
 
 
 class TestJudgedByWhatWasLeftBehind:
     def test_every_item_archived_is_a_success(self, monkeypatch, tmp_path, paths) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, EXIT])
         runner = Recorder(archive_writes=["v1", "v2", "v3"])
         session = playlist_session(monkeypatch, tmp_path, paths, ui, runner)
 
@@ -96,7 +88,7 @@ class TestJudgedByWhatWasLeftBehind:
     def test_a_partly_finished_run_is_reported_as_partial_and_exits_nonzero(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, EXIT])
         runner = Recorder(rc=1, archive_writes=["v1", "v2"])
         session = playlist_session(monkeypatch, tmp_path, paths, ui, runner)
 
@@ -108,11 +100,9 @@ class TestJudgedByWhatWasLeftBehind:
         assert "2 downloaded" in text
         assert "v3" in text
         assert t("tasks_completed") not in text
-        # The skip report explains the item that did not finish.
-        assert t("skip_report_title") in text
 
     def test_a_run_where_nothing_finished_is_a_failure(self, monkeypatch, tmp_path, paths) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED], exit_on_failure=True)
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV], exit_on_failure=True)
         runner = Recorder(rc=1)
         session = playlist_session(monkeypatch, tmp_path, paths, ui, runner)
 
@@ -124,7 +114,7 @@ class TestJudgedByWhatWasLeftBehind:
     def test_exit_code_zero_does_not_hide_items_that_were_never_archived(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, EXIT])
         runner = Recorder(rc=0, archive_writes=["v1"])
         session = playlist_session(monkeypatch, tmp_path, paths, ui, runner)
 
@@ -135,7 +125,7 @@ class TestJudgedByWhatWasLeftBehind:
     def test_a_file_that_vanished_is_not_counted_as_downloaded(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, EXIT])
 
         class WithManifest(Recorder):
             def __call__(self, cmd, log_path, *, stop_on_ban=False, sink=None, cancel=None):
@@ -160,45 +150,51 @@ class TestJudgedByWhatWasLeftBehind:
         assert "the file is missing" in ui.text()
 
 
-class TestCompatibilityProfileStages:
-    def test_the_second_stage_finishing_what_the_first_could_not_is_a_success(
-        self, monkeypatch, tmp_path, paths
-    ) -> None:
+class TestCompatibilityProfile:
+    def test_it_is_one_command_that_verifies_the_codecs(self, monkeypatch, tmp_path, paths) -> None:
         ui = ScriptedUI([VIDEO, COMPAT, EXIT])
-        runner = Script((1, []), (0, ["dQw4w9WgXcQ"]))
+        runner = Script((0, ["dQw4w9WgXcQ"]))
         session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_SUCCESS
 
-        assert len(runner.calls) == 2
-        assert "Mp4Compat:when=post_process" in runner.calls[1]["cmd"]
+        (call,) = runner.calls
+        assert "Mp4Compat:when=post_process" in call["cmd"]
 
-    def test_a_clean_second_stage_does_not_hide_an_unresolved_first_stage(
-        self, monkeypatch, tmp_path, paths
-    ) -> None:
+    def test_it_is_capped_at_1080p(self, monkeypatch, tmp_path, paths) -> None:
+        ui = ScriptedUI([VIDEO, COMPAT, EXIT])
+        runner = Script((0, ["dQw4w9WgXcQ"]))
+        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
+
+        session._process_one_cycle()
+
+        cmd = runner.calls[0]["cmd"]
+        assert cmd[cmd.index("-f") + 1].endswith("b[height<=1080]")
+
+    def test_a_lower_saved_cap_is_kept(self, monkeypatch, tmp_path, paths) -> None:
+        ui = ScriptedUI([VIDEO, COMPAT, EXIT])
+        runner = Script((0, ["dQw4w9WgXcQ"]))
+        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
+        session.settings.video.max_height = 720
+
+        session._process_one_cycle()
+
+        cmd = runner.calls[0]["cmd"]
+        assert cmd[cmd.index("-f") + 1].endswith("b[height<=720]")
+
+    def test_a_failed_run_is_a_failure(self, monkeypatch, tmp_path, paths) -> None:
         ui = ScriptedUI([VIDEO, COMPAT], exit_on_failure=True)
-        runner = Script((1, []), (0, []))
+        runner = Script((1, []))
         session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
 
         assert session._process_one_cycle() == CycleOutcome.EXIT_FAILURE
 
         assert t("tasks_completed") not in ui.text()
 
-    def test_the_second_stage_runs_even_when_the_first_failed(
-        self, monkeypatch, tmp_path, paths
-    ) -> None:
-        ui = ScriptedUI([VIDEO, COMPAT], exit_on_failure=True)
-        runner = Script((1, []), (1, []))
-        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
-
-        session._process_one_cycle()
-
-        assert len(runner.calls) == 2
-
 
 class TestBanAndCancel:
     def test_a_ban_stops_the_run_and_says_how_to_resume(self, monkeypatch, tmp_path, paths) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED], exit_on_failure=False)
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV], exit_on_failure=False)
         runner = Recorder(rc=BAN_RETURN_CODE, archive_writes=["v1"])
         session = playlist_session(monkeypatch, tmp_path, paths, ui, runner)
 
@@ -207,13 +203,13 @@ class TestBanAndCancel:
         assert t("ban_retry_hint") in ui.text()
 
     def test_a_cancel_returns_interrupted(self, monkeypatch, tmp_path, paths) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED])
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV])
         runner = Recorder(rc=130, archive_writes=["v1"])
         session = playlist_session(monkeypatch, tmp_path, paths, ui, runner)
 
         assert session._process_one_cycle() == CycleOutcome.INTERRUPTED
 
-    def test_a_cancelled_compatibility_run_does_not_start_the_second_stage(
+    def test_a_cancelled_compatibility_run_is_interrupted(
         self, monkeypatch, tmp_path, paths
     ) -> None:
         ui = ScriptedUI([VIDEO, COMPAT])
@@ -225,63 +221,46 @@ class TestBanAndCancel:
         assert len(runner.calls) == 1
 
 
-class TestSkipReportStops:
-    def run(self, monkeypatch, tmp_path, paths, results):
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
-        runner = Recorder(rc=1, archive_writes=["v1"])  # v2 and v3 will be probed
-        session = playlist_session(monkeypatch, tmp_path, paths, ui, runner)
-        probed: list[str] = []
-        queue = iter(results)
-
-        def probe(url: str, _args: list[str], _runner: Any) -> ProbeResult:
-            probed.append(url)
-            return next(queue)
-
-        monkeypatch.setattr(session_module, "probe_item", probe)
-        return session, ui, probed
-
-    def test_cancelling_the_first_probe_stops_the_rest_and_the_cycle(
-        self, monkeypatch, tmp_path, paths
-    ) -> None:
-        session, _ui, probed = self.run(
-            monkeypatch,
-            tmp_path,
-            paths,
-            [ProbeResult(ProbeStatus.CANCELLED, "x")],
+class TestLowDiskSpace:
+    def low(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            session_module,
+            "confirm_disk_space",
+            lambda ui, base, log: preflight.confirm_disk_space(ui, base, log, lambda _p: 1024),
         )
 
-        assert session._process_one_cycle() == CycleOutcome.INTERRUPTED
-
-        assert len(probed) == 1
-
-    def test_a_ban_during_the_probes_stops_them_and_says_so(
+    def test_declining_returns_to_the_url_prompt_without_downloading(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        session, ui, probed = self.run(
-            monkeypatch,
-            tmp_path,
-            paths,
-            [ProbeResult(ProbeStatus.BANNED, "blocked"), ProbeResult(ProbeStatus.REASON, "no")],
-        )
+        ui = ScriptedUI([VIDEO, QUALITY, MKV, 2])
+        runner = Recorder()
+        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
+        self.low(monkeypatch)
+
+        assert session._process_one_cycle() == CycleOutcome.CONTINUE
+
+        assert runner.calls == []
+        assert t("disk_low_cancelled") in ui.text()
+
+    def test_continuing_anyway_downloads(self, monkeypatch, tmp_path, paths) -> None:
+        ui = ScriptedUI([VIDEO, QUALITY, MKV, 1, EXIT])
+        runner = Recorder(archive_writes=["dQw4w9WgXcQ"])
+        session = _session(monkeypatch, tmp_path, paths, ui, VIDEO_URL, runner)
+        self.low(monkeypatch)
 
         session._process_one_cycle()
 
-        assert len(probed) == 1
-        assert t("ban_retry_hint") in ui.text()
+        assert len(runner.calls) == 1
 
-    def test_without_a_stop_every_skipped_item_is_probed(
-        self, monkeypatch, tmp_path, paths
-    ) -> None:
-        session, _ui, probed = self.run(
-            monkeypatch,
-            tmp_path,
-            paths,
-            [ProbeResult(ProbeStatus.REASON, "a"), ProbeResult(ProbeStatus.REASON, "b")],
-        )
+    def test_a_disk_that_cannot_be_measured_does_not_block(self, tmp_path) -> None:
+        def broken(_path: Path) -> int:
+            raise OSError("no such device")
 
-        session._process_one_cycle()
+        assert preflight.confirm_disk_space(ScriptedUI([]), tmp_path, None, broken)
 
-        assert len(probed) == 2
+    def test_enough_space_asks_nothing(self, tmp_path) -> None:
+        enough = preflight.MIN_FREE_BYTES
+        assert preflight.confirm_disk_space(ScriptedUI([]), tmp_path, None, lambda _p: enough)
 
 
 class TestSharedNetworkArguments:
@@ -291,7 +270,6 @@ class TestSharedNetworkArguments:
         ui = ScriptedUI(mode_picks)
         runner = Recorder(rc=1, archive_writes=["v1"])
         listing_calls: list[list[str]] = []
-        probe_calls: list[list[str]] = []
         session = _session(monkeypatch, tmp_path, paths, ui, LIST_URL, runner)
         session.settings.download.proxy = self.PROXY
         monkeypatch.setattr(
@@ -299,37 +277,25 @@ class TestSharedNetworkArguments:
             "fetch_listing",
             lambda _u, args, _r: listing_calls.append(args) or PlaylistListing(entries(), None),
         )
-        monkeypatch.setattr(
-            session_module,
-            "probe_item",
-            lambda _u, args, _r: (
-                probe_calls.append(args) or ProbeResult(ProbeStatus.REASON, "reason")
-            ),
-        )
-        return session, runner, listing_calls, probe_calls
+        return session, runner, listing_calls
 
-    def test_the_proxy_reaches_the_download_the_listing_and_the_probes(
+    def test_the_proxy_reaches_the_download_and_the_listing(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        session, runner, listing_calls, probe_calls = self.setup(
-            monkeypatch, tmp_path, paths, [VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT]
+        session, runner, listing_calls = self.setup(
+            monkeypatch, tmp_path, paths, [VIDEO, FULL, QUALITY, MKV, EXIT]
         )
 
         session._process_one_cycle()
 
-        for args in (runner.calls[0]["cmd"], listing_calls[0], probe_calls[0]):
+        for args in (runner.calls[0]["cmd"], listing_calls[0]):
             assert args[args.index("--proxy") + 1] == self.PROXY
             assert "--ignore-config" in args
             assert "--socket-timeout" in args
 
     def test_the_archive_listing_uses_it_too(self, monkeypatch, tmp_path, paths) -> None:
-        session, _runner, listing_calls, _ = self.setup(
-            monkeypatch, tmp_path, paths, [ARCHIVE, FULL, 1, 1, EXIT]
-        )
-        monkeypatch.setattr(
-            session_module,
-            "probe_item",
-            lambda *_a: (_ for _ in ()).throw(AssertionError("no probes in archive mode")),
+        session, _runner, listing_calls = self.setup(
+            monkeypatch, tmp_path, paths, [ARCHIVE, FULL, EXIT]
         )
 
         session._process_one_cycle()
@@ -340,7 +306,7 @@ class TestSharedNetworkArguments:
         self, monkeypatch, tmp_path, paths, capsys
     ) -> None:
         session, _runner, *_ = self.setup(
-            monkeypatch, tmp_path, paths, [VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT]
+            monkeypatch, tmp_path, paths, [VIDEO, FULL, QUALITY, MKV, EXIT]
         )
         ui = session.ui
         session._process_one_cycle()
@@ -350,10 +316,8 @@ class TestSharedNetworkArguments:
         log = session.log_path
         assert log is not None and "s3cret" not in log.read_text(encoding="utf-8")
 
-    def test_listing_and_probes_have_time_limits_but_the_download_has_none(
-        self, monkeypatch, tmp_path, paths
-    ) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
+    def test_the_listing_has_a_time_limit(self, monkeypatch, tmp_path, paths) -> None:
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, EXIT])
         runner = Recorder(rc=1, archive_writes=["v1"])
         session = _session(monkeypatch, tmp_path, paths, ui, LIST_URL, runner)
         limits: list[float | None] = []
@@ -367,24 +331,18 @@ class TestSharedNetworkArguments:
             capture(["yt-dlp"])
             return PlaylistListing(entries(), None)
 
-        def probe(_url: str, _args: list[str], capture: Any) -> ProbeResult:
-            capture(["yt-dlp"])
-            return ProbeResult(ProbeStatus.REASON, "r")
-
         monkeypatch.setattr(session_module, "fetch_listing", listing)
-        monkeypatch.setattr(session_module, "probe_item", probe)
 
         session._process_one_cycle()
 
-        assert limits[0] == LISTING_TIMEOUT_SECONDS
-        assert set(limits[1:]) == {PROBE_TIMEOUT_SECONDS}
+        assert limits == [LISTING_TIMEOUT_SECONDS]
 
 
 class TestUrlHandling:
     def test_a_channel_live_url_is_a_single_video_with_no_question(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        ui = ScriptedUI([VIDEO, QUALITY, MKV, UNLIMITED, EXIT])
+        ui = ScriptedUI([VIDEO, QUALITY, MKV, EXIT])
         runner = Recorder(archive_writes=["live"])
         session = _session(
             monkeypatch, tmp_path, paths, ui, "https://www.youtube.com/@ChannelHandle/live", runner
@@ -403,7 +361,7 @@ class TestUrlHandling:
     def test_another_site_is_downloaded_as_a_single_item_with_a_notice(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        ui = ScriptedUI([VIDEO, QUALITY, MKV, UNLIMITED, EXIT])
+        ui = ScriptedUI([VIDEO, QUALITY, MKV, EXIT])
         runner = Recorder(archive_writes=["12345"])
         session = _session(
             monkeypatch, tmp_path, paths, ui, "https://vimeo.com/channels/staffpicks/12345", runner
@@ -423,7 +381,7 @@ class TestUrlHandling:
     def test_a_hostile_playlist_id_stays_inside_the_archives_folder(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, EXIT])
         runner = Recorder(archive_writes=["v1", "v2", "v3"])
         session = playlist_session(
             monkeypatch,
@@ -442,9 +400,7 @@ class TestUrlHandling:
         assert archive.resolve().parent == paths.archives_dir.resolve()
         assert not (tmp_path.parent / "outside_mp4.txt").exists()
 
-    @pytest.mark.parametrize(
-        "mode_picks", [[VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT], [AUDIO, FULL, EXIT]]
-    )
+    @pytest.mark.parametrize("mode_picks", [[VIDEO, FULL, QUALITY, MKV, EXIT], [AUDIO, FULL, EXIT]])
     def test_channels_are_keyed_by_their_channel_id_in_video_and_audio_mode(
         self, monkeypatch, tmp_path, paths, mode_picks
     ) -> None:
@@ -464,7 +420,7 @@ class TestUrlHandling:
     def test_a_listing_failure_in_video_mode_is_shown_without_credentials(
         self, monkeypatch, tmp_path, paths
     ) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT], exit_on_failure=False)
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, EXIT], exit_on_failure=False)
         runner = Recorder(archive_writes=["v1"])
         session = _session(monkeypatch, tmp_path, paths, ui, LIST_URL, runner)
         session.settings.download.proxy = "http://bob:hunter22@proxy:3128"
@@ -488,7 +444,7 @@ class TestArchiveToolsShortcut:
     ) -> None:
         from ytdlp_app.session import InteractiveSession  # noqa: PLC0415
 
-        answers = iter(["a", "s", ""])
+        answers = iter(["a", ""])
         opened: list[str] = []
 
         class UI(ScriptedUI):
@@ -503,8 +459,7 @@ class TestArchiveToolsShortcut:
             paths,
         )  # type: ignore[arg-type]
         monkeypatch.setattr(session_module, "run_archive_tools", lambda *_a: opened.append("tools"))
-        monkeypatch.setattr(session, "open_settings", lambda: opened.append("settings"))
 
         assert session._ask_url() is None
 
-        assert opened == ["tools", "settings"]
+        assert opened == ["tools"]

@@ -10,7 +10,7 @@ from ytdlp_app.settings import AppSettings
 from ytdlp_app.yt_dlp import (
     PLUGINS_DIR,
     CommandBuilder,
-    compat_stage1_format,
+    compat_format,
     ledger_args,
     video_format,
 )
@@ -82,8 +82,7 @@ class TestCommandShape:
     @pytest.mark.parametrize(
         "method",
         [
-            "build_mp4_compatibility_stage1",
-            "build_mp4_compatibility_stage2",
+            "build_mp4_compatibility",
             "build_mp4_quality_mkv",
             "build_mp4_quality_remux",
             "build_mp3",
@@ -198,7 +197,7 @@ def archive_default(tmp_path: Path) -> list[str]:
         "--write-subs",
         "--write-auto-subs",
         "--sub-langs",
-        "tr.*,en.*",
+        "en.*",
         "--convert-subs",
         "srt",
         "--embed-metadata",
@@ -318,15 +317,16 @@ def _selector(cmd: list[str]) -> str:
 class TestSelectors:
     def test_no_cap_gives_todays_selectors(self) -> None:
         assert video_format(None) == "bv*+ba/b"
-        assert compat_stage1_format(None) == (
-            "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]"
+        assert compat_format(None) == (
+            "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]/bv*+ba/b"
         )
 
     def test_the_cap_is_applied_to_every_alternative(self) -> None:
         assert video_format(1440) == "bv*[height<=1440]+ba/b[height<=1440]"
-        assert compat_stage1_format(1080) == (
+        assert compat_format(1080) == (
             "bestvideo[vcodec^=avc1][height<=1080]+bestaudio[acodec^=mp4a]"
             "/best[vcodec^=avc1][height<=1080]"
+            "/bv*[height<=1080]+ba/b[height<=1080]"
         )
 
 
@@ -334,10 +334,7 @@ class TestBuilderResolutionCap:
     def test_defaults_do_not_change_the_video_commands(self, builder: CommandBuilder) -> None:
         assert _selector(builder.build_mp4_quality_mkv()) == "bv*+ba/b"
         assert _selector(builder.build_mp4_quality_remux()) == "bv*+ba/b"
-        assert _selector(builder.build_mp4_compatibility_stage2()) == "bv*+ba/b"
-        assert _selector(builder.build_mp4_compatibility_stage1()) == (
-            "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]"
-        )
+        assert _selector(builder.build_mp4_compatibility()) == compat_format(None)
 
     def test_the_saved_video_cap_applies_without_a_choice(self, tmp_path: Path) -> None:
         settings = AppSettings()
@@ -361,10 +358,9 @@ class TestBuilderResolutionCap:
         for cmd in (
             builder.build_mp4_quality_mkv(),
             builder.build_mp4_quality_remux(),
-            builder.build_mp4_compatibility_stage2(),
         ):
             assert _selector(cmd) == "bv*[height<=2160]+ba/b[height<=2160]"
-        assert "[height<=2160]" in _selector(builder.build_mp4_compatibility_stage1())
+        assert _selector(builder.build_mp4_compatibility()) == compat_format(2160)
 
     def test_audio_ignores_the_cap(self, builder: CommandBuilder) -> None:
         builder.set_max_height(1080)
@@ -448,22 +444,24 @@ class TestSelectorsAgainstYtDlp:
             _format("h264", 1080, "avc1.640028", "none"),
             _format("vp9", 1080, "vp09", "none"),
         ]
-        assert _pick(compat_stage1_format(1080), formats) == ["h264+a"]
+        assert _pick(compat_format(1080), formats) == ["h264+a"]
+
+    def test_the_compatibility_selector_falls_back_when_there_is_no_avc1(self) -> None:
+        formats = [
+            _format("a", None, "none", "opus", "webm"),
+            _format("vp9", 1080, "vp09", "none", "webm"),
+        ]
+        assert _pick(compat_format(1080), formats) == ["vp9+a"]
 
 
 class TestCodecAndContainerContract:
     """The command-level half of the guarantees checked end to end in test_engine_contract."""
 
-    def test_compatibility_stage2_does_not_rely_on_recode_video(
-        self, builder: CommandBuilder
-    ) -> None:
-        cmd = builder.build_mp4_compatibility_stage2()
+    def test_compatibility_does_not_rely_on_recode_video(self, builder: CommandBuilder) -> None:
+        cmd = builder.build_mp4_compatibility()
 
         assert "--recode-video" not in cmd
         assert "Mp4Compat:when=post_process" in cmd
-
-    def test_compatibility_stage1_verifies_the_codecs_too(self, builder: CommandBuilder) -> None:
-        assert "Mp4Compat:when=post_process" in builder.build_mp4_compatibility_stage1()
 
     def test_mkv_commands_remux_a_single_stream(self, builder: CommandBuilder) -> None:
         cmd = builder.build_mp4_quality_mkv()
@@ -484,8 +482,7 @@ class TestCodecAndContainerContract:
     @pytest.mark.parametrize(
         "method",
         [
-            "build_mp4_compatibility_stage1",
-            "build_mp4_compatibility_stage2",
+            "build_mp4_compatibility",
             "build_mp4_quality_mkv",
             "build_mp4_quality_remux",
             "build_mp3",

@@ -1,10 +1,9 @@
 """The session hands its sink and cancel event to everything that runs or waits:
-downloads, the listing, the skip probes and the speed test. Also the warnings that
+downloads and the listing. Also the warnings that
 used to bypass the UI: settings issues and an unreadable config.json."""
 
 import threading
 import time
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -14,15 +13,14 @@ import ytdlp_app.session as session_module
 from tests.test_exec_cancel import RecordingSink, cancel_when_ready, quiet_child
 from tests.test_exec_lifecycle import pids_from, posix_only, wait_gone
 from tests.test_session_archive import Recorder, ScriptedUI, _session
-from ytdlp_app import app, speedtest
+from ytdlp_app import app
 from ytdlp_app.config import load_config
 from ytdlp_app.exec import run_cmd_tee
 from ytdlp_app.i18n import t
-from ytdlp_app.models import ActionChoice, AppPaths, ModeChoice, PlaylistEntry, UserConfig
+from ytdlp_app.models import AppPaths, ModeChoice, PlaylistEntry, UserConfig
 from ytdlp_app.playlist import PlaylistListing
 from ytdlp_app.session import CycleOutcome, InteractiveSession
 from ytdlp_app.settings import SettingsIssue
-from ytdlp_app.skip_probe import ProbeResult, ProbeStatus
 
 VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 LIST_URL = "https://www.youtube.com/playlist?list=PL0123456789abcdef"
@@ -30,8 +28,7 @@ VIDEO = int(ModeChoice.VIDEO)
 FULL = 1
 QUALITY = 2
 MKV = 1
-UNLIMITED = 4
-EXIT = int(ActionChoice.EXIT)
+EXIT = 2  # the second option of the "what next" menu
 
 
 @pytest.fixture
@@ -54,7 +51,7 @@ class TestForwarding:
             monkeypatch,
             tmp_path,
             paths,
-            ScriptedUI([VIDEO, QUALITY, MKV, UNLIMITED, EXIT]),
+            ScriptedUI([VIDEO, QUALITY, MKV, EXIT]),
             VIDEO_URL,
             runner,
         )
@@ -71,7 +68,7 @@ class TestForwarding:
             monkeypatch,
             tmp_path,
             paths,
-            ScriptedUI([VIDEO, QUALITY, MKV, UNLIMITED, EXIT]),
+            ScriptedUI([VIDEO, QUALITY, MKV, EXIT]),
             VIDEO_URL,
             runner,
         )
@@ -82,8 +79,8 @@ class TestForwarding:
         assert call["sink"] is None
         assert call["cancel"] is None
 
-    def test_listing_and_probes_get_the_event(self, monkeypatch, tmp_path, paths) -> None:
-        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, UNLIMITED, EXIT])
+    def test_the_listing_gets_the_event(self, monkeypatch, tmp_path, paths) -> None:
+        ui = ScriptedUI([VIDEO, FULL, QUALITY, MKV, EXIT])
         session = _wired(
             monkeypatch, tmp_path, paths, ui, LIST_URL, Recorder(rc=1, archive_writes=["v1"])
         )
@@ -102,29 +99,12 @@ class TestForwarding:
             capture(["yt-dlp"])
             return PlaylistListing(entries, None)
 
-        def probe(_url: str, _args: list[str], capture: Any) -> ProbeResult:
-            capture(["yt-dlp"])
-            return ProbeResult(ProbeStatus.REASON, "r")
-
         monkeypatch.setattr(session_module, "fetch_listing", listing)
-        monkeypatch.setattr(session_module, "probe_item", probe)
 
         session._process_one_cycle()
 
-        assert len(seen) == 2  # the listing and the one probe for v2
+        assert len(seen) == 1
         assert all(event is session.cancel for event in seen)
-
-    def test_the_speed_test_gets_the_event(self, monkeypatch, tmp_path, paths) -> None:
-        session = _wired(monkeypatch, tmp_path, paths, ScriptedUI([]), VIDEO_URL, Recorder())
-        seen: list[Any] = []
-        monkeypatch.setattr(
-            session_module,
-            "measure_speed",
-            lambda proxy, cancel=None: seen.append((proxy, cancel)) or 1.0,
-        )
-
-        assert session._measure_speed("http://p:1") == 1.0
-        assert seen == [("http://p:1", session.cancel)]
 
 
 class TestCancelBelongsToItsCycle:
@@ -157,7 +137,7 @@ def test_a_cancel_during_a_silent_download_ends_the_cycle_as_interrupted(
     def silent_download(_cmd: list[str], log_path: Path, **kwargs: Any) -> int:
         return run_cmd_tee(quiet_child(marker), log_path, **kwargs)
 
-    ui = ScriptedUI([VIDEO, QUALITY, MKV, UNLIMITED])
+    ui = ScriptedUI([VIDEO, QUALITY, MKV])
     session = _wired(monkeypatch, tmp_path, paths, ui, VIDEO_URL, silent_download)  # type: ignore[arg-type]
     assert session.cancel is not None
     cancel_when_ready(marker, session.cancel)
@@ -168,36 +148,6 @@ def test_a_cancel_during_a_silent_download_ends_the_cycle_as_interrupted(
     assert outcome == CycleOutcome.INTERRUPTED
     assert time.monotonic() - started < 5
     assert wait_gone(pids_from(marker), seconds=1.0) == []
-
-
-class TestSpeedTestCancel:
-    def test_a_cancel_abandons_a_hanging_measurement(self, monkeypatch) -> None:
-        release = threading.Event()
-        cancel = threading.Event()
-
-        def hangs(_request: urllib.request.Request, _timeout: float) -> Any:
-            release.wait(30)
-            raise OSError("gave up")
-
-        threading.Timer(0.2, cancel.set).start()
-        started = time.monotonic()
-        with pytest.raises(KeyboardInterrupt):
-            speedtest.measure_speed(None, open_url=hangs, cancel=cancel)
-        elapsed = time.monotonic() - started
-        release.set()
-
-        assert elapsed < 2
-
-    def test_an_unset_event_changes_nothing(self, monkeypatch) -> None:
-        release = threading.Event()
-        monkeypatch.setattr(speedtest, "TOTAL_BUDGET_SECONDS", 0.3)
-
-        def hangs(_request: urllib.request.Request, _timeout: float) -> Any:
-            release.wait(30)
-            raise OSError("gave up")
-
-        assert speedtest.measure_speed(None, open_url=hangs, cancel=threading.Event()) is None
-        release.set()
 
 
 class TestWarningsGoThroughTheUI:

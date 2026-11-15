@@ -4,7 +4,10 @@ Sadeleştirme kararı: yalnız İngilizce arayüz, yalnız Windows ve Linux term
 
 - [x] Türkçe arayüz ve dil seçimi kaldırıldı (`i18n` tek katalog: `locales/en.json`)
 - [x] macOS desteği kaldırıldı (`install.sh`/`run.sh` Homebrew yolu, `~/Library` veri klasörü, CI işi)
-- [ ] Çekirdek dışı özelliklerin budanması — hangilerinin kalacağı kararı bekliyor
+- [x] Budandı: kendi kendini güncelleme, ayar menüsü, boyut/süre tahmini + hız testi + çözünürlük sorusu, atlanan öğe raporu
+- [x] Uyumluluk profili tek komut; boş disk denetimi sabit eşik (2 GB); arşiv altyazıları yalnız İngilizce
+- [ ] Doğrulanmadı: 0.3.x kurulumlarının eski güncelleyicisi bu sürüme geçince ne yapıyor (yeni pakette `update.*` yok)
+- [ ] Kaldı: arşiv denetim aracı (`archive_audit.py`) — kullanılıp kullanılmadığına göre karar
 
 ---
 

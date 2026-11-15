@@ -197,7 +197,6 @@ class TestBooleans:
             ("video", "embed_subtitles"),
             ("video", "write_subtitles"),
             ("download", "allow_external_config"),
-            ("download", "speed_test"),
         ],
     )
     @pytest.mark.parametrize("bad", ["false", 0, 1, [], "yes"])
@@ -267,7 +266,6 @@ class TestDefaultsSurviveTheRoundTrip:
         settings = AppSettings()
         settings.download.retries = "12"
         settings.download.allow_external_config = True
-        settings.download.speed_test = False
 
         again, issues = load(settings.to_dict())
 

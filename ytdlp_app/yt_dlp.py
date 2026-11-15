@@ -32,7 +32,7 @@ ARCHIVE_CONTENT_ARGS = [
     "--write-subs",
     "--write-auto-subs",
     "--sub-langs",
-    "tr.*,en.*",
+    "en.*",
     "--convert-subs",
     "srt",
     "--embed-metadata",
@@ -119,10 +119,15 @@ def video_format(max_height: int | None) -> str:
     return f"bv*{cap}+ba/b{cap}"
 
 
-def compat_stage1_format(max_height: int | None) -> str:
-    """Build the H.264 + AAC selector of the compatibility profile's first stage."""
+def compat_format(max_height: int | None) -> str:
+    """Build the compatibility profile's selector: H.264 + AAC first, then anything.
+
+    The first two alternatives merge into MP4 without re-encoding. A video with no such
+    rendition falls through to the best one of any codec, which Mp4Compat then converts.
+    """
     cap = _height_filter(max_height)
-    return f"bestvideo[vcodec^=avc1]{cap}+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]{cap}"
+    h264 = f"bestvideo[vcodec^=avc1]{cap}+bestaudio[acodec^=mp4a]/best[vcodec^=avc1]{cap}"
+    return f"{h264}/{video_format(max_height)}"
 
 
 class CommandBuilder:
@@ -239,35 +244,17 @@ class CommandBuilder:
             *self.common_args,
         ]
 
-    def build_mp4_compatibility_stage1(self) -> list[str]:
-        """Build Stage 1 command for MP4 compatibility mode.
+    def build_mp4_compatibility(self) -> list[str]:
+        """Build the MP4 compatibility command.
 
-        Asks for an H.264 + AAC rendition, which merges into MP4 without re-encoding.
-        Mp4Compat then only verifies it (and would still convert should the selector
-        ever let something else through).
+        Asks for an H.264 + AAC rendition, which merges into MP4 without re-encoding, and
+        otherwise takes the best rendition whatever its codecs. Mp4Compat verifies the
+        result and converts what is not H.264 + AAC in MP4. ``--recode-video mp4`` is not
+        used: it judges by container, so an AV1 or VP9 file that already is an .mp4 would
+        be reported as "already in target format" and kept.
         """
         return self._assemble(
-            [
-                "yt-dlp",
-                "-f",
-                compat_stage1_format(self._cap(self.settings.video.max_height)),
-                "--merge-output-format",
-                "mp4",
-            ],
-            DownloadMode.VIDEO,
-            mp4_compat_args(),
-        )
-
-    def build_mp4_compatibility_stage2(self) -> list[str]:
-        """Build Stage 2 command for MP4 compatibility mode.
-
-        Takes the best rendition whatever its codecs and has Mp4Compat make it H.264 +
-        AAC in MP4. ``--recode-video mp4`` is not used: it judges by container, so an
-        AV1 or VP9 file that already is an .mp4 would be reported as "already in target
-        format" and kept.
-        """
-        return self._assemble(
-            ["yt-dlp", "-f", video_format(self._cap(self.settings.video.max_height))],
+            ["yt-dlp", "-f", compat_format(self._cap(self.settings.video.max_height))],
             DownloadMode.VIDEO,
             mp4_compat_args(),
         )

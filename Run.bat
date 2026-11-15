@@ -12,28 +12,6 @@ title YouTube Downloader - One Click Launcher
 REM --- Move to this directory ---
 cd /d "%~dp0"
 
-REM --- Silent update check ---
-REM Quiet, checks a new package before installing it, and never stops the launch (being
-REM offline is fine). Set YTDLP_NO_AUTO_UPDATE=1 to skip it.
-if not defined YTDLP_NO_AUTO_UPDATE (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1" -Quiet
-)
-
-REM --- An update that did not finish ---
-REM The journal stays while an update's rollback is incomplete: the package here may be
-REM part old, part new, so it must not be started. update.ps1 puts the old one back.
-if exist ".update-in-progress" (
-    echo.
-    echo ERROR: An update did not finish, so the app may be incomplete.
-    echo The previous version is kept in:
-    type ".update-in-progress"
-    echo.
-    echo Run this to restore it, then start the app again:
-    echo   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0update.ps1"
-    pause
-    exit /b 1
-)
-
 echo ==========================================
 echo   YouTube Downloader - One Click Launch
 echo ==========================================

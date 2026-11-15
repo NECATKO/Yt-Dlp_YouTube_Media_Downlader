@@ -51,14 +51,6 @@ class ContainerChoice(IntEnum):
     MP4 = 2
 
 
-class ActionChoice(IntEnum):
-    """User selection for next action."""
-
-    DOWNLOAD_ANOTHER = 1
-    SETTINGS = 2
-    EXIT = 3
-
-
 #: Type alias for download mode - video (mp4), audio (mp3), or archive.
 Mode = DownloadMode
 
@@ -154,9 +146,7 @@ class DownloadPlan:
     URL, mode, output paths, and command-line arguments.
 
     The command-line arguments themselves are not stored here: the download is
-    driven by the CommandBuilder that produced them. probe_args is the exception,
-    because the skip probe needs the same network arguments (proxy, config policy, JS
-    runtime, pacing) outside of any download command.
+    driven by the CommandBuilder that produced them.
 
     Attributes:
         url: The URL to download from.
@@ -169,7 +159,6 @@ class DownloadPlan:
         output_template: yt-dlp output template string.
         archive_path: Path to the download archive file.
         log_path: Path to the session log file.
-        probe_args: The shared network arguments for a skip-probe request.
     """
 
     url: str
@@ -182,4 +171,3 @@ class DownloadPlan:
     output_template: str
     archive_path: Path
     log_path: Path
-    probe_args: list[str]
